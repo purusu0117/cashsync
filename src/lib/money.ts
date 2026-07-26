@@ -250,8 +250,9 @@ export async function postRecurringForMonth(userId: string, upToMonth: string) {
     start_month: string;
     end_month: string | null;
     post_day: number;
+    interval: string; // 'monthly' | 'yearly'
   }>(
-    `SELECT r.id, r.kind, r.name, r.amount, r.category_id, r.start_month, r.end_month, r.post_day
+    `SELECT r.id, r.kind, r.name, r.amount, r.category_id, r.start_month, r.end_month, r.post_day, r.interval
      FROM recurring_items r WHERE r.user_id = ? AND r.start_month <= ?`,
     userId,
     upToMonth,
@@ -261,6 +262,11 @@ export async function postRecurringForMonth(userId: string, upToMonth: string) {
     let month = it.start_month;
     let guard = 0;
     while (month <= upToMonth && (!it.end_month || month <= it.end_month) && guard++ < 120) {
+      // 年払いは「毎年、開始月と同じ月」だけ計上（例：2026-07開始なら毎年7月）
+      if (it.interval === "yearly" && month.slice(5) !== it.start_month.slice(5)) {
+        month = nextMonth(month);
+        continue;
+      }
       const mark = await d.run(
         "INSERT INTO recurring_posts (recurring_id, month) VALUES (?, ?) ON CONFLICT (recurring_id, month) DO NOTHING",
         it.id,

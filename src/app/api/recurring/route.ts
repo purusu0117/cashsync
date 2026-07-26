@@ -12,7 +12,7 @@ export async function GET() {
     const user = await requireUser();
     const d = await db();
     const items = await d.all(
-      `SELECT r.id, r.kind, r.name, r.amount, r.category_id, r.start_month, r.end_month, r.post_day, c.name AS category
+      `SELECT r.id, r.kind, r.name, r.amount, r.category_id, r.start_month, r.end_month, r.post_day, r.interval, c.name AS category
        FROM recurring_items r LEFT JOIN categories c ON c.id = r.category_id
        WHERE r.user_id = ? ORDER BY r.kind, r.name`,
       user.id,
@@ -35,6 +35,7 @@ export async function POST(request: Request) {
       startMonth?: string;
       endMonth?: string | null;
       postDay?: number;
+      interval?: string;
     };
     const name = (body.name ?? "").trim();
     const amount = Math.round(Number(body.amount));
@@ -46,10 +47,11 @@ export async function POST(request: Request) {
     const startMonth = body.startMonth && MONTH_RE.test(body.startMonth) ? body.startMonth : now;
     const endMonth = body.endMonth && MONTH_RE.test(body.endMonth) ? body.endMonth : null;
     const postDay = Math.min(Math.max(1, Math.round(Number(body.postDay) || 1)), 31);
+    const interval = body.interval === "yearly" ? "yearly" : "monthly";
     const id = uid();
     const d = await db();
     await d.run(
-      "INSERT INTO recurring_items (id, user_id, kind, name, amount, category_id, start_month, end_month, post_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO recurring_items (id, user_id, kind, name, amount, category_id, start_month, end_month, post_day, interval) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       id,
       user.id,
       kind,
@@ -59,6 +61,7 @@ export async function POST(request: Request) {
       startMonth,
       endMonth,
       postDay,
+      interval,
     );
     return Response.json({ ok: true, id });
   } catch (e) {

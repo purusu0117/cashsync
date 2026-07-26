@@ -96,8 +96,11 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     category_id TEXT,
     start_month TEXT NOT NULL,
     end_month TEXT,
-    post_day INTEGER NOT NULL DEFAULT 1
+    post_day INTEGER NOT NULL DEFAULT 1,
+    interval TEXT NOT NULL DEFAULT 'monthly'
   )`,
+  // 既存DBへの追加カラム（冪等）：'monthly' | 'yearly'（年払いサブスク対応）
+  `ALTER TABLE recurring_items ADD COLUMN IF NOT EXISTS interval TEXT NOT NULL DEFAULT 'monthly'`,
   `CREATE TABLE IF NOT EXISTS recurring_posts (
     recurring_id TEXT NOT NULL,
     month TEXT NOT NULL,

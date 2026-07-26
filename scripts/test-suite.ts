@@ -181,6 +181,47 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
   ))!;
   check("定期計上が1回だけ実体化される（冪等）", recCount.c === 1, recCount);
 
+  // 年払い（interval='yearly'）：開始月と同じ月だけ、毎年1回計上される
+  // カテゴリ別集計等（当月LIKE）に影響しないよう、過去の固定月でテストする
+  const yearlyId = uid();
+  await d.run(
+    "INSERT INTO recurring_items (id, user_id, kind, name, amount, category_id, start_month, end_month, post_day, interval) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    yearlyId,
+    userId,
+    "expense",
+    "年払いサブスク",
+    9800,
+    null,
+    "2024-03",
+    null,
+    15,
+    "yearly",
+  );
+  const yearlyRows = async () =>
+    d.all<{ date: string }>(
+      "SELECT date FROM expenses WHERE user_id = ? AND memo = ? ORDER BY date",
+      userId,
+      "年払いサブスク",
+    );
+  await postRecurringForMonth(userId, "2025-02");
+  let yr = await yearlyRows();
+  check("年払いは対象月(2024-03)に1回だけ計上", yr.length === 1 && yr[0].date === "2024-03-15", yr);
+  await postRecurringForMonth(userId, "2025-06");
+  yr = await yearlyRows();
+  check("翌年の対象月(2025-03)にまた計上される", yr.length === 2 && yr[1].date === "2025-03-15", yr);
+  await postRecurringForMonth(userId, "2025-06"); // 再実行しても増えない
+  yr = await yearlyRows();
+  check("年払いも冪等（再実行で増えない）", yr.length === 2, yr);
+  const yearlyMarks = await d.all<{ month: string }>(
+    "SELECT month FROM recurring_posts WHERE recurring_id = ? ORDER BY month",
+    yearlyId,
+  );
+  check(
+    "recurring_posts のmarkは対象月のみ",
+    yearlyMarks.length === 2 && yearlyMarks[0].month === "2024-03" && yearlyMarks[1].month === "2025-03",
+    yearlyMarks,
+  );
+
   // --- 7. カテゴリ別集計（GROUP BY の方言互換） ---
   console.log("[7] カテゴリ別集計");
   const breakdown = await categoryBreakdown(userId, month);
