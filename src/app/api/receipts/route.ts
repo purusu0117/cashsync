@@ -23,21 +23,35 @@ export async function POST(request: Request) {
       body.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : todayStr();
     const store = (body.store ?? "").trim();
     const items = Array.isArray(body.items) ? body.items.slice(0, 30) : [];
-    const d = db();
+    const d = await db();
     const receiptId = uid();
     const expenseId = uid();
     // レシートと支出は必ずセットで保存（片方だけ残る中途半端な状態を防ぐ）
-    d.exec("BEGIN");
     try {
-      d.prepare(
-        "INSERT INTO receipts (id, user_id, store, taken_date, total, items_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      ).run(receiptId, user.id, store, date, total, JSON.stringify(items), Date.now());
-      d.prepare(
-        "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'receipt', ?, ?)",
-      ).run(expenseId, user.id, date, total, body.categoryId ?? null, store, receiptId, Date.now());
-      d.exec("COMMIT");
+      await d.transaction(async (tx) => {
+        await tx.run(
+          "INSERT INTO receipts (id, user_id, store, taken_date, total, items_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          receiptId,
+          user.id,
+          store,
+          date,
+          total,
+          JSON.stringify(items),
+          Date.now(),
+        );
+        await tx.run(
+          "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'receipt', ?, ?)",
+          expenseId,
+          user.id,
+          date,
+          total,
+          body.categoryId ?? null,
+          store,
+          receiptId,
+          Date.now(),
+        );
+      });
     } catch (e) {
-      d.exec("ROLLBACK");
       console.error("[receipts] save failed:", e);
       throw e;
     }
@@ -53,11 +67,12 @@ export async function GET(request: Request) {
     const user = await requireUser();
     const id = new URL(request.url).searchParams.get("id");
     if (!id) return Response.json({ error: "id required" }, { status: 400 });
-    const row = db()
-      .prepare(
-        "SELECT id, store, taken_date, total, items_json FROM receipts WHERE id = ? AND user_id = ?",
-      )
-      .get(id, user.id);
+    const d = await db();
+    const row = await d.get(
+      "SELECT id, store, taken_date, total, items_json FROM receipts WHERE id = ? AND user_id = ?",
+      id,
+      user.id,
+    );
     return Response.json({ receipt: row ?? null });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();

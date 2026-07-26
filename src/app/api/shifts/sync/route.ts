@@ -23,10 +23,8 @@ export async function POST(request: Request) {
     if (!body.jobId || !body.month || !/^\d{4}-\d{2}$/.test(body.month)) {
       return Response.json({ error: "jobId と month は必須です。" }, { status: 400 });
     }
-    const d = db();
-    const job = d
-      .prepare("SELECT id FROM jobs WHERE id = ? AND user_id = ?")
-      .get(body.jobId, user.id);
+    const d = await db();
+    const job = await d.get("SELECT id FROM jobs WHERE id = ? AND user_id = ?", body.jobId, user.id);
     if (!job) return Response.json({ error: "バイト先が見つかりません。" }, { status: 400 });
     const candidates = (body.candidates ?? [])
       .map((c) => ({
@@ -42,17 +40,18 @@ export async function POST(request: Request) {
           Number.isFinite(c.endMin) &&
           c.endMin > c.startMin,
       );
-    const existing = d
-      .prepare(
-        "SELECT id, date, start_min, end_min, source FROM shifts WHERE user_id = ? AND job_id = ? AND date LIKE ?",
-      )
-      .all(user.id, body.jobId, `${body.month}-%`) as unknown as {
+    const existing = await d.all<{
       id: string;
       date: string;
       start_min: number;
       end_min: number;
       source: string;
-    }[];
+    }>(
+      "SELECT id, date, start_min, end_min, source FROM shifts WHERE user_id = ? AND job_id = ? AND date LIKE ?",
+      user.id,
+      body.jobId,
+      `${body.month}-%`,
+    );
     const manualDates = new Set(existing.filter((s) => s.source === "manual").map((s) => s.date));
     const calByDate = new Map(existing.filter((s) => s.source === "calendar").map((s) => [s.date, s]));
     const candByDate = new Map(candidates.map((c) => [c.date, c]));
@@ -60,18 +59,24 @@ export async function POST(request: Request) {
     let added = 0;
     let updated = 0;
     let removed = 0;
-    const ins = d.prepare(
-      "INSERT INTO shifts (id, user_id, job_id, date, start_min, end_min, break_min, source) VALUES (?, ?, ?, ?, ?, ?, 0, 'calendar')",
-    );
 
     for (const [date, c] of candByDate) {
       if (manualDates.has(date)) continue; // 手入力優先
       const ex = calByDate.get(date);
       if (!ex) {
-        ins.run(uid(), user.id, body.jobId, date, Math.round(c.startMin), Math.round(c.endMin));
+        await d.run(
+          "INSERT INTO shifts (id, user_id, job_id, date, start_min, end_min, break_min, source) VALUES (?, ?, ?, ?, ?, ?, 0, 'calendar')",
+          uid(),
+          user.id,
+          body.jobId,
+          date,
+          Math.round(c.startMin),
+          Math.round(c.endMin),
+        );
         added++;
       } else if (ex.start_min !== Math.round(c.startMin) || ex.end_min !== Math.round(c.endMin)) {
-        d.prepare("UPDATE shifts SET start_min = ?, end_min = ? WHERE id = ?").run(
+        await d.run(
+          "UPDATE shifts SET start_min = ?, end_min = ? WHERE id = ?",
           Math.round(c.startMin),
           Math.round(c.endMin),
           ex.id,
@@ -82,7 +87,7 @@ export async function POST(request: Request) {
     // カレンダーから消えた予定（シフト取り消し）を削除
     for (const [date, ex] of calByDate) {
       if (!candByDate.has(date)) {
-        d.prepare("DELETE FROM shifts WHERE id = ?").run(ex.id);
+        await d.run("DELETE FROM shifts WHERE id = ?", ex.id);
         removed++;
       }
     }

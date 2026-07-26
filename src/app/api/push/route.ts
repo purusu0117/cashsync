@@ -8,10 +8,12 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const user = await requireUser();
+    const d = await db();
     const count = (
-      db()
-        .prepare("SELECT COUNT(*) AS c FROM push_subscriptions WHERE user_id = ?")
-        .get(user.id) as { c: number }
+      (await d.get<{ c: number }>(
+        "SELECT COUNT(*) AS c FROM push_subscriptions WHERE user_id = ?",
+        user.id,
+      )) as { c: number }
     ).c;
     return Response.json({ publicKey: vapidPublicKey(), subscribed: count > 0 });
   } catch (e) {
@@ -25,11 +27,14 @@ export async function POST(request: Request) {
     const user = await requireUser();
     const sub = (await request.json()) as { endpoint?: string };
     if (!sub.endpoint) return Response.json({ error: "invalid subscription" }, { status: 400 });
-    db()
-      .prepare(
-        "INSERT INTO push_subscriptions (endpoint, user_id, subscription, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, subscription = excluded.subscription",
-      )
-      .run(sub.endpoint, user.id, JSON.stringify(sub), Date.now());
+    const d = await db();
+    await d.run(
+      "INSERT INTO push_subscriptions (endpoint, user_id, subscription, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (endpoint) DO UPDATE SET user_id = excluded.user_id, subscription = excluded.subscription",
+      sub.endpoint,
+      user.id,
+      JSON.stringify(sub),
+      Date.now(),
+    );
     return Response.json({ ok: true });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
@@ -41,12 +46,15 @@ export async function DELETE(request: Request) {
   try {
     const user = await requireUser();
     const { endpoint } = (await request.json()) as { endpoint?: string };
+    const d = await db();
     if (endpoint) {
-      db()
-        .prepare("DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?")
-        .run(endpoint, user.id);
+      await d.run(
+        "DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?",
+        endpoint,
+        user.id,
+      );
     } else {
-      db().prepare("DELETE FROM push_subscriptions WHERE user_id = ?").run(user.id);
+      await d.run("DELETE FROM push_subscriptions WHERE user_id = ?", user.id);
     }
     return Response.json({ ok: true });
   } catch (e) {

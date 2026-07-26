@@ -19,19 +19,17 @@ export async function GET(request: Request) {
   if (!key || key !== process.env.CRON_KEY) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
-  const d = db();
-  const users = d
-    .prepare(
-      "SELECT DISTINCT u.id, u.savings_goal, u.last_overspend_push FROM users u JOIN push_subscriptions p ON p.user_id = u.id",
-    )
-    .all() as unknown as { id: string; savings_goal: number; last_overspend_push: string | null }[];
+  const d = await db();
+  const users = await d.all<{ id: string; savings_goal: number; last_overspend_push: string | null }>(
+    "SELECT DISTINCT u.id, u.savings_goal, u.last_overspend_push FROM users u JOIN push_subscriptions p ON p.user_id = u.id",
+  );
   const today = todayStr();
   let notified = 0;
   for (const u of users) {
     if (u.last_overspend_push === today) continue; // 1日1回
-    postRecurringForMonth(u.id, currentMonth());
-    const summary = monthSummary(u.id, currentMonth());
-    const fc = monthForecast(u.id, summary);
+    await postRecurringForMonth(u.id, currentMonth());
+    const summary = await monthSummary(u.id, currentMonth());
+    const fc = await monthForecast(u.id, summary);
     let body = "";
     if (fc.forecast < 0) {
       const recover = Math.ceil(-fc.forecast / daysRemainingInMonth());
@@ -42,7 +40,7 @@ export async function GET(request: Request) {
     if (!body) continue;
     const sent = await pushToUser(u.id, "CashSync 使いすぎ予兆", body);
     if (sent > 0) {
-      d.prepare("UPDATE users SET last_overspend_push = ? WHERE id = ?").run(today, u.id);
+      await d.run("UPDATE users SET last_overspend_push = ? WHERE id = ?", today, u.id);
       notified++;
     }
   }

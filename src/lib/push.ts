@@ -20,9 +20,11 @@ export function vapidPublicKey(): string {
 /** ユーザーの全端末に通知を送る。無効になった購読は掃除する */
 export async function pushToUser(userId: string, title: string, body: string): Promise<number> {
   if (!setup()) return 0;
-  const subs = db()
-    .prepare("SELECT endpoint, subscription FROM push_subscriptions WHERE user_id = ?")
-    .all(userId) as unknown as { endpoint: string; subscription: string }[];
+  const d = await db();
+  const subs = await d.all<{ endpoint: string; subscription: string }>(
+    "SELECT endpoint, subscription FROM push_subscriptions WHERE user_id = ?",
+    userId,
+  );
   let sent = 0;
   for (const s of subs) {
     try {
@@ -31,7 +33,7 @@ export async function pushToUser(userId: string, title: string, body: string): P
     } catch (e) {
       const status = (e as { statusCode?: number }).statusCode;
       if (status === 404 || status === 410) {
-        db().prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").run(s.endpoint);
+        await d.run("DELETE FROM push_subscriptions WHERE endpoint = ?", s.endpoint);
       }
     }
   }

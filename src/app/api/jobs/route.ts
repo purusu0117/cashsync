@@ -6,11 +6,11 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const user = await requireUser();
-    const jobs = db()
-      .prepare(
-        "SELECT id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, calendar_keywords, calendar_exclude, color, closing_day, pay_month_offset, pay_day, pay_same_day FROM jobs WHERE user_id = ?",
-      )
-      .all(user.id);
+    const d = await db();
+    const jobs = await d.all(
+      "SELECT id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, calendar_keywords, calendar_exclude, color, closing_day, pay_month_offset, pay_day, pay_same_day FROM jobs WHERE user_id = ?",
+      user.id,
+    );
     return Response.json({ jobs });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
@@ -34,28 +34,26 @@ export async function POST(request: Request) {
       payDay?: number;
       paySameDay?: boolean;
     };
-    const d = db();
+    const d = await db();
     if (body.id) {
       // 部分更新：bodyに無い項目は「すべて」既存値を保持する。
       // （以前は未指定項目をデフォルトで上書きし、カレンダー同期のたびに給料日設定が消えるバグがあった）
-      const cur = d
-        .prepare(
-          "SELECT name, weekday_rate, weekend_holiday_rate, transport_per_shift, calendar_keywords, calendar_exclude, closing_day, pay_month_offset, pay_day, pay_same_day FROM jobs WHERE id = ? AND user_id = ?",
-        )
-        .get(body.id, user.id) as
-        | {
-            name: string;
-            weekday_rate: number;
-            weekend_holiday_rate: number;
-            transport_per_shift: number;
-            calendar_keywords: string;
-            calendar_exclude: string;
-            closing_day: number;
-            pay_month_offset: number;
-            pay_day: number;
-            pay_same_day: number;
-          }
-        | undefined;
+      const cur = await d.get<{
+        name: string;
+        weekday_rate: number;
+        weekend_holiday_rate: number;
+        transport_per_shift: number;
+        calendar_keywords: string;
+        calendar_exclude: string;
+        closing_day: number;
+        pay_month_offset: number;
+        pay_day: number;
+        pay_same_day: number;
+      }>(
+        "SELECT name, weekday_rate, weekend_holiday_rate, transport_per_shift, calendar_keywords, calendar_exclude, closing_day, pay_month_offset, pay_day, pay_same_day FROM jobs WHERE id = ? AND user_id = ?",
+        body.id,
+        user.id,
+      );
       if (!cur) return Response.json({ error: "バイト先が見つかりません。" }, { status: 404 });
       const name = body.name !== undefined ? body.name.trim() : cur.name;
       const weekday =
@@ -86,9 +84,21 @@ export async function POST(request: Request) {
           ? Math.min(Math.max(1, Math.round(Number(body.payDay) || 25)), 31)
           : cur.pay_day;
       const paySameDay = body.paySameDay !== undefined ? (body.paySameDay ? 1 : 0) : cur.pay_same_day;
-      d.prepare(
+      await d.run(
         "UPDATE jobs SET name = ?, weekday_rate = ?, weekend_holiday_rate = ?, transport_per_shift = ?, calendar_keywords = ?, calendar_exclude = ?, closing_day = ?, pay_month_offset = ?, pay_day = ?, pay_same_day = ? WHERE id = ? AND user_id = ?",
-      ).run(name, weekday, weekend, transport, keywords, excludes, closingDay, payOffset, payDay, paySameDay, body.id, user.id);
+        name,
+        weekday,
+        weekend,
+        transport,
+        keywords,
+        excludes,
+        closingDay,
+        payOffset,
+        payDay,
+        paySameDay,
+        body.id,
+        user.id,
+      );
       return Response.json({ ok: true, id: body.id });
     }
     // 新規作成
@@ -107,12 +117,27 @@ export async function POST(request: Request) {
     const id = uid();
     // 掛け持ちでも見分けられるよう、作成順にパレットから色を自動割り当て
     const count = (
-      d.prepare("SELECT COUNT(*) AS c FROM jobs WHERE user_id = ?").get(user.id) as { c: number }
+      (await d.get<{ c: number }>("SELECT COUNT(*) AS c FROM jobs WHERE user_id = ?", user.id)) as {
+        c: number;
+      }
     ).c;
     const color = JOB_COLORS[count % JOB_COLORS.length];
-    d.prepare(
+    await d.run(
       "INSERT INTO jobs (id, user_id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, calendar_keywords, calendar_exclude, color, closing_day, pay_month_offset, pay_day, pay_same_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    ).run(id, user.id, name, weekday, weekend, transport, keywords, excludes, color, closingDay, payOffset, payDay, body.paySameDay ? 1 : 0);
+      id,
+      user.id,
+      name,
+      weekday,
+      weekend,
+      transport,
+      keywords,
+      excludes,
+      color,
+      closingDay,
+      payOffset,
+      payDay,
+      body.paySameDay ? 1 : 0,
+    );
     return Response.json({ ok: true, id });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
@@ -125,9 +150,9 @@ export async function DELETE(request: Request) {
     const user = await requireUser();
     const id = new URL(request.url).searchParams.get("id");
     if (!id) return Response.json({ error: "id required" }, { status: 400 });
-    const d = db();
-    d.prepare("DELETE FROM shifts WHERE job_id = ? AND user_id = ?").run(id, user.id);
-    d.prepare("DELETE FROM jobs WHERE id = ? AND user_id = ?").run(id, user.id);
+    const d = await db();
+    await d.run("DELETE FROM shifts WHERE job_id = ? AND user_id = ?", id, user.id);
+    await d.run("DELETE FROM jobs WHERE id = ? AND user_id = ?", id, user.id);
     return Response.json({ ok: true });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();

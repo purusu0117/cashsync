@@ -1,11 +1,12 @@
 // 収支・給与・定期計上のドメインロジック（もこもこ家計簿 app.js から移植・一般化）。
 // サーバー専用（db を触る）。純粋計算の部分は関数単位でテスト可能に分離。
+// 「今日」はJST固定（jst.ts）でサーバーTZ非依存。給与計算・定期計上のロジック自体は不変。
 import { isHoliday } from "@holiday-jp/holiday_jp";
 import { db, uid } from "./db";
+import { jstToday, jstTodayStr } from "./jst";
 
 export function todayStr(): string {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+  return jstTodayStr();
 }
 
 export function monthOf(date: string): string {
@@ -23,8 +24,7 @@ export function daysInMonth(month: string): number {
 
 /** 今日を含む残り日数（前作 daysRemainingInMonth の移植） */
 export function daysRemainingInMonth(): number {
-  const n = new Date();
-  return daysInMonth(currentMonth()) - n.getDate() + 1;
+  return daysInMonth(currentMonth()) - jstToday().d + 1;
 }
 
 function parseLocalDate(date: string): Date {
@@ -107,23 +107,25 @@ export function payPeriodFor(job: JobRow, month: string): { start: string; end: 
  * その月に「支払われる」シフト収入（前作 fetchKimihanIncome の計算部を移植・給料日対応）。
  * 締め日・支払月が未設定のバイト先は従来どおり当月1日〜末日の勤務＝当月収入。
  */
-export function monthShiftIncome(userId: string, month: string): MonthShiftIncome {
-  const d = db();
-  const jobs = d
-    .prepare(
-      "SELECT id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, closing_day, pay_month_offset, pay_same_day FROM jobs WHERE user_id = ?",
-    )
-    .all(userId) as unknown as JobRow[];
+export async function monthShiftIncome(userId: string, month: string): Promise<MonthShiftIncome> {
+  const d = await db();
+  const jobs = await d.all<JobRow>(
+    "SELECT id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, closing_day, pay_month_offset, pay_same_day FROM jobs WHERE user_id = ?",
+    userId,
+  );
   let total = 0;
   let weekdayHours = 0;
   let weekendHolidayHours = 0;
   let shiftCount = 0;
-  const stmt = d.prepare(
-    "SELECT id, job_id, date, start_min, end_min, break_min FROM shifts WHERE user_id = ? AND job_id = ? AND date >= ? AND date <= ?",
-  );
   for (const job of jobs) {
     const period = payPeriodFor(job, month);
-    const shifts = stmt.all(userId, job.id, period.start, period.end) as unknown as ShiftRow[];
+    const shifts = await d.all<ShiftRow>(
+      "SELECT id, job_id, date, start_min, end_min, break_min FROM shifts WHERE user_id = ? AND job_id = ? AND date >= ? AND date <= ?",
+      userId,
+      job.id,
+      period.start,
+      period.end,
+    );
     for (const s of shifts) {
       const hours = Math.max(0, s.end_min - s.start_min - s.break_min) / 60;
       if (isWeekendOrHoliday(s.date)) weekendHolidayHours += hours;
@@ -142,22 +144,21 @@ function nextMonth(month: string): string {
 }
 
 /** その月に「働いた」シフトの稼ぎ（シフト画面用。支払いは各jobの給料日） */
-export function monthWorkIncome(userId: string, month: string): MonthShiftIncome {
-  const d = db();
+export async function monthWorkIncome(userId: string, month: string): Promise<MonthShiftIncome> {
+  const d = await db();
   const jobs = new Map(
     (
-      d
-        .prepare(
-          "SELECT id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, closing_day, pay_month_offset FROM jobs WHERE user_id = ?",
-        )
-        .all(userId) as unknown as JobRow[]
+      await d.all<JobRow>(
+        "SELECT id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, closing_day, pay_month_offset FROM jobs WHERE user_id = ?",
+        userId,
+      )
     ).map((j) => [j.id, j]),
   );
-  const shifts = d
-    .prepare(
-      "SELECT id, job_id, date, start_min, end_min, break_min FROM shifts WHERE user_id = ? AND date LIKE ?",
-    )
-    .all(userId, `${month}-%`) as unknown as ShiftRow[];
+  const shifts = await d.all<ShiftRow>(
+    "SELECT id, job_id, date, start_min, end_min, break_min FROM shifts WHERE user_id = ? AND date LIKE ?",
+    userId,
+    `${month}-%`,
+  );
   let total = 0;
   let weekdayHours = 0;
   let weekendHolidayHours = 0;
@@ -183,20 +184,22 @@ export interface Payday {
 }
 
 /** その月の給料日一覧（カレンダー表示用）。金額はその月に支払われる給料 */
-export function paydays(userId: string, month: string): Payday[] {
-  const d = db();
-  const jobs = d
-    .prepare(
-      "SELECT id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, closing_day, pay_month_offset, pay_day, pay_same_day, color FROM jobs WHERE user_id = ?",
-    )
-    .all(userId) as unknown as (JobRow & { pay_day: number; color: string; name: string })[];
-  const out: Payday[] = [];
-  const stmt = d.prepare(
-    "SELECT id, job_id, date, start_min, end_min, break_min FROM shifts WHERE user_id = ? AND job_id = ? AND date >= ? AND date <= ?",
+export async function paydays(userId: string, month: string): Promise<Payday[]> {
+  const d = await db();
+  const jobs = await d.all<JobRow & { pay_day: number; color: string; name: string }>(
+    "SELECT id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, closing_day, pay_month_offset, pay_day, pay_same_day, color FROM jobs WHERE user_id = ?",
+    userId,
   );
+  const out: Payday[] = [];
   for (const job of jobs) {
     const period = payPeriodFor(job, month);
-    const shifts = stmt.all(userId, job.id, period.start, period.end) as unknown as ShiftRow[];
+    const shifts = await d.all<ShiftRow>(
+      "SELECT id, job_id, date, start_min, end_min, break_min FROM shifts WHERE user_id = ? AND job_id = ? AND date >= ? AND date <= ?",
+      userId,
+      job.id,
+      period.start,
+      period.end,
+    );
     if (job.pay_same_day) {
       // 当日払い：働いた日ごとにその日の給料を表示
       for (const sh of shifts) {
@@ -234,15 +237,11 @@ export function paydays(userId: string, month: string): Payday[] {
  * 開始月〜upToMonth の未計上月を全てバックフィルするので、
  * ある月にアプリを一度も開かなくても後から欠落しない。
  * 二重計上対策として recurring_posts への mark を先に行い（PK制約で弾く）、成功時のみ本体を挿入する。
+ * （sqlite/postgres共通化のため、PK違反のcatchではなく ON CONFLICT DO NOTHING ＋件数判定。挙動は同一）
  */
-export function postRecurringForMonth(userId: string, upToMonth: string) {
-  const d = db();
-  const items = d
-    .prepare(
-      `SELECT r.id, r.kind, r.name, r.amount, r.category_id, r.start_month, r.end_month, r.post_day
-       FROM recurring_items r WHERE r.user_id = ? AND r.start_month <= ?`,
-    )
-    .all(userId, upToMonth) as unknown as {
+export async function postRecurringForMonth(userId: string, upToMonth: string) {
+  const d = await db();
+  const items = await d.all<{
     id: string;
     kind: string;
     name: string;
@@ -251,30 +250,48 @@ export function postRecurringForMonth(userId: string, upToMonth: string) {
     start_month: string;
     end_month: string | null;
     post_day: number;
-  }[];
+  }>(
+    `SELECT r.id, r.kind, r.name, r.amount, r.category_id, r.start_month, r.end_month, r.post_day
+     FROM recurring_items r WHERE r.user_id = ? AND r.start_month <= ?`,
+    userId,
+    upToMonth,
+  );
   if (items.length === 0) return;
-  const insExp = d.prepare(
-    "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, created_at) VALUES (?, ?, ?, ?, ?, ?, 'recurring', ?)",
-  );
-  const insInc = d.prepare(
-    "INSERT INTO incomes (id, user_id, date, amount, type, memo, created_at) VALUES (?, ?, ?, ?, 'recurring', ?, ?)",
-  );
-  const mark = d.prepare("INSERT INTO recurring_posts (recurring_id, month) VALUES (?, ?)");
   for (const it of items) {
     let month = it.start_month;
     let guard = 0;
     while (month <= upToMonth && (!it.end_month || month <= it.end_month) && guard++ < 120) {
-      try {
-        mark.run(it.id, month); // 計上済みならPK制約でここが throw → skip
+      const mark = await d.run(
+        "INSERT INTO recurring_posts (recurring_id, month) VALUES (?, ?) ON CONFLICT (recurring_id, month) DO NOTHING",
+        it.id,
+        month,
+      );
+      if (mark.changes > 0) {
+        // 未計上月のみ本体を挿入（計上済みなら changes=0 → skip）
         const day = String(Math.min(Math.max(1, it.post_day), daysInMonth(month))).padStart(2, "0");
         const date = `${month}-${day}`;
         if (it.kind === "expense") {
-          insExp.run(uid(), userId, date, it.amount, it.category_id, it.name, Date.now());
+          await d.run(
+            "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, created_at) VALUES (?, ?, ?, ?, ?, ?, 'recurring', ?)",
+            uid(),
+            userId,
+            date,
+            it.amount,
+            it.category_id,
+            it.name,
+            Date.now(),
+          );
         } else {
-          insInc.run(uid(), userId, date, it.amount, it.name, Date.now());
+          await d.run(
+            "INSERT INTO incomes (id, user_id, date, amount, type, memo, created_at) VALUES (?, ?, ?, ?, 'recurring', ?, ?)",
+            uid(),
+            userId,
+            date,
+            it.amount,
+            it.name,
+            Date.now(),
+          );
         }
-      } catch {
-        /* 計上済み */
       }
       month = nextMonth(month);
     }
@@ -288,15 +305,19 @@ export interface MonthSummary {
   shift: MonthShiftIncome;
 }
 
-export function monthSummary(userId: string, month: string): MonthSummary {
-  const d = db();
-  const exp = d
-    .prepare("SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date LIKE ?")
-    .get(userId, `${month}-%`) as { s: number };
-  const inc = d
-    .prepare("SELECT COALESCE(SUM(amount), 0) AS s FROM incomes WHERE user_id = ? AND date LIKE ?")
-    .get(userId, `${month}-%`) as { s: number };
-  const shift = monthShiftIncome(userId, month);
+export async function monthSummary(userId: string, month: string): Promise<MonthSummary> {
+  const d = await db();
+  const exp = (await d.get<{ s: number }>(
+    "SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date LIKE ?",
+    userId,
+    `${month}-%`,
+  )) as { s: number };
+  const inc = (await d.get<{ s: number }>(
+    "SELECT COALESCE(SUM(amount), 0) AS s FROM incomes WHERE user_id = ? AND date LIKE ?",
+    userId,
+    `${month}-%`,
+  )) as { s: number };
+  const shift = await monthShiftIncome(userId, month);
   return {
     month,
     incomeTotal: inc.s + shift.total,
@@ -323,14 +344,14 @@ export interface MonthForecast {
  * 月末残高予測（Zaim黒字チェッカー方式の簡易版）：
  * 変動支出（定期計上を除く）の1日平均 × 残り日数を、現在の残額からさらに引く。
  */
-export function monthForecast(userId: string, summary: MonthSummary): MonthForecast {
-  const d = db();
-  const row = d
-    .prepare(
-      "SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date LIKE ? AND source != 'recurring'",
-    )
-    .get(userId, `${summary.month}-%`) as { s: number };
-  const daysPassed = new Date().getDate();
+export async function monthForecast(userId: string, summary: MonthSummary): Promise<MonthForecast> {
+  const d = await db();
+  const row = (await d.get<{ s: number }>(
+    "SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date LIKE ? AND source != 'recurring'",
+    userId,
+    `${summary.month}-%`,
+  )) as { s: number };
+  const daysPassed = jstToday().d;
   const avgDaily = row.s / Math.max(1, daysPassed);
   const futureSpend = avgDaily * (daysInMonth(summary.month) - daysPassed);
   return {
@@ -345,21 +366,22 @@ export interface NoMoneyDays {
 }
 
 /** ノーマネーデー：変動支出（定期計上を除く）が1件も無かった日。過去月は月全体、当月は今日まで */
-export function noMoneyDays(userId: string, month: string): NoMoneyDays {
-  const rows = db()
-    .prepare(
-      "SELECT DISTINCT date FROM expenses WHERE user_id = ? AND date LIKE ? AND source != 'recurring'",
-    )
-    .all(userId, `${month}-%`) as unknown as { date: string }[];
+export async function noMoneyDays(userId: string, month: string): Promise<NoMoneyDays> {
+  const d = await db();
+  const rows = await d.all<{ date: string }>(
+    "SELECT DISTINCT date FROM expenses WHERE user_id = ? AND date LIKE ? AND source != 'recurring'",
+    userId,
+    `${month}-%`,
+  );
   const spent = new Set(rows.map((r) => r.date));
   const lastDay = month < currentMonth() ? daysInMonth(month) : Number(todayStr().slice(8));
   let count = 0;
-  for (let d = 1; d <= lastDay; d++) {
-    if (!spent.has(`${month}-${String(d).padStart(2, "0")}`)) count++;
+  for (let day = 1; day <= lastDay; day++) {
+    if (!spent.has(`${month}-${String(day).padStart(2, "0")}`)) count++;
   }
   let streak = 0;
-  for (let d = lastDay; d >= 1; d--) {
-    if (spent.has(`${month}-${String(d).padStart(2, "0")}`)) break;
+  for (let day = lastDay; day >= 1; day--) {
+    if (spent.has(`${month}-${String(day).padStart(2, "0")}`)) break;
     streak++;
   }
   return { count, streak };
@@ -372,13 +394,15 @@ export interface CategorySpend {
 }
 
 /** 月のカテゴリ別支出（レビュー用） */
-export function categoryBreakdown(userId: string, month: string): CategorySpend[] {
-  return db()
-    .prepare(
-      `SELECT COALESCE(c.name, '未分類') AS category, SUM(e.amount) AS amount, COUNT(*) AS count
-       FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
-       WHERE e.user_id = ? AND e.date LIKE ?
-       GROUP BY e.category_id ORDER BY amount DESC`,
-    )
-    .all(userId, `${month}-%`) as unknown as CategorySpend[];
+export async function categoryBreakdown(userId: string, month: string): Promise<CategorySpend[]> {
+  const d = await db();
+  // GROUP BY に c.name を含める（Postgres の集約規則対応。category_id ごとに c.name は一意なので結果は不変）
+  return d.all<CategorySpend>(
+    `SELECT COALESCE(c.name, '未分類') AS category, SUM(e.amount) AS amount, COUNT(*) AS count
+     FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
+     WHERE e.user_id = ? AND e.date LIKE ?
+     GROUP BY e.category_id, c.name ORDER BY amount DESC`,
+    userId,
+    `${month}-%`,
+  );
 }

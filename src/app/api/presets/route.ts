@@ -7,13 +7,13 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const user = await requireUser();
-    const presets = db()
-      .prepare(
-        `SELECT p.id, p.label, p.amount, p.category_id, c.name AS category, c.icon
-         FROM quick_presets p LEFT JOIN categories c ON c.id = p.category_id
-         WHERE p.user_id = ? ORDER BY p.sort`,
-      )
-      .all(user.id);
+    const d = await db();
+    const presets = await d.all(
+      `SELECT p.id, p.label, p.amount, p.category_id, c.name AS category, c.icon
+       FROM quick_presets p LEFT JOIN categories c ON c.id = p.category_id
+       WHERE p.user_id = ? ORDER BY p.sort`,
+      user.id,
+    );
     return Response.json({ presets });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
@@ -34,14 +34,21 @@ export async function POST(request: Request) {
     if (!label || !Number.isFinite(amount) || amount <= 0) {
       return Response.json({ error: "ラベルと金額は必須です。" }, { status: 400 });
     }
-    const d = db();
-    const max = d
-      .prepare("SELECT COALESCE(MAX(sort), -1) AS m FROM quick_presets WHERE user_id = ?")
-      .get(user.id) as { m: number };
+    const d = await db();
+    const max = (await d.get<{ m: number }>(
+      "SELECT COALESCE(MAX(sort), -1) AS m FROM quick_presets WHERE user_id = ?",
+      user.id,
+    )) as { m: number };
     const id = uid();
-    d.prepare(
+    await d.run(
       "INSERT INTO quick_presets (id, user_id, label, amount, category_id, sort) VALUES (?, ?, ?, ?, ?, ?)",
-    ).run(id, user.id, label, amount, body.categoryId ?? null, max.m + 1);
+      id,
+      user.id,
+      label,
+      amount,
+      body.categoryId ?? null,
+      max.m + 1,
+    );
     return Response.json({ ok: true, id });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
@@ -54,7 +61,8 @@ export async function DELETE(request: Request) {
     const user = await requireUser();
     const id = new URL(request.url).searchParams.get("id");
     if (!id) return Response.json({ error: "id required" }, { status: 400 });
-    db().prepare("DELETE FROM quick_presets WHERE id = ? AND user_id = ?").run(id, user.id);
+    const d = await db();
+    await d.run("DELETE FROM quick_presets WHERE id = ? AND user_id = ?", id, user.id);
     return Response.json({ ok: true });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();

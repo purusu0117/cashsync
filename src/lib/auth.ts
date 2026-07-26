@@ -26,16 +26,21 @@ export interface SessionUser {
   name: string;
 }
 
-export function createSession(userId: string): string {
+export async function createSession(userId: string): Promise<string> {
   const token = randomBytes(32).toString("hex");
-  db()
-    .prepare("INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)")
-    .run(token, userId, Date.now());
+  const d = await db();
+  await d.run(
+    "INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)",
+    token,
+    userId,
+    Date.now(),
+  );
   return token;
 }
 
-export function destroySession(token: string) {
-  db().prepare("DELETE FROM sessions WHERE token = ?").run(token);
+export async function destroySession(token: string): Promise<void> {
+  const d = await db();
+  await d.run("DELETE FROM sessions WHERE token = ?", token);
 }
 
 /** クッキーのセッショントークンからユーザーを引く。未ログインなら null */
@@ -43,12 +48,12 @@ export async function currentUser(): Promise<SessionUser | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (!token) return null;
-  const row = db()
-    .prepare(
-      `SELECT u.id, u.email, u.name FROM sessions s
-       JOIN users u ON u.id = s.user_id WHERE s.token = ?`,
-    )
-    .get(token) as SessionUser | undefined;
+  const d = await db();
+  const row = await d.get<SessionUser>(
+    `SELECT u.id, u.email, u.name FROM sessions s
+     JOIN users u ON u.id = s.user_id WHERE s.token = ?`,
+    token,
+  );
   return row ?? null;
 }
 
@@ -66,25 +71,28 @@ export class AuthError extends Error {
 }
 
 /** iPhoneショートカット等の外部連携用：Authorization: Bearer <api_token> からユーザーを引く */
-export function userFromBearer(request: Request): SessionUser | null {
+export async function userFromBearer(request: Request): Promise<SessionUser | null> {
   const header = request.headers.get("authorization") ?? "";
   const m = header.match(/^Bearer\s+([a-f0-9]{32,})$/i);
   if (!m) return null;
-  const row = db()
-    .prepare("SELECT id, email, name FROM users WHERE api_token = ?")
-    .get(m[1]) as SessionUser | undefined;
+  const d = await db();
+  const row = await d.get<SessionUser>(
+    "SELECT id, email, name FROM users WHERE api_token = ?",
+    m[1],
+  );
   return row ?? null;
 }
 
 /** ユーザーのAPIトークンを取得（無ければ生成して保存） */
-export function ensureApiToken(userId: string): string {
-  const d = db();
-  const row = d.prepare("SELECT api_token FROM users WHERE id = ?").get(userId) as
-    | { api_token: string | null }
-    | undefined;
+export async function ensureApiToken(userId: string): Promise<string> {
+  const d = await db();
+  const row = await d.get<{ api_token: string | null }>(
+    "SELECT api_token FROM users WHERE id = ?",
+    userId,
+  );
   if (row?.api_token) return row.api_token;
   const token = randomBytes(24).toString("hex");
-  d.prepare("UPDATE users SET api_token = ? WHERE id = ?").run(token, userId);
+  await d.run("UPDATE users SET api_token = ? WHERE id = ?", token, userId);
   return token;
 }
 

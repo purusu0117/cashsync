@@ -10,13 +10,13 @@ const MONTH_RE = /^\d{4}-\d{2}$/;
 export async function GET() {
   try {
     const user = await requireUser();
-    const items = db()
-      .prepare(
-        `SELECT r.id, r.kind, r.name, r.amount, r.category_id, r.start_month, r.end_month, r.post_day, c.name AS category
-         FROM recurring_items r LEFT JOIN categories c ON c.id = r.category_id
-         WHERE r.user_id = ? ORDER BY r.kind, r.name`,
-      )
-      .all(user.id);
+    const d = await db();
+    const items = await d.all(
+      `SELECT r.id, r.kind, r.name, r.amount, r.category_id, r.start_month, r.end_month, r.post_day, c.name AS category
+       FROM recurring_items r LEFT JOIN categories c ON c.id = r.category_id
+       WHERE r.user_id = ? ORDER BY r.kind, r.name`,
+      user.id,
+    );
     return Response.json({ items });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
@@ -47,11 +47,19 @@ export async function POST(request: Request) {
     const endMonth = body.endMonth && MONTH_RE.test(body.endMonth) ? body.endMonth : null;
     const postDay = Math.min(Math.max(1, Math.round(Number(body.postDay) || 1)), 31);
     const id = uid();
-    db()
-      .prepare(
-        "INSERT INTO recurring_items (id, user_id, kind, name, amount, category_id, start_month, end_month, post_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      )
-      .run(id, user.id, kind, name, amount, body.categoryId ?? null, startMonth, endMonth, postDay);
+    const d = await db();
+    await d.run(
+      "INSERT INTO recurring_items (id, user_id, kind, name, amount, category_id, start_month, end_month, post_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      id,
+      user.id,
+      kind,
+      name,
+      amount,
+      body.categoryId ?? null,
+      startMonth,
+      endMonth,
+      postDay,
+    );
     return Response.json({ ok: true, id });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
@@ -64,7 +72,8 @@ export async function DELETE(request: Request) {
     const user = await requireUser();
     const id = new URL(request.url).searchParams.get("id");
     if (!id) return Response.json({ error: "id required" }, { status: 400 });
-    db().prepare("DELETE FROM recurring_items WHERE id = ? AND user_id = ?").run(id, user.id);
+    const d = await db();
+    await d.run("DELETE FROM recurring_items WHERE id = ? AND user_id = ?", id, user.id);
     // 計上済みレコードはそのまま残す（履歴の事実は消さない）
     return Response.json({ ok: true });
   } catch (e) {

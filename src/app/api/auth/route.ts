@@ -36,7 +36,7 @@ export async function POST(request: Request) {
 
     if (action === "logout") {
       const token = store.get(SESSION_COOKIE)?.value;
-      if (token) destroySession(token);
+      if (token) await destroySession(token);
       store.delete(SESSION_COOKIE);
       return Response.json({ ok: true });
     }
@@ -48,13 +48,13 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    const d = db();
+    const d = await db();
 
     if (action === "register") {
       if (!name || !name.trim()) {
         return Response.json({ error: "名前を入力してください。" }, { status: 400 });
       }
-      const existing = d.prepare("SELECT id FROM users WHERE email = ?").get(em);
+      const existing = await d.get("SELECT id FROM users WHERE email = ?", em);
       if (existing) {
         return Response.json(
           { error: "このメールは登録済みです。ログインしてください。" },
@@ -62,18 +62,24 @@ export async function POST(request: Request) {
         );
       }
       const id = uid();
-      d.prepare(
+      await d.run(
         "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-      ).run(id, em, name.trim(), hashPassword(password), Date.now());
-      seedCategories(id);
-      store.set(SESSION_COOKIE, createSession(id), COOKIE_OPTS);
+        id,
+        em,
+        name.trim(),
+        hashPassword(password),
+        Date.now(),
+      );
+      await seedCategories(id);
+      store.set(SESSION_COOKIE, await createSession(id), COOKIE_OPTS);
       return Response.json({ ok: true, user: { id, email: em, name: name.trim() } });
     }
 
     // login（身内アプリなので、未登録とパスワード違いを分けて案内する）
-    const u = d
-      .prepare("SELECT id, email, name, password_hash FROM users WHERE email = ?")
-      .get(em) as { id: string; email: string; name: string; password_hash: string } | undefined;
+    const u = await d.get<{ id: string; email: string; name: string; password_hash: string }>(
+      "SELECT id, email, name, password_hash FROM users WHERE email = ?",
+      em,
+    );
     if (!u) {
       return Response.json(
         { error: "このメールアドレスは登録されていません。「アカウントを作る」から登録してください。" },
@@ -83,7 +89,7 @@ export async function POST(request: Request) {
     if (!verifyPassword(password, u.password_hash)) {
       return Response.json({ error: "パスワードが違います。" }, { status: 401 });
     }
-    store.set(SESSION_COOKIE, createSession(u.id), COOKIE_OPTS);
+    store.set(SESSION_COOKIE, await createSession(u.id), COOKIE_OPTS);
     return Response.json({ ok: true, user: { id: u.id, email: u.email, name: u.name } });
   } catch (e) {
     return Response.json(

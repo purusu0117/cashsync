@@ -6,9 +6,11 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const user = await requireUser();
-    const categories = db()
-      .prepare("SELECT id, name, icon, sort FROM categories WHERE user_id = ? ORDER BY sort")
-      .all(user.id);
+    const d = await db();
+    const categories = await d.all(
+      "SELECT id, name, icon, sort FROM categories WHERE user_id = ? ORDER BY sort",
+      user.id,
+    );
     return Response.json({ categories });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
@@ -22,12 +24,14 @@ export async function POST(request: Request) {
     const body = (await request.json()) as { name?: string; icon?: string };
     const name = (body.name ?? "").trim();
     if (!name) return Response.json({ error: "名前は必須です。" }, { status: 400 });
-    const d = db();
-    const max = d
-      .prepare("SELECT COALESCE(MAX(sort), -1) AS m FROM categories WHERE user_id = ?")
-      .get(user.id) as { m: number };
+    const d = await db();
+    const max = (await d.get<{ m: number }>(
+      "SELECT COALESCE(MAX(sort), -1) AS m FROM categories WHERE user_id = ?",
+      user.id,
+    )) as { m: number };
     const id = uid();
-    d.prepare("INSERT INTO categories (id, user_id, name, icon, sort) VALUES (?, ?, ?, ?, ?)").run(
+    await d.run(
+      "INSERT INTO categories (id, user_id, name, icon, sort) VALUES (?, ?, ?, ?, ?)",
       id,
       user.id,
       name,
@@ -46,19 +50,20 @@ export async function DELETE(request: Request) {
     const user = await requireUser();
     const id = new URL(request.url).searchParams.get("id");
     if (!id) return Response.json({ error: "id required" }, { status: 400 });
-    const d = db();
-    d.prepare("UPDATE expenses SET category_id = NULL WHERE category_id = ? AND user_id = ?").run(
+    const d = await db();
+    await d.run("UPDATE expenses SET category_id = NULL WHERE category_id = ? AND user_id = ?", id, user.id);
+    // 定期・プリセットの参照も外す（存在しないカテゴリIDでの計上を防ぐ）
+    await d.run(
+      "UPDATE recurring_items SET category_id = NULL WHERE category_id = ? AND user_id = ?",
       id,
       user.id,
     );
-    // 定期・プリセットの参照も外す（存在しないカテゴリIDでの計上を防ぐ）
-    d.prepare(
-      "UPDATE recurring_items SET category_id = NULL WHERE category_id = ? AND user_id = ?",
-    ).run(id, user.id);
-    d.prepare(
+    await d.run(
       "UPDATE quick_presets SET category_id = NULL WHERE category_id = ? AND user_id = ?",
-    ).run(id, user.id);
-    d.prepare("DELETE FROM categories WHERE id = ? AND user_id = ?").run(id, user.id);
+      id,
+      user.id,
+    );
+    await d.run("DELETE FROM categories WHERE id = ? AND user_id = ?", id, user.id);
     return Response.json({ ok: true });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
