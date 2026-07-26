@@ -4,6 +4,7 @@
 // ネイティブアプリでのみ表示（Webでは null）。リワード動画の視聴完了後に
 // /api/ai-credits へ POST し、当月のボーナス枠を+3する。
 import { useEffect, useState } from "react";
+import { PlayIcon } from "@/components/Icons";
 import { isNativePlatform, showRewardedAd } from "@/lib/native";
 
 export default function RewardCredit({
@@ -57,9 +58,15 @@ export default function RewardCredit({
       <button
         onClick={watch}
         disabled={busy}
-        className="dot w-full rounded-md border border-vermilion py-2.5 text-sm text-vermilion active:translate-y-0.5 disabled:opacity-50"
+        className="dot flex w-full items-center justify-center gap-1.5 rounded-md border border-vermilion py-2.5 text-sm text-vermilion active:translate-y-0.5 disabled:opacity-50"
       >
-        {busy ? "動画を再生中・・・" : "🎬 動画を見て AI利用枠を +3回"}
+        {busy ? (
+          "動画を再生中・・・"
+        ) : (
+          <>
+            <PlayIcon className="h-4 w-4 shrink-0" /> 動画を見て AI利用枠を +3回
+          </>
+        )}
       </button>
       {note && <p className="text-center text-[11px] text-ink-faint">{note}</p>}
     </div>

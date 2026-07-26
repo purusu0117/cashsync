@@ -65,7 +65,7 @@ function runClaude(
   model: CliModel = "sonnet",
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    // ⚠️ 日本語プロンプトを argv で渡すと Windows で文字化けする → stdin に UTF-8 で流す。
+    // 注意: 日本語プロンプトを argv で渡すと Windows で文字化けする → stdin に UTF-8 で流す。
     const args = [
       "--print",
       "--model",
@@ -265,7 +265,7 @@ function normalizeReceipt(raw: Partial<ReceiptScan>, categoryNames: string[]): R
       : items.reduce((s, i) => s + i.price, 0);
   // カテゴリはゆるやかに照合（前後空白・部分一致）。一致しなければ空＝「カテゴリなし」
   // （以前は勝手に末尾カテゴリへ倒していたため、誤分類が「その他」等に紛れて気づけなかった）
-  // ⚠️ rawCat が空のときは部分一致（n.includes("")=常にtrue）で先頭カテゴリに化けるので必ず空のまま返す
+  // 注意: rawCat が空のときは部分一致（n.includes("")=常にtrue）で先頭カテゴリに化けるので必ず空のまま返す
   const rawCat = typeof raw.category === "string" ? raw.category.trim() : "";
   const category = !rawCat
     ? ""

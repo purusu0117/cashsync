@@ -3,7 +3,9 @@
 // 設定：バイト先（時給）／定期支出・収入／クイックボタン／カテゴリ／ログアウト
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { CardIcon, CategoryIcon, CoinIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
+import { CATEGORY_ICON_KEYS, DEFAULT_CATEGORY_ICON } from "@/lib/categoryIcons";
 import { cachedFetch, clearApiCache } from "@/lib/cachedFetch";
 import { apiCall, apiJson } from "@/lib/clientApi";
 import { fmtYen } from "@/lib/format";
@@ -189,13 +191,13 @@ export default function SettingsPage() {
 
   // --- カテゴリ ---
   const [cName, setCName] = useState("");
-  const [cIcon, setCIcon] = useState("");
+  const [cIcon, setCIcon] = useState(DEFAULT_CATEGORY_ICON);
   async function addCategory() {
     if (!cName) return;
     await tryApi(async () => {
       await apiCall("/api/categories", apiJson({ name: cName, icon: cIcon }));
       setCName("");
-      setCIcon("");
+      setCIcon(DEFAULT_CATEGORY_ICON);
       load();
     });
   }
@@ -377,7 +379,14 @@ export default function SettingsPage() {
           {recurring.map((r) => (
             <li key={r.id}>
               <div className="flex items-baseline text-sm">
-                <span className="min-w-0 truncate">{r.kind === "income" ? "💰" : "🔁"} {r.name}</span>
+                <span className="flex min-w-0 items-center gap-1 truncate">
+                  {r.kind === "income" ? (
+                    <CoinIcon className="h-4 w-4 shrink-0 text-sage" />
+                  ) : (
+                    <CategoryIcon icon="subscription" className="h-4 w-4 shrink-0 text-ink-faint" />
+                  )}
+                  <span className="min-w-0 truncate">{r.name}</span>
+                </span>
                 <span className="leader" />
                 <span className={`dot shrink-0 tabular-nums ${r.kind === "income" ? "text-sage" : ""}`}>{fmtYen(r.amount)}</span>
                 <button onClick={() => del(`/api/recurring?id=${r.id}`)} className="ml-2 shrink-0 text-xs text-vermilion">
@@ -421,7 +430,7 @@ export default function SettingsPage() {
             <option value="">カテゴリなし</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.icon} {c.name}
+                {c.name}
               </option>
             ))}
           </select>
@@ -441,7 +450,9 @@ export default function SettingsPage() {
         </div>
 
         <div className="cutline mt-4 pt-3">
-          <h3 className="dot text-xs">💳 分割払いを追加</h3>
+          <h3 className="dot flex items-center gap-1 text-xs">
+            <CardIcon className="h-4 w-4" /> 分割払いを追加
+          </h3>
           <p className="mt-0.5 text-[11px] text-ink-faint">
             総額と回数を入れると月々の支払いを自動計算して、期間ぶんだけ毎月計上します。
           </p>
@@ -485,19 +496,37 @@ export default function SettingsPage() {
         <div className="mt-2 flex flex-wrap gap-1.5">
           {categories.map((c) => (
             <span key={c.id} className="flex items-center gap-1 rounded-full border border-rule bg-paper px-3 py-1 text-sm">
-              {c.icon} {c.name}
+              <CategoryIcon icon={c.icon} className="h-4 w-4 text-ink-faint" /> {c.name}
               <button onClick={() => del(`/api/categories?id=${c.id}`)} className="text-xs text-vermilion">
                 ✕
               </button>
             </span>
           ))}
         </div>
-        <div className="mt-3 flex gap-2">
-          <input value={cIcon} onChange={(e) => setCIcon(e.target.value)} placeholder="絵文字" className={`${input} w-20`} />
-          <input value={cName} onChange={(e) => setCName(e.target.value)} placeholder="カテゴリ名" className={`${input} flex-1 min-w-0`} />
-          <button onClick={addCategory} disabled={!cName} className={addBtn}>
-            ＋
-          </button>
+        <div className="mt-3 space-y-2">
+          <div className="flex gap-2">
+            <input value={cName} onChange={(e) => setCName(e.target.value)} placeholder="カテゴリ名" className={`${input} flex-1 min-w-0`} />
+            <button onClick={addCategory} disabled={!cName} className={addBtn}>
+              ＋ 追加
+            </button>
+          </div>
+          <div>
+            <p className="text-[11px] text-ink-faint">アイコンを選ぶ（任意）</p>
+            <div className="mt-1 grid grid-cols-8 gap-1">
+              {[DEFAULT_CATEGORY_ICON, ...CATEGORY_ICON_KEYS].map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setCIcon(k)}
+                  aria-label={`アイコン ${k}`}
+                  className={`rounded-md border p-1.5 ${
+                    cIcon === k ? "border-ink bg-card text-ink" : "border-rule bg-paper text-ink-faint"
+                  }`}
+                >
+                  <CategoryIcon icon={k} className="mx-auto h-5 w-5" />
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -518,7 +547,7 @@ export default function SettingsPage() {
       </section>
 
       <section id="shortcut" className="zig zig-t zig-b px-4 py-4 shadow-sm">
-        <h2 className="dot text-sm">📱 iPhoneショートカット連携</h2>
+        <h2 className="dot text-sm">iPhoneショートカット連携</h2>
         <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
           ショートカットから「スクショ読取→記録→スクショ削除」を一気に実行するための鍵です。ショートカットの作り方は大翔に聞いてください。
         </p>

@@ -7,6 +7,7 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
+import { migrateCategoryRow } from "./categoryIcons";
 import { POSTGRES_SCHEMA_STATEMENTS } from "./schema-postgres";
 
 export interface RunResult {
@@ -48,9 +49,12 @@ async function init(): Promise<Db> {
     const driver = await createPgPoolDriver(url);
     const d = createPostgresDb(driver);
     await ensurePostgresSchema(d);
+    await migrateCategoryIcons(d);
     return d;
   }
-  return createSqliteDb(sqliteFilePath());
+  const d = createSqliteDb(sqliteFilePath());
+  await migrateCategoryIcons(d);
+  return d;
 }
 
 function sqliteFilePath(): string {
@@ -327,6 +331,7 @@ function migrateSqlite(d: DatabaseSync) {
     );
   `);
   // 追加カラムのマイグレーション（既存DBにも効くよう ALTER を冪等に流す）
+  addColumn(d, "categories", "icon TEXT NOT NULL DEFAULT ''"); // 旧DB（icon列なし）向け
   addColumn(d, "users", "savings_goal INTEGER NOT NULL DEFAULT 0"); // 先取り貯金の月目標
   addColumn(d, "users", "api_token TEXT"); // iPhoneショートカット連携用トークン
   addColumn(d, "jobs", "calendar_exclude TEXT NOT NULL DEFAULT ''"); // カレンダー取り込みの除外ワード
@@ -472,22 +477,43 @@ export async function ensurePostgresSchema(d: Db) {
 // 共通ユーティリティ
 // ---------------------------------------------------------------------------
 
+// icon はキー文字列（categoryIcons.ts のアイコンキー）。絵文字はDBに保存しない。
 export const DEFAULT_CATEGORIES: { name: string; icon: string }[] = [
-  { name: "食費", icon: "🍚" },
-  { name: "交通", icon: "🚃" },
-  { name: "娯楽", icon: "🎮" },
-  { name: "日用品", icon: "🧻" },
-  { name: "交際", icon: "🍻" },
-  { name: "サブスク", icon: "🔁" },
-  { name: "洋服", icon: "👕" },
-  { name: "美容", icon: "💄" },
-  { name: "医療", icon: "💊" },
-  { name: "旅行", icon: "✈️" },
-  { name: "学び", icon: "📚" },
-  { name: "住まい", icon: "🏠" },
-  { name: "通信", icon: "📱" },
-  { name: "その他", icon: "🧾" },
+  { name: "食費", icon: "food" },
+  { name: "交通", icon: "transport" },
+  { name: "娯楽", icon: "fun" },
+  { name: "日用品", icon: "daily" },
+  { name: "交際", icon: "social" },
+  { name: "サブスク", icon: "subscription" },
+  { name: "洋服", icon: "clothes" },
+  { name: "美容", icon: "beauty" },
+  { name: "医療", icon: "medical" },
+  { name: "旅行", icon: "travel" },
+  { name: "学び", icon: "study" },
+  { name: "住まい", icon: "home" },
+  { name: "通信", icon: "comm" },
+  { name: "その他", icon: "other" },
 ];
+
+/**
+ * 既存カテゴリの絵文字を一掃するマイグレーション（冪等・起動時に毎回流してよい）。
+ *  - name: 絵文字を除去（「サブスク🔁」→「サブスク」）
+ *  - icon: 旧絵文字/空 → アイコンキー（'subscription' 等。独自カテゴリは 'tag'）
+ * AI分類プロンプトへ渡すカテゴリ名（SELECT name FROM categories）もこれで綺麗になる。
+ */
+export async function migrateCategoryIcons(d: Db): Promise<number> {
+  const rows = await d.all<{ id: string; name: string; icon: string }>(
+    "SELECT id, name, icon FROM categories",
+  );
+  let changed = 0;
+  for (const r of rows) {
+    const m = migrateCategoryRow(r.name, r.icon ?? "");
+    if (!m) continue;
+    await d.run("UPDATE categories SET name = ?, icon = ? WHERE id = ?", m.name, m.icon, r.id);
+    changed++;
+  }
+  return changed;
+}
 
 export async function seedCategories(userId: string) {
   const d = await db();

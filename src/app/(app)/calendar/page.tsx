@@ -3,6 +3,7 @@
 // お金カレンダー：日付ごとの−支出/+収入と給料日を月表示。タップで詳細。
 // 上部に「今日使えるお金」の計算内訳（何がいくらで、どう割られているか）を表示。
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CategoryIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
 import { cachedFetch } from "@/lib/cachedFetch";
 import { fmtDateJa, fmtMonthJa, fmtYen, todayLocal } from "@/lib/format";
@@ -294,7 +295,9 @@ export default function CalendarPage() {
               <ul className="mt-3 cutline pt-2">
                 {selExp.map((e) => (
                   <li key={e.id} className="flex items-baseline gap-1 py-1 text-sm">
-                    <span>{e.icon}</span>
+                    {e.category && (
+                      <CategoryIcon icon={e.icon} className="h-4 w-4 shrink-0 self-center text-ink-faint" />
+                    )}
                     <span className="truncate">{e.memo || e.category || "支出"}</span>
                     <span className="leader" />
                     <span className="dot tabular-nums text-vermilion">−{fmtYen(e.amount)}</span>

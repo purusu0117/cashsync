@@ -2,7 +2,8 @@
 // アプリ本体のドメインロジック（seedCategories / money / aiUsage）を
 // setDbForTesting で注入したアダプタ経由で実際に呼ぶ。
 import { randomBytes, scryptSync } from "node:crypto";
-import { setDbForTesting, seedCategories, uid, type Db } from "../src/lib/db";
+import { isCategoryIconKey, stripCategoryEmoji } from "../src/lib/categoryIcons";
+import { migrateCategoryIcons, setDbForTesting, seedCategories, uid, type Db } from "../src/lib/db";
 import { checkAndCountUsage, getUserPlan, FREE_LIMITS } from "../src/lib/aiUsage";
 import {
   duplicateExpenseExists,
@@ -69,12 +70,76 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
   // --- 2. カテゴリseed ---
   console.log("[2] カテゴリseed");
   await seedCategories(userId);
-  const cats = await d.all<{ id: string; name: string }>(
-    "SELECT id, name FROM categories WHERE user_id = ? ORDER BY sort",
+  const cats = await d.all<{ id: string; name: string; icon: string }>(
+    "SELECT id, name, icon FROM categories WHERE user_id = ? ORDER BY sort",
     userId,
   );
   check("デフォルト14カテゴリが入る", cats.length === 14, cats.length);
+  check(
+    "seed直後のiconは全てアイコンキー（絵文字なし）",
+    cats.every((c) => isCategoryIconKey(c.icon)),
+    cats.map((c) => c.icon),
+  );
+  check(
+    "seed直後のカテゴリ名に絵文字がない",
+    cats.every((c) => stripCategoryEmoji(c.name) === c.name),
+    cats.map((c) => c.name),
+  );
   const foodCat = cats.find((c) => c.name === "食費")!;
+  check("食費のiconは food", foodCat.icon === "food", foodCat.icon);
+
+  // --- 2b. 絵文字カテゴリのマイグレーション（冪等） ---
+  console.log("[2b] 絵文字カテゴリのマイグレーション");
+  const legacyUser = uid();
+  const legacy: [string, string][] = [
+    ["サブスク🔁", "🔁"], // 旧標準（名前にも絵文字が付いた形）
+    ["旅行✈️", "✈️"], // FE0F付き絵文字
+    ["食費", "🍚"], // 名前は綺麗・iconだけ絵文字
+    ["推し活🎤", ""], // ユーザー独自（icon未設定）→ デフォルトのタグ
+    ["美容", ""], // 標準名でicon空 → 名前から復元
+  ];
+  for (let i = 0; i < legacy.length; i++) {
+    await d.run(
+      "INSERT INTO categories (id, user_id, name, icon, sort) VALUES (?, ?, ?, ?, ?)",
+      uid(),
+      legacyUser,
+      legacy[i][0],
+      legacy[i][1],
+      i,
+    );
+  }
+  const changed1 = await migrateCategoryIcons(d);
+  const migrated = await d.all<{ name: string; icon: string }>(
+    "SELECT name, icon FROM categories WHERE user_id = ? ORDER BY sort",
+    legacyUser,
+  );
+  check("旧カテゴリ5件が全て変換される", changed1 >= 5, changed1);
+  check(
+    "「サブスク🔁」→ name=サブスク / icon=subscription",
+    migrated[0]?.name === "サブスク" && migrated[0]?.icon === "subscription",
+    migrated[0],
+  );
+  check(
+    "「旅行✈️」→ name=旅行 / icon=travel",
+    migrated[1]?.name === "旅行" && migrated[1]?.icon === "travel",
+    migrated[1],
+  );
+  check("icon絵文字🍚 → food", migrated[2]?.icon === "food", migrated[2]);
+  check(
+    "独自カテゴリは絵文字除去＋デフォルトのタグ",
+    migrated[3]?.name === "推し活" && migrated[3]?.icon === "tag",
+    migrated[3],
+  );
+  check("標準名でicon空 → 名前から復元（美容=beauty）", migrated[4]?.icon === "beauty", migrated[4]);
+  check(
+    "マイグレーション後の全カテゴリ名に絵文字がない（AIプロンプトにも絵文字が乗らない）",
+    (await d.all<{ name: string }>("SELECT name FROM categories WHERE user_id = ?", legacyUser)).every(
+      (c) => stripCategoryEmoji(c.name) === c.name,
+    ),
+  );
+  const changed2 = await migrateCategoryIcons(d);
+  check("2回目の実行では何も変わらない（冪等）", changed2 === 0, changed2);
+  await d.run("DELETE FROM categories WHERE user_id = ?", legacyUser);
 
   // --- 3. 支出CRUD ---
   console.log("[3] 支出CRUD");
@@ -376,7 +441,7 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
     tmpCatId,
     userId,
     "一時カテゴリ",
-    "🧪",
+    "tag",
     99,
   );
   await learnMerchantCategory(userId, "閉店した店", tmpCatId);

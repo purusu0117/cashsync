@@ -88,7 +88,7 @@ body {
   transform: translateY(-0.3em);
 }
 
-/* 「無」スタンプ（ノーマネーデー）：絵文字🈚の代替。朱肉ではなく印字の枠 */
+/* 「無」スタンプ（ノーマネーデー）：絵文字の代替。朱肉ではなく印字の枠 */
 .mu {
   display: inline-block;
   border: 1.5px solid currentColor;

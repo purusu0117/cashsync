@@ -1,4 +1,5 @@
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
+import { DEFAULT_CATEGORY_ICON, isCategoryIconKey, stripCategoryEmoji } from "@/lib/categoryIcons";
 import { db, uid } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -22,8 +23,13 @@ export async function POST(request: Request) {
   try {
     const user = await requireUser();
     const body = (await request.json()) as { name?: string; icon?: string };
-    const name = (body.name ?? "").trim();
+    // 名前の絵文字は保存前に除去（UI/AIプロンプトとも絵文字なしで統一）
+    const name = stripCategoryEmoji((body.name ?? "").trim());
     if (!name) return Response.json({ error: "名前は必須です。" }, { status: 400 });
+    // icon はアイコンキーのみ受け付ける（旧クライアントの絵文字はデフォルトのタグに落とす）
+    const icon = isCategoryIconKey((body.icon ?? "").trim())
+      ? (body.icon ?? "").trim()
+      : DEFAULT_CATEGORY_ICON;
     const d = await db();
     const max = (await d.get<{ m: number }>(
       "SELECT COALESCE(MAX(sort), -1) AS m FROM categories WHERE user_id = ?",
@@ -35,7 +41,7 @@ export async function POST(request: Request) {
       id,
       user.id,
       name,
-      (body.icon ?? "").trim(),
+      icon,
       max.m + 1,
     );
     return Response.json({ ok: true, id });

@@ -93,7 +93,7 @@ export async function POST(request: Request) {
       );
       return Response.json({
         ok: "true",
-        message: `💰${fmtYen(scan.total)}（${scan.store || "受け取り"}）を収入として記録しました`,
+        message: `${fmtYen(scan.total)}（${scan.store || "受け取り"}）を収入として記録しました`,
         store: scan.store,
         total: scan.total,
         category: "",
@@ -149,7 +149,7 @@ export async function POST(request: Request) {
 
     return Response.json({
       ok: "true",
-      message: `${fmtYen(scan.total)}（${scan.store || "店名不明"}／${categoryLabel}${learned ? "📌学習済み" : ""}）を記録しました`,
+      message: `${fmtYen(scan.total)}（${scan.store || "店名不明"}／${categoryLabel}${learned ? "・学習済み" : ""}）を記録しました`,
       store: scan.store,
       total: scan.total,
       category: learned ? categoryLabel : scan.category,

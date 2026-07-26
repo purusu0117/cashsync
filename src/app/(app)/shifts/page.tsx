@@ -3,7 +3,7 @@
 // シフト：カレンダー自動同期（一度設定すれば開くたびに差分同期）＋音声/文章入力＋月カレンダー＋一覧。
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MicIcon } from "@/components/Icons";
+import { CalendarIcon, MicIcon, PencilIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
 import { cachedFetch } from "@/lib/cachedFetch";
 import {
@@ -191,7 +191,7 @@ export default function ShiftsPage() {
         }
         if (added + updated + removed > 0) {
           showToast(
-            `📅 カレンダー同期: 追加${added}・変更${updated}・削除${removed}`,
+            `カレンダー同期: 追加${added}・変更${updated}・削除${removed}`,
           );
           load(m);
         }
@@ -407,7 +407,7 @@ export default function ShiftsPage() {
       setAutoOn(true);
       syncedRef.current.clear();
       setLinkOpen(false);
-      showToast(`📅 連携ON: 追加${added}・変更${updated}・削除${removed}。今後は開くたびに自動同期します`);
+      showToast(`連携ON: 追加${added}・変更${updated}・削除${removed}。今後は開くたびに自動同期します`);
       load(month);
       loadJobs();
     } catch (e) {
@@ -891,8 +891,15 @@ export default function ShiftsPage() {
                       {s.job_name}
                     </span>
                   )}
-                  <span className="ml-1 shrink-0 text-[10px] text-ink-faint">
-                    {s.source === "calendar" ? "📅" : "✋"}
+                  <span
+                    className="ml-1 shrink-0 self-center text-ink-faint"
+                    title={s.source === "calendar" ? "カレンダー同期" : "手入力"}
+                  >
+                    {s.source === "calendar" ? (
+                      <CalendarIcon className="h-3.5 w-3.5" />
+                    ) : (
+                      <PencilIcon className="h-3.5 w-3.5" />
+                    )}
                   </span>
                   <span className="leader" />
                   <span className="dot shrink-0 tabular-nums">
@@ -916,11 +923,12 @@ export default function ShiftsPage() {
       {/* カレンダー連携 */}
       <button
         onClick={openLink}
-        className={`w-full rounded-md border py-3 text-sm ${
+        className={`flex w-full items-center justify-center gap-1.5 rounded-md border py-3 text-sm ${
           autoOn ? "border-sage text-sage" : "border-dashed border-rule text-ink-faint"
         }`}
       >
-        {autoOn ? "📅 カレンダー自動同期 ON（タップで設定）" : "📅 Googleカレンダーと連携（自動同期）"}
+        <CalendarIcon className="h-4 w-4 shrink-0" />
+        {autoOn ? "カレンダー自動同期 ON（タップで設定）" : "Googleカレンダーと連携（自動同期）"}
       </button>
 
       {/* トースト */}

@@ -2,6 +2,7 @@
 
 // 履歴：月切替＋日別グルーピング。タップで編集/削除/複製（「もう一度」）。
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CategoryIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
 import { cachedFetch } from "@/lib/cachedFetch";
 import { apiCall, apiJson } from "@/lib/clientApi";
@@ -298,13 +299,13 @@ export default function HistoryPage() {
                   <button
                     key={c.id}
                     onClick={() => setEditing({ ...editing, category_id: c.id })}
-                    className={`rounded-full border px-3 py-1 text-sm ${
+                    className={`flex items-center gap-1 rounded-full border px-3 py-1 text-sm ${
                       editing.category_id === c.id
                         ? "border-vermilion bg-vermilion text-card"
                         : "border-rule bg-paper"
                     }`}
                   >
-                    {c.icon} {c.name}
+                    <CategoryIcon icon={c.icon} className="h-4 w-4" /> {c.name}
                   </button>
                 ))}
               </div>

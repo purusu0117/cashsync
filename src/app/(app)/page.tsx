@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CameraIcon, PencilIcon, ScreenshotIcon } from "@/components/Icons";
+import { CameraIcon, CategoryIcon, PencilIcon, ScreenshotIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
 import { cachedFetch } from "@/lib/cachedFetch";
 import {
@@ -422,6 +422,9 @@ export default function HomePage() {
           )}
           {data.recent.map((e) => (
             <li key={e.id} className="flex items-baseline gap-1 border-b border-rule/70 py-2 text-sm">
+              {e.category && (
+                <CategoryIcon icon={e.icon} className="h-4 w-4 shrink-0 self-center text-ink-faint" />
+              )}
               <span className="truncate">{e.memo || e.category || "支出"}</span>
               <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">{e.category}</span>
               <span className="leader" />

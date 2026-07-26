@@ -30,6 +30,8 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     icon TEXT NOT NULL DEFAULT '',
     sort INTEGER NOT NULL DEFAULT 0
   )`,
+  // 旧DB（icon列なし）への追加カラム（冪等）。値の絵文字→キー変換は migrateCategoryIcons が行う
+  `ALTER TABLE categories ADD COLUMN IF NOT EXISTS icon TEXT NOT NULL DEFAULT ''`,
   `CREATE TABLE IF NOT EXISTS expenses (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,

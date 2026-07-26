@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { CategoryIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
 import { cachedFetch } from "@/lib/cachedFetch";
 import { fmtMonthJa, fmtYen, todayLocal } from "@/lib/format";
@@ -248,6 +249,9 @@ export default function StatsPage() {
             return (
               <li key={b.category}>
                 <div className="flex items-baseline text-sm">
+                  {b.category !== "未分類" && (
+                    <CategoryIcon icon={b.icon} className="mr-1 h-4 w-4 shrink-0 self-center text-ink-faint" />
+                  )}
                   <span>{b.category}</span>
                   <span className="ml-1.5 text-[10px] text-ink-faint">{share}%</span>
                   <span className="leader" />
@@ -281,6 +285,7 @@ export default function StatsPage() {
             return (
               <li key={p.id}>
                 <div className="flex items-baseline text-sm">
+                  <CategoryIcon icon={p.icon} className="mr-1 h-4 w-4 shrink-0 self-center text-ink-faint" />
                   <span>{p.name}</span>
                   <span className="leader" />
                   {p.budget > 0 ? (
