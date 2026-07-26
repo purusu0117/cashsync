@@ -1,0 +1,49 @@
+# Android debug APK ビルド（Windows開発機ではネイティブビルド不可のためCIで行う）。
+# 起動: GitHub Actions の「Run workflow」ボタン（workflow_dispatch）または cloud ブランチへの push。
+# 成果物: Actions の実行ページ → Artifacts → cashsync-debug-apk（app-debug.apk）
+name: build-android
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [cloud]
+
+jobs:
+  debug-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      # capacitor.config.ts → ネイティブ設定へ反映＋プラグイン一覧を再生成
+      - name: Capacitor sync
+        run: npx cap sync android
+
+      - name: Build debug APK
+        run: |
+          chmod +x android/gradlew
+          cd android && ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cashsync-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      # --- 将来の拡張（リリースビルド＋Play Console アップロード） ---
+      # 1. keystore を GitHub Secrets（ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD 等）に登録
+      # 2. ./gradlew bundleRelease で AAB を作り署名
+      # 3. r0adkll/upload-google-play アクション等で内部テストトラックへアップロード

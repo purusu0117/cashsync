@@ -1,0 +1,63 @@
+# iOS ビルド（署名なし）。Windows開発機ではビルド不可のため macOS ランナーで行う。
+# 起動: GitHub Actions の「Run workflow」ボタン（workflow_dispatch）または cloud ブランチへの push。
+# 成果物: Actions の実行ページ → Artifacts → cashsync-ios-app（App.app、未署名）
+#
+# 注意: Capacitor 8 の iOS は Swift Package Manager 方式（CocoaPods不要）。
+# `cap sync ios` が Package.swift をランナー上で再生成するため、
+# Windowsでコミットされたパス区切り（\）もここで正しいものに直る。
+name: build-ios
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [cloud]
+
+jobs:
+  build-unsigned:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # capacitor.config.ts → ネイティブ設定へ反映＋Package.swift 再生成
+      - name: Capacitor sync
+        run: npx cap sync ios
+
+      - name: Build (unsigned)
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination generic/platform=iOS \
+            -derivedDataPath ios/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cashsync-ios-app
+          path: ios/DerivedData/Build/Products/Release-iphoneos/App.app
+          if-no-files-found: error
+
+      # --- 将来の拡張（署名＋TestFlight 配布、fastlane 雛形） ---
+      # Apple Developer Program 加入後に以下を整備する:
+      # 1. Secrets: APPLE_CERT_P12_BASE64 / APPLE_CERT_PASSWORD /
+      #    APPSTORE_ISSUER_ID / APPSTORE_KEY_ID / APPSTORE_PRIVATE_KEY（App Store Connect APIキー）
+      # 2. ios/App/fastlane/Fastfile 例:
+      #      default_platform(:ios)
+      #      platform :ios do
+      #        lane :beta do
+      #          setup_ci
+      #          match(type: "appstore", app_identifier: "com.daito.cashsync", readonly: true)
+      #          build_app(project: "App.xcodeproj", scheme: "App", export_method: "app-store")
+      #          upload_to_testflight(skip_waiting_for_build_processing: true)
+      #        end
+      #      end
+      # 3. このジョブの Build 以降を `bundle exec fastlane beta` に置き換える
