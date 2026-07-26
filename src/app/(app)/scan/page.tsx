@@ -331,7 +331,7 @@ export default function ScanPage() {
               />
             </label>
             <div className="flex gap-3">
-              <label className="block flex-1">
+              <label className="block min-w-0 flex-1">
                 <span className="dot text-xs text-ink-faint">日付</span>
                 <input
                   type="date"
@@ -340,7 +340,7 @@ export default function ScanPage() {
                   className="mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
                 />
               </label>
-              <label className="block flex-1">
+              <label className="block min-w-0 flex-1">
                 <span className="dot text-xs text-ink-faint">合計</span>
                 <input
                   type="number"
