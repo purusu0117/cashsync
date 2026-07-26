@@ -1040,14 +1040,14 @@ export default function ShiftsPage() {
                   type="time"
                   value={start}
                   onChange={(e) => setStart(e.target.value)}
-                  className="flex-1 rounded-md border border-rule bg-paper px-3 py-2 text-base"
+                  className="min-w-0 flex-1 rounded-md border border-rule bg-paper px-3 py-2 text-base"
                 />
-                <span className="dot">〜</span>
+                <span className="dot shrink-0">〜</span>
                 <input
                   type="time"
                   value={end}
                   onChange={(e) => setEnd(e.target.value)}
-                  className="flex-1 rounded-md border border-rule bg-paper px-3 py-2 text-base"
+                  className="min-w-0 flex-1 rounded-md border border-rule bg-paper px-3 py-2 text-base"
                 />
               </div>
               <label className="flex items-center gap-2 text-sm">

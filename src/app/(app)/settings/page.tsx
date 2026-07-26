@@ -307,12 +307,12 @@ export default function SettingsPage() {
                   className="mr-1.5 inline-block h-2.5 w-2.5 shrink-0 self-center rounded-full"
                   style={{ backgroundColor: j.color || "var(--vermilion)" }}
                 />
-                <span>{j.name}</span>
+                <span className="min-w-0 truncate">{j.name}</span>
                 <span className="leader" />
-                <span className="dot tabular-nums">
+                <span className="dot shrink-0 tabular-nums">
                   平日{fmtYen(j.weekday_rate)} / 土日祝{fmtYen(j.weekend_holiday_rate)}
                 </span>
-                <button onClick={() => del(`/api/jobs?id=${j.id}`)} className="ml-2 text-xs text-vermilion">
+                <button onClick={() => del(`/api/jobs?id=${j.id}`)} className="ml-2 shrink-0 text-xs text-vermilion">
                   ✕
                 </button>
               </div>
@@ -365,10 +365,10 @@ export default function SettingsPage() {
           {recurring.map((r) => (
             <li key={r.id}>
               <div className="flex items-baseline text-sm">
-                <span>{r.kind === "income" ? "💰" : "🔁"} {r.name}</span>
+                <span className="min-w-0 truncate">{r.kind === "income" ? "💰" : "🔁"} {r.name}</span>
                 <span className="leader" />
-                <span className={`dot tabular-nums ${r.kind === "income" ? "text-sage" : ""}`}>{fmtYen(r.amount)}</span>
-                <button onClick={() => del(`/api/recurring?id=${r.id}`)} className="ml-2 text-xs text-vermilion">
+                <span className={`dot shrink-0 tabular-nums ${r.kind === "income" ? "text-sage" : ""}`}>{fmtYen(r.amount)}</span>
+                <button onClick={() => del(`/api/recurring?id=${r.id}`)} className="ml-2 shrink-0 text-xs text-vermilion">
                   ✕
                 </button>
               </div>
@@ -382,20 +382,23 @@ export default function SettingsPage() {
             </li>
           ))}
         </ul>
-        <div className="mt-3 flex gap-2">
-          <select value={recKind} onChange={(e) => setRecKind(e.target.value as "expense" | "income")} className={input}>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <select value={recKind} onChange={(e) => setRecKind(e.target.value as "expense" | "income")} className={`${input} min-w-0`}>
             <option value="expense">支出</option>
             <option value="income">収入</option>
           </select>
-          <select value={recInterval} onChange={(e) => setRecInterval(e.target.value as "monthly" | "yearly")} className={input}>
+          <select value={recInterval} onChange={(e) => setRecInterval(e.target.value as "monthly" | "yearly")} className={`${input} min-w-0`}>
             <option value="monthly">月払い</option>
             <option value="yearly">年払い</option>
           </select>
-          <input value={recName} onChange={(e) => setRecName(e.target.value)} placeholder="例：Netflix / 家賃" className={`${input} flex-1 min-w-0`} />
+          <input value={recName} onChange={(e) => setRecName(e.target.value)} placeholder="例：Netflix / 家賃" className={`${input} col-span-2 min-w-0`} />
         </div>
         {recInterval === "yearly" && (
           <div className="mt-2">
-            <input type="month" value={recMonth} onChange={(e) => setRecMonth(e.target.value)} className={`${input} w-full`} />
+            <label className="block">
+              <span className="dot text-xs text-ink-faint">初回の年月（毎年この月に計上）</span>
+              <input type="month" value={recMonth} onChange={(e) => setRecMonth(e.target.value)} className={`${input} mt-1 block w-full min-w-0`} />
+            </label>
             <p className="mt-1 text-[11px] text-ink-faint">
               年払いは毎年{Number((recMonth || thisMonth).slice(5))}月に1回計上します（選んだ月が初回で、以後その月に毎年）。
             </p>
@@ -446,7 +449,7 @@ export default function SettingsPage() {
               />
               <span className="shrink-0 text-sm text-ink-faint">回払い</span>
             </div>
-            <input type="month" value={spStart} onChange={(e) => setSpStart(e.target.value)} className={input} />
+            <input type="month" value={spStart} onChange={(e) => setSpStart(e.target.value)} className={`${input} w-full min-w-0`} />
             <select value={spDay} onChange={(e) => setSpDay(e.target.value)} className={input}>
               {["1", "5", "10", "15", "20", "25", "27", "31"].map((d) => (
                 <option key={d} value={d}>
