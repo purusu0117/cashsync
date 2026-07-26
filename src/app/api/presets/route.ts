@@ -1,8 +1,13 @@
-// クイック登録ボタン（よく使う支出のワンタップ記録）。
+// かんたん入力ボタン（よく使う定型支出のワンタップ記録用プリセット）。
+// スクショで撮りにくい支出（Suicaチャージ等）を、設定で登録→ホームで1タップ記録する。
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
+
+// 登録できるプリセットの上限（ホームのグリッドが崩れない範囲）
+// ※route.ts はHTTPメソッド以外を export できないため、UI側（設定画面）にも同じ値がある
+const MAX_PRESETS = 12;
 
 export async function GET() {
   try {
@@ -10,7 +15,8 @@ export async function GET() {
     const presets = db()
       .prepare(
         `SELECT p.id, p.label, p.amount, p.category_id, c.name AS category, c.icon
-         FROM quick_presets p LEFT JOIN categories c ON c.id = p.category_id
+         FROM quick_presets p
+         LEFT JOIN categories c ON c.id = p.category_id AND c.user_id = p.user_id
          WHERE p.user_id = ? ORDER BY p.sort`,
       )
       .all(user.id);
@@ -32,16 +38,36 @@ export async function POST(request: Request) {
     const label = (body.label ?? "").trim();
     const amount = Math.round(Number(body.amount));
     if (!label || !Number.isFinite(amount) || amount <= 0) {
-      return Response.json({ error: "ラベルと金額は必須です。" }, { status: 400 });
+      return Response.json({ error: "名前と金額は必須です。" }, { status: 400 });
+    }
+    if (label.length > 20) {
+      return Response.json({ error: "名前は20文字以内にしてください。" }, { status: 400 });
     }
     const d = db();
+    const count = d
+      .prepare("SELECT COUNT(*) AS n FROM quick_presets WHERE user_id = ?")
+      .get(user.id) as { n: number };
+    if (count.n >= MAX_PRESETS) {
+      return Response.json(
+        { error: `かんたん入力ボタンは${MAX_PRESETS}個までです。` },
+        { status: 400 },
+      );
+    }
+    // categoryId は本人のカテゴリのみ許可（他ユーザーIDの混入防止）
+    let categoryId: string | null = null;
+    if (body.categoryId) {
+      const row = d
+        .prepare("SELECT id FROM categories WHERE id = ? AND user_id = ?")
+        .get(body.categoryId, user.id);
+      categoryId = row ? body.categoryId : null;
+    }
     const max = d
       .prepare("SELECT COALESCE(MAX(sort), -1) AS m FROM quick_presets WHERE user_id = ?")
       .get(user.id) as { m: number };
     const id = uid();
     d.prepare(
       "INSERT INTO quick_presets (id, user_id, label, amount, category_id, sort) VALUES (?, ?, ?, ?, ?, ?)",
-    ).run(id, user.id, label, amount, body.categoryId ?? null, max.m + 1);
+    ).run(id, user.id, label, amount, categoryId, max.m + 1);
     return Response.json({ ok: true, id });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
