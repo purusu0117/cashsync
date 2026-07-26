@@ -4,7 +4,7 @@
 // （Webアプリはバックグラウンドでマイクを使えないため、その代替手段）。
 // 認証は shortcut-scan と同じ Authorization: Bearer <api_token>。
 import { askClaudeParseShifts } from "@/lib/ai";
-import { LIMIT_MESSAGE, checkAndCountUsage, getUserPlan } from "@/lib/aiUsage";
+import { checkAndCountUsage, getUserPlan, limitMessage } from "@/lib/aiUsage";
 import { userFromBearer } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 import { fmtDateJa, minToHHMM } from "@/lib/format";
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     const usage = await checkAndCountUsage(user.id, plan, "parses");
     if (!usage.allowed) {
       return Response.json(
-        { ok: "false", error: "limit", message: LIMIT_MESSAGE.parses },
+        { ok: "false", error: "limit", message: limitMessage("parses", plan) },
         { status: 429 },
       );
     }

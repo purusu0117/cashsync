@@ -1,14 +1,16 @@
 "use client";
 
-// 設定：バイト先（時給）／定期支出・収入／クイックボタン／カテゴリ／ログアウト
+// 設定：プラン（プレミアム課金）／バイト先（時給）／定期支出・収入／カテゴリ／ログアウト
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { CardIcon, CategoryIcon, CoinIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
 import { CATEGORY_ICON_KEYS, DEFAULT_CATEGORY_ICON } from "@/lib/categoryIcons";
 import { cachedFetch, clearApiCache } from "@/lib/cachedFetch";
 import { apiCall, apiJson } from "@/lib/clientApi";
 import { fmtYen } from "@/lib/format";
+import { isNativePlatform } from "@/lib/native";
+import { isPurchasesAvailable, purchasePremium, restorePremium } from "@/lib/purchases";
 
 interface Job {
   id: string;
@@ -37,6 +39,16 @@ interface Category {
   id: string;
   name: string;
   icon: string;
+}
+
+type PlanName = "free" | "premium" | "founder";
+const PLAN_LABEL: Record<PlanName, string> = {
+  free: "無料プラン",
+  premium: "プレミアム",
+  founder: "ファウンダー",
+};
+function planOf(v: unknown): PlanName {
+  return v === "premium" || v === "founder" ? v : "free";
 }
 
 export default function SettingsPage() {
@@ -79,13 +91,70 @@ export default function SettingsPage() {
     });
   }, []);
 
+  // --- プラン（プレミアム課金） ---
+  const [plan, setPlan] = useState<PlanName>("free");
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planNotice, setPlanNotice] = useState("");
+  // 購入導線の環境判定：Web＝案内のみ / native＝準備中（RevenueCatキー未設定） / ready＝購入可能。
+  // SSR中は "web" 固定・クライアントで実環境を読む（ハイドレーション不一致を避ける）
+  const purchaseEnv = useSyncExternalStore<"web" | "native" | "ready">(
+    () => () => {},
+    () => (isPurchasesAvailable() ? "ready" : isNativePlatform() ? "native" : "web"),
+    () => "web",
+  );
+
   useEffect(() => {
     load();
-    cachedFetch<{ savingsGoal?: number; apiToken?: string }>("/api/profile", (d) => {
+    cachedFetch<{ savingsGoal?: number; apiToken?: string; plan?: string }>("/api/profile", (d) => {
       setGoal(d.savingsGoal ? String(d.savingsGoal) : "");
       setApiToken(d.apiToken ?? "");
+      setPlan(planOf(d.plan));
     }).catch(() => {});
   }, [load]);
+
+  async function syncPlan(active: boolean): Promise<PlanName> {
+    const res = await apiCall<{ plan?: string }>("/api/purchases/sync", apiJson({ active }));
+    clearApiCache(); // プロフィール等のキャッシュを新プランで引き直す
+    setPlan(planOf(res.plan));
+    return planOf(res.plan);
+  }
+
+  async function buyPremium() {
+    setPlanBusy(true);
+    setPlanNotice("");
+    setPageError("");
+    try {
+      const r = await purchasePremium(); // Appleの購入シートが開く
+      if (r.status === "cancelled") return;
+      await syncPlan(r.active);
+      setPlanNotice(
+        r.active
+          ? "プレミアムにアップグレードしました。ありがとうございます！"
+          : "購入を確認できませんでした。反映されない場合は「購入の復元」をお試しください。",
+      );
+    } catch (e) {
+      setPageError(e instanceof Error ? e.message : "購入に失敗しました。");
+    } finally {
+      setPlanBusy(false);
+    }
+  }
+
+  async function restorePurchase() {
+    setPlanBusy(true);
+    setPlanNotice("");
+    setPageError("");
+    try {
+      const r = await restorePremium();
+      await syncPlan(r.active);
+      setPlanNotice(
+        r.active ? "購入を復元しました。" : "復元できる購入が見つかりませんでした。",
+      );
+    } catch (e) {
+      setPageError(e instanceof Error ? e.message : "復元に失敗しました。");
+    } finally {
+      setPlanBusy(false);
+    }
+  }
 
   async function saveGoal() {
     await tryApi(async () => {
@@ -285,6 +354,63 @@ export default function SettingsPage() {
           {pageError}
         </p>
       )}
+
+      <section id="plan" className="zig zig-t zig-b px-4 py-4 shadow-sm">
+        <div className="flex items-baseline">
+          <h2 className="dot text-sm">プラン</h2>
+          <span className="leader" />
+          <span className="dot shrink-0 text-sm">{PLAN_LABEL[plan]}</span>
+        </div>
+        {plan === "free" && (
+          <>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
+              プレミアム（¥480/月）にすると：広告なし・AI読取が高精度（Sonnet）・回数無制限
+              <span className="block">※フェアユース：レシート読み取りは月200回まで</span>
+            </p>
+            {purchaseEnv === "ready" ? (
+              <>
+                <button
+                  onClick={buyPremium}
+                  disabled={planBusy}
+                  className="dot mt-2 w-full rounded-md border border-ink py-2.5 text-sm active:translate-y-0.5 disabled:opacity-50"
+                >
+                  {planBusy ? "・・・" : "プレミアムにアップグレード ¥480/月"}
+                </button>
+                <button
+                  onClick={restorePurchase}
+                  disabled={planBusy}
+                  className="mt-2 w-full rounded-md border border-rule py-2 text-xs text-ink-faint disabled:opacity-50"
+                >
+                  購入の復元（機種変更でプレミアムが外れたとき）
+                </button>
+                <p className="mt-1.5 text-[10px] leading-relaxed text-ink-faint">
+                  自動更新サブスクリプション（App内課金）。解約はいつでも iPhone の「設定 →
+                  Apple ID → サブスクリプション」からできます。
+                </p>
+              </>
+            ) : (
+              <p className="mt-2 rounded-md border border-rule px-3 py-2 text-xs text-ink-faint">
+                {purchaseEnv === "native"
+                  ? "プレミアムの購入は現在準備中です。もうしばらくお待ちください。"
+                  : "プレミアムはiOSアプリから購入できます。"}
+              </p>
+            )}
+          </>
+        )}
+        {plan === "premium" && (
+          <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
+            プレミアムをご利用中です（広告なし・AI読取が高精度・回数無制限
+            ※フェアユース：レシート読み取りは月200回）。解約・変更は iPhone の「設定 → Apple
+            ID → サブスクリプション」からできます。
+          </p>
+        )}
+        {plan === "founder" && (
+          <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
+            初期ユーザー特典（ファウンダー）で、広告なし・高精度AI読取・回数無制限をずっと無料で使えます。
+          </p>
+        )}
+        {planNotice && <p className="mt-2 text-xs text-sage">{planNotice}</p>}
+      </section>
 
       <section id="goal" className="zig zig-t zig-b px-4 py-4 shadow-sm">
         <h2 className="dot text-sm">毎月の貯金目標（先取り貯金）</h2>

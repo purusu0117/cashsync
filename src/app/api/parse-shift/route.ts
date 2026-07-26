@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     const plan = await getUserPlan(user.id);
     const usage = await checkAndCountUsage(user.id, plan, "parses");
     if (!usage.allowed) {
-      return Response.json(limitResponseBody("parses", usage), { status: 429 });
+      return Response.json(limitResponseBody("parses", usage, plan), { status: 429 });
     }
     const d = await db();
     const jobs = await d.all<{ id: string; name: string }>(

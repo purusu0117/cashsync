@@ -6,7 +6,7 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import { askClaudeReceipt } from "@/lib/ai";
-import { LIMIT_MESSAGE, checkAndCountUsage, getUserPlan } from "@/lib/aiUsage";
+import { checkAndCountUsage, getUserPlan, limitMessage } from "@/lib/aiUsage";
 import { userFromBearer } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 import { fmtYen } from "@/lib/format";
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     const usage = await checkAndCountUsage(user.id, plan, "scans");
     if (!usage.allowed) {
       return Response.json(
-        { ok: "false", error: "limit", message: LIMIT_MESSAGE.scans },
+        { ok: "false", error: "limit", message: limitMessage("scans", plan) },
         { status: 429 },
       );
     }

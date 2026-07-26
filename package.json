@@ -20,6 +20,7 @@
     "@capacitor/core": "8.4.2",
     "@capacitor/ios": "8.4.2",
     "@holiday-jp/holiday_jp": "^2.5.1",
+    "@revenuecat/purchases-capacitor": "13.2.4",
     "cashsync-photo-cleaner": "file:plugins/photo-cleaner",
     "next": "16.2.11",
     "pg": "^8.22.0",

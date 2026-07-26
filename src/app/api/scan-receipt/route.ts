@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     const usage = await checkAndCountUsage(user.id, plan, "scans");
     if (!usage.allowed) {
       // { ok:false, error:'limit', message:'…' }。UI側は message を優先表示する
-      return Response.json(limitResponseBody("scans", usage), { status: 429 });
+      return Response.json(limitResponseBody("scans", usage, plan), { status: 429 });
     }
     const form = await request.formData();
     const file = form.get("image");

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import BottomNav from "@/components/BottomNav";
 import NativeAds from "@/components/NativeAds";
+import NativePurchases from "@/components/NativePurchases";
 import { getUserPlan } from "@/lib/aiUsage";
 import { currentUser } from "@/lib/auth";
 
@@ -14,6 +15,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="mx-auto max-w-md min-h-dvh px-4 pt-4 pb-24">
       {/* ネイティブアプリ＋freeプランのときだけ上部AdMobバナー（Webでは何もしない） */}
       <NativeAds plan={plan} />
+      {/* ネイティブアプリ＋RevenueCatキー設定済みのときだけ課金SDKを初期化（Webでは何もしない） */}
+      <NativePurchases userId={user.id} />
       {children}
       <BottomNav />
     </div>

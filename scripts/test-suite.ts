@@ -4,7 +4,8 @@
 import { randomBytes, scryptSync } from "node:crypto";
 import { isCategoryIconKey, stripCategoryEmoji } from "../src/lib/categoryIcons";
 import { migrateCategoryIcons, setDbForTesting, seedCategories, uid, type Db } from "../src/lib/db";
-import { checkAndCountUsage, getUserPlan, FREE_LIMITS } from "../src/lib/aiUsage";
+import { checkAndCountUsage, getUserPlan, FREE_LIMITS, PREMIUM_SCAN_LIMIT } from "../src/lib/aiUsage";
+import { applyPurchaseEvent, setPlanFromEntitlement } from "../src/lib/purchases-server";
 import {
   duplicateExpenseExists,
   duplicateIncomeExists,
@@ -387,7 +388,11 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
   await d.run("UPDATE users SET plan = 'premium' WHERE id = ?", userId);
   check("プラン変更が読める", (await getUserPlan(userId)) === "premium");
   const prem = await checkAndCountUsage(userId, "premium", "scans");
-  check("premiumは上限なし", prem.allowed && prem.limit === null, prem);
+  check(
+    `premiumのスキャンはフェアユース上限${PREMIUM_SCAN_LIMIT}回つきで通る`,
+    prem.allowed && prem.limit === PREMIUM_SCAN_LIMIT,
+    prem,
+  );
   const usageRow = await d.get<{ scans: number; parses: number }>(
     "SELECT scans, parses FROM ai_usage WHERE user_id = ? AND ym = ?",
     userId,
@@ -398,6 +403,83 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
     usageRow?.scans === FREE_LIMITS.scans + 1 && usageRow?.parses === 1,
     usageRow,
   );
+
+  // --- 10b. premiumフェアユース（月200スキャン）とfounder無制限 ---
+  console.log("[10b] premiumフェアユース・founder無制限");
+  await d.run(
+    "UPDATE ai_usage SET scans = ? WHERE user_id = ? AND ym = ?",
+    PREMIUM_SCAN_LIMIT - 1,
+    userId,
+    month,
+  );
+  const premLast = await checkAndCountUsage(userId, "premium", "scans");
+  check(
+    `premiumは${PREMIUM_SCAN_LIMIT}回目まで通る`,
+    premLast.allowed && premLast.used === PREMIUM_SCAN_LIMIT,
+    premLast,
+  );
+  const premOver = await checkAndCountUsage(userId, "premium", "scans");
+  check(
+    `premiumは${PREMIUM_SCAN_LIMIT + 1}回目でブロック（フェアユース）`,
+    !premOver.allowed && premOver.used === PREMIUM_SCAN_LIMIT && premOver.limit === PREMIUM_SCAN_LIMIT,
+    premOver,
+  );
+  const premParse = await checkAndCountUsage(userId, "premium", "parses");
+  check("premiumのパースは無制限のまま", premParse.allowed && premParse.limit === null, premParse);
+  const founderScan = await checkAndCountUsage(userId, "founder", "scans");
+  check(
+    `founderは${PREMIUM_SCAN_LIMIT}回超でも無制限`,
+    founderScan.allowed && founderScan.limit === null,
+    founderScan,
+  );
+
+  // --- 10c. 課金Webhook → plan切替（founder不変） ---
+  console.log("[10c] 課金Webhook → plan切替");
+  const buyerId = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    buyerId,
+    "buyer@example.com",
+    "課金太郎",
+    hashPassword("password123"),
+    Date.now(),
+  );
+  const now = Date.now();
+  let ev = await applyPurchaseEvent(buyerId, "INITIAL_PURCHASE");
+  check("INITIAL_PURCHASE で free → premium", ev.plan === "premium" && ev.changed, ev);
+  check("DB上も premium になっている", (await getUserPlan(buyerId)) === "premium");
+  ev = await applyPurchaseEvent(buyerId, "CANCELLATION", { expirationAtMs: now + 86_400_000, now });
+  check("CANCELLATION（期限まだ先）は premium のまま", ev.plan === "premium" && !ev.changed, ev);
+  ev = await applyPurchaseEvent(buyerId, "EXPIRATION");
+  check("EXPIRATION で premium → free", ev.plan === "free" && ev.changed, ev);
+  ev = await applyPurchaseEvent(buyerId, "RENEWAL");
+  check("RENEWAL で premium に戻る", ev.plan === "premium" && ev.changed, ev);
+  ev = await applyPurchaseEvent(buyerId, "CANCELLATION", { expirationAtMs: now - 1000, now });
+  check("CANCELLATION（期限切れ・返金等）で free に落ちる", ev.plan === "free" && ev.changed, ev);
+  ev = await applyPurchaseEvent(buyerId, "BILLING_ISSUE");
+  check("対象外イベントでは plan は変わらない", ev.plan === "free" && !ev.changed, ev);
+  ev = await applyPurchaseEvent(uid(), "INITIAL_PURCHASE");
+  check("未知ユーザーは plan=null（スキップ）", ev.plan === null && !ev.changed, ev);
+  // founder は購入・失効イベントが来ても常に不変
+  const founderId = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at, plan) VALUES (?, ?, ?, ?, ?, 'founder')",
+    founderId,
+    "founder@example.com",
+    "創業花子",
+    hashPassword("password123"),
+    Date.now(),
+  );
+  ev = await applyPurchaseEvent(founderId, "INITIAL_PURCHASE");
+  check("founderはINITIAL_PURCHASEでも不変", ev.plan === "founder" && !ev.changed, ev);
+  ev = await applyPurchaseEvent(founderId, "EXPIRATION");
+  check("founderはEXPIRATIONでも降格しない", ev.plan === "founder" && !ev.changed, ev);
+  check("DB上もfounderのまま", (await getUserPlan(founderId)) === "founder");
+  // /api/purchases/sync 用の entitlement 直接反映
+  check("sync: entitlement有効 → premium", (await setPlanFromEntitlement(buyerId, true)) === "premium");
+  check("sync: entitlement無効 → free", (await setPlanFromEntitlement(buyerId, false)) === "free");
+  check("sync: founderは不変", (await setPlanFromEntitlement(founderId, false)) === "founder");
+  check("sync: 未知ユーザーは null", (await setPlanFromEntitlement(uid(), true)) === null);
 
   // --- 11. マーチャント学習（店名→ユーザー確定カテゴリ） ---
   console.log("[11] マーチャント学習");
