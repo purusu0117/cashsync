@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CameraIcon, PencilIcon, ScreenshotIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
 import { cachedFetch } from "@/lib/cachedFetch";
 import {
@@ -218,9 +219,13 @@ export default function HomePage() {
       />
 
       <header className="flex items-baseline justify-between">
-        <p className="dot text-sm text-ink-faint">{fmtDateJa(todayLocal())}</p>
+        <p className="dot text-base">{fmtDateJa(todayLocal())}</p>
         <p className="text-xs text-ink-faint">
-          {noMoney.streak >= 2 && <span className="mr-2">🈚{noMoney.streak}日連続</span>}
+          {noMoney.streak >= 2 && (
+            <span className="mr-2">
+              <span className="mu">無</span> {noMoney.streak}日連続
+            </span>
+          )}
           {data.user.name} さん
         </p>
       </header>
@@ -228,7 +233,7 @@ export default function HomePage() {
       {/* 月初：先月の振り返りレポート案内 */}
       {reviewMonth && (
         <div className="flex items-center gap-2 rounded-md border border-rule bg-card px-3 py-2 text-xs">
-          <span className="min-w-0 flex-1">🧾 先月の振り返りレポートができます</span>
+          <span className="min-w-0 flex-1">先月の振り返りレポートができます</span>
           <Link
             href={`/stats?m=${reviewMonth}`}
             onClick={() => localStorage.setItem(`cashsync-review-note-${reviewMonth}`, "1")}
@@ -252,7 +257,7 @@ export default function HomePage() {
       {/* 週次振り返り案内（月〜水） */}
       {weeklyKey && (
         <div className="flex items-center gap-2 rounded-md border border-rule bg-card px-3 py-2 text-xs">
-          <span className="min-w-0 flex-1">🧾 先週の振り返りができました</span>
+          <span className="min-w-0 flex-1">先週の振り返りができました</span>
           <Link
             href="/weekly"
             onClick={() => localStorage.setItem(`cashsync-weekly-note-${weeklyKey}`, "1")}
@@ -278,7 +283,7 @@ export default function HomePage() {
         <div className="flex items-center gap-2 rounded-md border border-rule bg-card px-3 py-2 text-xs">
           <span className="min-w-0 flex-1">昨日（{fmtDateJa(amnesty)}）の記録がありません</span>
           <button onClick={dismissAmnesty} className="dot shrink-0 rounded border border-sage px-2 py-1 text-sage">
-            0円だった🈚
+            0円だった
           </button>
           <Link
             href={`/add?date=${amnesty}`}
@@ -292,34 +297,39 @@ export default function HomePage() {
 
       {/* ヒーロー：レシート片（予算信号機） */}
       <section className="zig zig-t zig-b px-5 pt-6 pb-5 shadow-sm">
-        <p className="dot text-center text-sm text-ink-faint">＊ 今日使えるお金 ＊</p>
-        <p className={`dot text-center text-6xl mt-2 tabular-nums ${signalColor}`}>
+        <p className="dot text-center text-sm tracking-[0.18em] text-ink-faint">＊ 今日使えるお金 ＊</p>
+        <p className={`dot mt-3 text-center text-[64px] leading-none tabular-nums ${signalColor}`}>
           {fmtYen(Math.max(0, data.allowance))}
         </p>
-        <p className="mt-1 text-center text-[11px] text-ink-faint">
+        <p className="mt-2 text-center text-xs text-ink-faint">
           残り{data.daysRemaining}日{savingsGoal > 0 && " ・ 貯金目標を先取りした残り"}から計算
         </p>
 
-        {/* 月末予測（黒字チェッカー） */}
-        <p className={`mt-2 text-center text-sm ${signalColor}`}>
-          このペースだと月末{" "}
-          <span className="dot tabular-nums">
+        <div className="cutline my-4" />
+
+        {/* 月末予測（黒字チェッカー）：文中に埋めず独立した行で見せる */}
+        <div className="flex items-baseline text-sm">
+          <span className="text-ink-faint">このペースだと月末</span>
+          <span className="leader" />
+          <span className={`dot text-xl tabular-nums ${signalColor}`}>
             {forecast.forecast >= 0 ? "+" : ""}
             {fmtYen(forecast.forecast).replace("¥-", "-¥")}
           </span>
-          {signal === "green" && " 🎉"}
-          {signal === "red" && ` ⚠ 1日あと${fmtYen(recoverPerDay)}減らせば黒字`}
-          {signal === "yellow" && " （目標まであと少し）"}
+        </div>
+        <p className={`mt-0.5 text-right text-[11px] ${signal === "red" ? "text-vermilion" : "text-ink-faint"}`}>
+          {signal === "green" && "貯金目標を達成するペースです"}
+          {signal === "red" && `1日あと${fmtYen(recoverPerDay)}減らせば黒字`}
+          {signal === "yellow" && "黒字だが目標まであと少し"}
         </p>
 
         {/* 貯金目標の進捗 */}
         {savingsGoal > 0 && (
-          <div className="mt-3">
-            <div className="flex items-baseline justify-between text-[11px] text-ink-faint">
-              <span>💰 貯金目標 {fmtYen(savingsGoal)}</span>
-              <span className="dot">{goalPct}%</span>
+          <div className="mt-2.5">
+            <div className="flex items-baseline justify-between text-xs text-ink-faint">
+              <span>貯金目標 {fmtYen(savingsGoal)}</span>
+              <span className="dot tabular-nums">{goalPct}%</span>
             </div>
-            <div className="mt-1 h-1.5 rounded-full bg-paper">
+            <div className="mt-1 h-2 rounded-full bg-paper">
               <div
                 className={`h-full rounded-full ${signal === "red" ? "bg-vermilion" : signal === "yellow" ? "bg-caution" : "bg-sage"}`}
                 style={{ width: `${goalPct}%` }}
@@ -329,18 +339,22 @@ export default function HomePage() {
         )}
 
         <div className="cutline my-4" />
-        <div className="flex justify-between text-sm">
+        <div className="flex items-baseline justify-between text-sm">
           <span className="text-ink-faint">収入</span>
           <span className="leader" />
-          <span className="dot tabular-nums text-sage">{fmtYen(summary.incomeTotal)}</span>
+          <span className="dot text-base tabular-nums text-sage">{fmtYen(summary.incomeTotal)}</span>
         </div>
-        <div className="mt-1.5 flex justify-between text-sm">
+        <div className="mt-2 flex items-baseline justify-between text-sm">
           <span className="text-ink-faint">支出</span>
           <span className="leader" />
-          <span className="dot tabular-nums text-vermilion">{fmtYen(summary.expenseTotal)}</span>
+          <span className="dot text-base tabular-nums text-vermilion">
+            {fmtYen(summary.expenseTotal)}
+          </span>
         </div>
-        <div className="mt-1.5 flex justify-between text-[11px] text-ink-faint">
-          <span>🈚 ノーマネーデー</span>
+        <div className="mt-2 flex items-baseline justify-between text-xs text-ink-faint">
+          <span>
+            <span className="mu">無</span> ノーマネーデー
+          </span>
           <span className="leader" />
           <span className="dot tabular-nums">今月{noMoney.count}日</span>
         </div>
@@ -353,43 +367,41 @@ export default function HomePage() {
 
       {/* 支出の入力方法（3つを明確に） */}
       <section>
-        <h2 className="dot text-xs text-ink-faint">支出を記録する</h2>
+        <h2 className="dot text-sm tracking-[0.14em]">支出を記録する</h2>
         <div className="mt-2 grid grid-cols-2 gap-2">
           <button
             onClick={() => camRef.current?.click()}
-            className="zig zig-t zig-b px-3 py-4 text-center shadow-sm active:translate-y-0.5"
+            className="rounded-sm border border-rule bg-card px-3 py-4 text-center shadow-sm active:translate-y-0.5"
           >
-            <span className="text-3xl">📷</span>
-            <span className="dot mt-1 block text-sm">レシートを撮る</span>
-            <span className="block text-[10px] text-ink-faint">撮るだけで自動入力</span>
+            <CameraIcon className="mx-auto h-7 w-7" />
+            <span className="dot mt-1.5 block text-sm">レシートを撮る</span>
+            <span className="mt-0.5 block text-[11px] text-ink-faint">撮るだけで自動入力</span>
           </button>
           <button
             onClick={() => (isIOS ? runShortcut() : libRef.current?.click())}
-            className="zig zig-t zig-b px-3 py-4 text-center shadow-sm active:translate-y-0.5"
+            className="rounded-sm border border-rule bg-card px-3 py-4 text-center shadow-sm active:translate-y-0.5"
           >
-            <span className="text-3xl">🖼️</span>
-            <span className="dot mt-1 block text-sm">スクショから</span>
-            <span className="block text-[10px] text-ink-faint">
+            <ScreenshotIcon className="mx-auto h-7 w-7" />
+            <span className="dot mt-1.5 block text-sm">スクショから</span>
+            <span className="mt-0.5 block text-[11px] text-ink-faint">
               {isIOS ? "記録後に自動削除・1回10枚まで" : "PayPay・通販画面もOK"}
             </span>
           </button>
         </div>
         <Link
           href="/add"
-          className="zig zig-t zig-b mt-2 block px-4 py-4 text-center shadow-sm active:translate-y-0.5"
+          className="mt-2 flex items-center justify-center gap-2 rounded-sm border border-rule bg-card px-4 py-3.5 shadow-sm active:translate-y-0.5"
         >
-          <span className="text-2xl">✏️</span>
-          <span className="dot ml-2 align-middle text-base">自分で入力する</span>
-          <span className="mt-0.5 block text-[10px] text-ink-faint">
-            金額を打つ／🎤話す（「昨日セブンで650円」）のどちらでも
-          </span>
+          <PencilIcon className="h-5 w-5" />
+          <span className="dot text-base">自分で入力する</span>
+          <span className="text-[11px] text-ink-faint">金額を打つ／話すのどちらでも</span>
         </Link>
       </section>
 
       {/* 直近の支出 */}
       <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h2 className="dot text-xs text-ink-faint">最近の支出</h2>
+        <div className="flex items-baseline justify-between">
+          <h2 className="dot text-sm tracking-[0.14em]">最近の支出</h2>
           <Link href="/history" className="text-[11px] text-ink-faint underline underline-offset-2">
             すべて見る
           </Link>
@@ -397,18 +409,18 @@ export default function HomePage() {
         <ul className="mt-2">
           {data.recent.length === 0 && (
             <li className="py-4 text-center text-xs text-ink-faint">
-              まだ記録がありません。上の📷からレシートを撮ってみましょう。
+              まだ記録がありません。上の「レシートを撮る」から始めましょう。
             </li>
           )}
           {data.recent.map((e) => (
-            <li key={e.id} className="flex items-baseline gap-1 py-1.5 text-sm">
+            <li key={e.id} className="flex items-baseline gap-1 py-2 text-sm">
               <span>{e.icon}</span>
               <span className="truncate">{e.memo || e.category || "支出"}</span>
               <span className="leader" />
-              <span className="dot tabular-nums">{fmtYen(e.amount)}</span>
+              <span className="dot text-[15px] tabular-nums">{fmtYen(e.amount)}</span>
               <button
                 onClick={() => removeExpense(e)}
-                className="shrink-0 px-1 text-xs text-vermilion"
+                className="shrink-0 px-1 text-xs text-ink-faint"
                 aria-label="削除"
               >
                 ✕

@@ -181,16 +181,16 @@ export default function HistoryPage() {
         </button>
       </header>
 
-      <div className="zig zig-t zig-b px-5 py-3 text-center shadow-sm">
-        <span className="dot text-xs text-ink-faint">支出合計 </span>
-        <span className="dot text-2xl tabular-nums">{fmtYen(total)}</span>
-        <span className="dot text-xs text-ink-faint">（{expenses.length}件）</span>
+      <div className="zig zig-t zig-b px-5 pt-4 pb-3 text-center shadow-sm">
+        <p className="dot text-xs tracking-[0.18em] text-ink-faint">＊ 支出合計 ＊</p>
+        <p className="dot mt-1 text-4xl leading-none tabular-nums">{fmtYen(total)}</p>
+        <p className="mt-1 text-[11px] text-ink-faint">{expenses.length}件の記録</p>
       </div>
 
       {/* 収入（シフト給与以外：スクショ収入・仕送り等） */}
       {incomes.length > 0 && (
         <section className="zig zig-t zig-b px-4 py-3 shadow-sm">
-          <h2 className="dot text-xs text-sage">💰 この月の収入（バイト給与を除く）</h2>
+          <h2 className="dot text-xs tracking-[0.1em] text-sage">この月の収入（バイト給与を除く）</h2>
           <ul className="mt-1">
             {incomes.map((i) => (
               <li key={i.id} className="flex items-baseline gap-1 py-1.5 text-sm">
@@ -215,38 +215,56 @@ export default function HistoryPage() {
         </section>
       )}
 
-      {[...byDate.entries()].map(([date, list]) => (
-        <section key={date}>
-          <h2 className="dot text-xs text-ink-faint">{fmtDateJa(date)}</h2>
-          <div className="zig zig-b mt-1 px-4 py-2 shadow-sm">
-            {list.map((e) => (
-              <div key={e.id} className="flex items-baseline gap-1 py-1.5 text-sm">
-                <button
-                  onClick={() => {
-                    setEditError("");
-                    setEditing({ ...e });
-                  }}
-                  className="flex min-w-0 flex-1 items-baseline text-left"
-                >
-                  <span className="mr-1">{e.icon}</span>
-                  <span className="truncate">{e.memo || e.category || "支出"}</span>
-                  {e.source === "receipt" && <span className="ml-1 text-[10px]">📷</span>}
-                  {e.source === "recurring" && <span className="ml-1 text-[10px]">🔁</span>}
-                  <span className="leader" />
-                  <span className="dot tabular-nums">{fmtYen(e.amount)}</span>
-                </button>
-                <button
-                  onClick={() => removeRow(e)}
-                  className="shrink-0 px-1 text-xs text-vermilion"
-                  aria-label="削除"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
-      ))}
+      {[...byDate.entries()].map(([date, list]) => {
+        const dayTotal = list.reduce((s, e) => s + e.amount, 0);
+        return (
+          <section key={date}>
+            <h2 className="flex items-baseline">
+              <span className="dot text-[13px]">{fmtDateJa(date)}</span>
+              {list.length > 1 && (
+                <span className="ml-2 text-[11px] text-ink-faint">
+                  計 {fmtYen(dayTotal)}
+                </span>
+              )}
+            </h2>
+            <div className="zig zig-b mt-1 px-4 py-2 shadow-sm">
+              {list.map((e) => (
+                <div key={e.id} className="flex items-baseline gap-1 py-2 text-sm">
+                  <button
+                    onClick={() => {
+                      setEditError("");
+                      setEditing({ ...e });
+                    }}
+                    className="flex min-w-0 flex-1 items-baseline text-left"
+                  >
+                    <span className="mr-1">{e.icon}</span>
+                    <span className="truncate">{e.memo || e.category || "支出"}</span>
+                    {e.source === "receipt" && (
+                      <span className="ml-1.5 shrink-0 text-[9px] tracking-wide text-ink-faint">
+                        自動
+                      </span>
+                    )}
+                    {e.source === "recurring" && (
+                      <span className="ml-1.5 shrink-0 text-[9px] tracking-wide text-ink-faint">
+                        定期
+                      </span>
+                    )}
+                    <span className="leader" />
+                    <span className="dot text-[15px] tabular-nums">{fmtYen(e.amount)}</span>
+                  </button>
+                  <button
+                    onClick={() => removeRow(e)}
+                    className="shrink-0 px-1 text-xs text-ink-faint"
+                    aria-label="削除"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+      })}
       {expenses.length === 0 && (
         <p className="py-8 text-center text-xs text-ink-faint">この月の記録はありません。</p>
       )}

@@ -3,6 +3,7 @@
 // シフト：カレンダー自動同期（一度設定すれば開くたびに差分同期）＋音声/文章入力＋月カレンダー＋一覧。
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MicIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
 import { cachedFetch } from "@/lib/cachedFetch";
 import {
@@ -571,14 +572,15 @@ export default function ShiftsPage() {
       </header>
 
       {income && (
-        <div className="zig zig-t zig-b px-5 py-3 shadow-sm">
-          <div className="flex items-baseline justify-between">
-            <span className="dot text-xs text-ink-faint">この月の勤務で稼ぐ額</span>
-            <span className="dot text-2xl tabular-nums text-sage">{fmtYen(income.total)}</span>
-          </div>
-          <p className="text-right text-[10px] text-ink-faint">振込日はカレンダーの💰参照</p>
-          <p className="mt-1 text-right text-[11px] text-ink-faint">
-            平日 {income.weekdayHours.toFixed(1)}h ／ 土日祝 {income.weekendHolidayHours.toFixed(1)}h ／ {income.shiftCount}回
+        <div className="zig zig-t zig-b px-5 pt-4 pb-3 shadow-sm">
+          <p className="dot text-center text-xs tracking-[0.18em] text-ink-faint">
+            ＊ この月の勤務で稼ぐ額 ＊
+          </p>
+          <p className="dot mt-1 text-center text-4xl leading-none tabular-nums text-sage">
+            {fmtYen(income.total)}
+          </p>
+          <p className="mt-1.5 text-center text-[11px] text-ink-faint">
+            平日 {income.weekdayHours.toFixed(1)}h ／ 土日祝 {income.weekendHolidayHours.toFixed(1)}h ／ {income.shiftCount}回 ・ 振込日はカレンダー参照
           </p>
         </div>
       )}
@@ -599,7 +601,13 @@ export default function ShiftsPage() {
                     : "bg-vermilion text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none"
               }`}
             >
-              <span className="text-2xl">{listening ? "⏺" : "🎤"}</span>
+              <span className="inline-block">
+                {listening ? (
+                  <span className="inline-block h-6 w-6 rounded-full bg-card" />
+                ) : (
+                  <MicIcon className="h-6 w-6" />
+                )}
+              </span>
               <span className="dot block text-lg">
                 {listening ? "録音中… タップで確定" : parsing ? "AIが解析中・・・" : "話してシフトを追加"}
               </span>
@@ -628,7 +636,7 @@ export default function ShiftsPage() {
                 }}
                 className="mt-2 w-full text-center text-[11px] text-ink-faint underline underline-offset-2"
               >
-                📲 ショートカットで追加（ショートカットアプリに切り替わります・喋り終わるまで画面そのまま）
+                ショートカットで追加（ショートカットアプリに切り替わります・喋り終わるまで画面そのまま）
               </button>
             )}
             {speechOk && !showTextInput ? (
@@ -636,7 +644,7 @@ export default function ShiftsPage() {
                 onClick={() => setShowTextInput(true)}
                 className="mt-1 w-full text-center text-[11px] text-ink-faint underline underline-offset-2"
               >
-                ✏️ 文字で入力する
+                文字で入力する
               </button>
             ) : (
               <div className="mt-2 flex gap-2">
@@ -752,16 +760,22 @@ export default function ShiftsPage() {
                   picked
                     ? "border-2 border-vermilion bg-card text-vermilion"
                     : s
-                      ? "text-card"
+                      ? "border-2 bg-card"
                       : today
                         ? "border-2 border-ink bg-card"
-                        : "border border-rule bg-paper"
+                        : ""
                 }`}
-                style={!picked && s ? { backgroundColor: s.job_color || "var(--vermilion)" } : undefined}
+                style={
+                  !picked && s ? { borderColor: s.job_color || "var(--vermilion)" } : undefined
+                }
               >
-                <span className="dot">{picked ? "✓" : day}</span>
+                <span className={`dot ${!s && !today && !picked ? "text-ink-faint/70" : ""}`}>
+                  {picked ? "✓" : day}
+                </span>
                 {!picked && list.length === 1 && (
-                  <span className="text-[9px] leading-none">{minToHHMM(s.start_min)}</span>
+                  <span className="dot text-[9px] leading-none text-ink">
+                    {minToHHMM(s.start_min)}
+                  </span>
                 )}
                 {!picked && list.length > 1 && (
                   <span className="flex items-center gap-0.5">
@@ -787,7 +801,7 @@ export default function ShiftsPage() {
               }}
               className="dot rounded border border-rule px-2 py-1 text-[11px] text-ink-faint"
             >
-              🗓 複数日まとめて登録
+              複数日まとめて登録
             </button>
           </div>
         ) : (

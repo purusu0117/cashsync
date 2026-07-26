@@ -285,7 +285,7 @@ export default function SettingsPage() {
       )}
 
       <section id="goal" className="zig zig-t zig-b px-4 py-4 shadow-sm">
-        <h2 className="dot text-sm">💰 毎月の貯金目標（先取り貯金）</h2>
+        <h2 className="dot text-sm">毎月の貯金目標（先取り貯金）</h2>
         <p className="mt-0.5 text-[11px] text-ink-faint">
           目標額を収入から先に差し引いて「今日使えるお金」を計算します。残りだけ使えば自動的に貯まる方式です。
         </p>
@@ -502,7 +502,7 @@ export default function SettingsPage() {
       </section>
 
       <section id="push" className="zig zig-t zig-b px-4 py-4 shadow-sm">
-        <h2 className="dot text-sm">⚠ 使いすぎ予兆の通知</h2>
+        <h2 className="dot text-sm">使いすぎ予兆の通知</h2>
         <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
           毎晩チェックして、月末赤字ペースのときだけ「1日あと◯円おさえれば黒字」と通知します（1日1回まで）。iPhoneは「ホーム画面に追加」したアプリからONにしてください。
         </p>

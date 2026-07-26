@@ -187,16 +187,19 @@ export default function CalendarPage() {
         )}
       </section>
 
-      {/* カレンダー */}
+      {/* カレンダー：箱を並べず、印字だけで組む（データのない日は静かに、使った日は濃く） */}
       <div className="zig zig-t zig-b px-2 py-4 shadow-sm">
-        <div className="grid grid-cols-7 text-center text-[11px] text-ink-faint">
-          {["日", "月", "火", "水", "木", "金", "土"].map((d) => (
-            <span key={d} className="py-1">
+        <div className="grid grid-cols-7 text-center text-[11px]">
+          {["日", "月", "火", "水", "木", "金", "土"].map((d, i) => (
+            <span
+              key={d}
+              className={`py-1 ${i === 0 ? "text-vermilion" : "text-ink-faint"}`}
+            >
               {d}
             </span>
           ))}
         </div>
-        <div className="grid grid-cols-7 gap-0.5">
+        <div className="grid grid-cols-7">
           {cells.map((date, i) => {
             if (!date) return <span key={`x${i}`} />;
             const day = Number(date.slice(8));
@@ -208,34 +211,43 @@ export default function CalendarPage() {
               (inc?.reduce((s, x) => s + x.amount, 0) ?? 0) +
               (pd?.reduce((s, x) => s + x.amount, 0) ?? 0);
             const today = date === todayLocal();
+            const hasData = spent > 0 || got > 0;
             return (
               <button
                 key={date}
                 onClick={() => setSelected(date)}
-                className={`flex h-14 flex-col items-center justify-start rounded-md pt-0.5 ${
-                  today ? "border-2 border-ink bg-card" : "border border-rule/60 bg-paper"
-                }`}
+                className="flex h-14 flex-col items-center gap-0.5 pt-1"
               >
-                <span className={`dot text-xs ${pd ? "text-sage" : ""}`}>
+                <span
+                  className={`dot flex h-6 w-6 items-center justify-center rounded-full text-[13px] leading-none ${
+                    today
+                      ? "bg-vermilion text-card"
+                      : hasData
+                        ? "text-ink"
+                        : "text-ink-faint/70"
+                  }`}
+                >
                   {day}
-                  {pd && "💰"}
                 </span>
+                {pd && (
+                  <span className="dot text-[9px] leading-none text-sage">給料日</span>
+                )}
                 {got > 0 && (
-                  <span className="dot text-[9px] leading-tight tabular-nums text-sage">
-                    +{got >= 1000 ? `${Math.floor(got / 1000)}k` : got}
+                  <span className="dot text-[10px] leading-none tabular-nums text-sage">
+                    +{got.toLocaleString()}
                   </span>
                 )}
                 {spent > 0 && (
-                  <span className="dot text-[9px] leading-tight tabular-nums text-vermilion">
-                    -{spent >= 1000 ? `${Math.floor(spent / 1000)}k` : spent}
+                  <span className="dot text-[10px] leading-none tabular-nums text-ink">
+                    -{spent.toLocaleString()}
                   </span>
                 )}
               </button>
             );
           })}
         </div>
-        <p className="mt-2 text-center text-[11px] text-ink-faint">
-          日付をタップで詳細。💰=給料日（千円以上は k 表示）
+        <p className="cutline mt-2 pt-2 text-center text-[11px] text-ink-faint">
+          日付をタップで詳細
         </p>
       </div>
 
@@ -254,7 +266,7 @@ export default function CalendarPage() {
                     className="mr-1.5 inline-block h-2.5 w-2.5 self-center rounded-full"
                     style={{ backgroundColor: p.color }}
                   />
-                  <span>💰 {p.jobName} 給料日</span>
+                  <span>{p.jobName} 給料日</span>
                   <span className="leader" />
                   <span className="dot tabular-nums text-sage">+{fmtYen(p.amount)}</span>
                 </div>
@@ -269,7 +281,8 @@ export default function CalendarPage() {
               <ul className="mt-3">
                 {selInc.map((x) => (
                   <li key={x.id} className="flex items-baseline py-1 text-sm">
-                    <span>💰 {x.memo || "収入"}</span>
+                    <span className="text-sage">＋</span>
+                    <span className="ml-1 truncate">{x.memo || "収入"}</span>
                     <span className="leader" />
                     <span className="dot tabular-nums text-sage">+{fmtYen(x.amount)}</span>
                   </li>
@@ -297,7 +310,7 @@ export default function CalendarPage() {
             )}
             {selPd.length === 0 && selInc.length === 0 && selExp.length === 0 && (
               <p className="mt-4 pb-2 text-center text-xs text-ink-faint">
-                この日のお金の動きはありません 🈚
+                この日のお金の動きはありません（ノーマネーデー）
               </p>
             )}
           </div>
