@@ -136,3 +136,27 @@ input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
+
+/* ============ iOS Safari の日付・月・時刻入力のはみ出し対策 ============
+   iOSは input[type=month|date|time] にUA由来の内在幅・中央寄せを持たせるため、
+   w-full 指定でも親からはみ出すことがある。幅は常に親に従わせ、
+   タッチ端末ではUA外観を外して通常のinputと同じ見た目に揃える
+   （PCではカレンダーアイコン等の操作性を残すため外観はそのまま）。 */
+input[type="date"],
+input[type="month"],
+input[type="time"] {
+  min-width: 0;
+  max-width: 100%;
+}
+@media (pointer: coarse) {
+  input[type="date"],
+  input[type="month"],
+  input[type="time"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 2.25rem; /* appearance:none で値が空のとき潰れるのを防ぐ */
+  }
+  input::-webkit-date-and-time-value {
+    text-align: left;
+  }
+}
