@@ -3,7 +3,9 @@
 // レシート撮影 → AI解析 → 確認シート → 保存（全自動保存はしない：人間が最終確定）
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import RewardCredit from "@/components/RewardCredit";
 import { fmtYen, todayLocal } from "@/lib/format";
+import { deletePhotos, isNativePlatform, listRecentScreenshots } from "@/lib/native";
 import { takePendingImage } from "@/lib/pendingImage";
 
 interface Scan {
@@ -31,6 +33,19 @@ export default function ScanPage() {
   const [scan, setScan] = useState<Scan | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  // 無料枠超過（429 limit）のとき、ネイティブでは「動画を見て+3回」を出す
+  const [limitHit, setLimitHit] = useState(false);
+  // ネイティブ判定はSSRとの不一致を避けるためマウント後に行う
+  const [native, setNative] = useState(false);
+  // スクショ由来のとき、元ファイルの更新時刻（端末内のスクショ特定に使う）
+  const [sourceTakenAt, setSourceTakenAt] = useState(0);
+  const [cleanState, setCleanState] = useState<
+    "idle" | "busy" | "done" | "cancelled" | "notfound" | "error"
+  >("idle");
+
+  useEffect(() => {
+    setNative(isNativePlatform());
+  }, []);
 
   useEffect(() => {
     fetch("/api/categories")
@@ -50,7 +65,10 @@ export default function ScanPage() {
 
   async function scanFile(file: File, lib = false) {
     setError("");
+    setLimitHit(false);
     setFromLibrary(lib);
+    setSourceTakenAt(lib ? file.lastModified : 0);
+    setCleanState("idle");
     setPreview(URL.createObjectURL(file));
     setPhase("scanning");
     try {
@@ -59,13 +77,42 @@ export default function ScanPage() {
       const res = await fetch("/api/scan-receipt", { method: "POST", body: form });
       const d = await res.json();
       // error:'limit'（無料枠超過）のときは message に日本語の案内が入る
-      if (!res.ok) throw new Error(d.message ?? d.error ?? "解析に失敗しました。");
+      if (!res.ok) {
+        if (d.error === "limit") setLimitHit(true);
+        throw new Error(d.message ?? d.error ?? "解析に失敗しました。");
+      }
       setScan({ ...d.scan, date: d.scan.date || todayLocal() });
       setCategoryId(d.categoryId);
       setPhase("confirm");
     } catch (err) {
       setError(err instanceof Error ? err.message : "解析に失敗しました。");
       setPhase("idle");
+    }
+  }
+
+  // ネイティブ時のみ：読み取り元のスクショを端末から削除する（OSの確認ダイアログが出る）。
+  // ファイル選択ではメディアIDが取れないため、更新時刻が最も近いスクショ（±2分）を対象にする。
+  async function cleanSourceScreenshot() {
+    setCleanState("busy");
+    try {
+      const shots = await listRecentScreenshots(50);
+      let best: { id: string; takenAt: number } | null = null;
+      let bestDiff = Infinity;
+      for (const s of shots) {
+        const diff = Math.abs(s.takenAt - sourceTakenAt);
+        if (diff < bestDiff) {
+          best = s;
+          bestDiff = diff;
+        }
+      }
+      if (!best || bestDiff > 120_000) {
+        setCleanState("notfound");
+        return;
+      }
+      const res = await deletePhotos([best.id]);
+      setCleanState(res.deleted > 0 ? "done" : "cancelled");
+    } catch {
+      setCleanState("error");
     }
   }
 
@@ -159,6 +206,15 @@ export default function ScanPage() {
             </span>
           </button>
           {error && <p className="text-center text-sm text-vermilion">{error}</p>}
+          {limitHit && (
+            <RewardCredit
+              kind="scans"
+              onGranted={() => {
+                setError("");
+                setLimitHit(false);
+              }}
+            />
+          )}
           <p className="text-center text-[11px] leading-relaxed text-ink-faint">
             読み取り結果は保存前に必ず確認できます。
           </p>
@@ -186,9 +242,40 @@ export default function ScanPage() {
           <p className="dot mt-2 text-lg">記録しました</p>
           <div className="mx-auto mt-4 max-w-xs rounded-md border border-rule bg-paper px-4 py-3 text-left text-xs leading-relaxed">
             <p className="dot text-ink">🗑 元のスクショはもう不要です</p>
-            <p className="mt-1 text-ink-faint">
-              読み取った内容はアプリに保存済み。アプリから端末の写真は削除できない仕組み（ブラウザの制限）のため、お手数ですが写真アプリから削除してください。
-            </p>
+            {native ? (
+              <>
+                <p className="mt-1 text-ink-faint">
+                  読み取った内容はアプリに保存済み。下のボタンで端末からスクショを削除できます（OSの確認が出ます）。
+                </p>
+                {(cleanState === "idle" || cleanState === "busy") && (
+                  <button
+                    onClick={cleanSourceScreenshot}
+                    disabled={cleanState === "busy"}
+                    className="dot mt-2 w-full rounded-md border border-ink py-2.5 text-sm disabled:opacity-50"
+                  >
+                    {cleanState === "busy" ? "削除の確認中・・・" : "📱 端末からこのスクショを削除"}
+                  </button>
+                )}
+                {cleanState === "done" && <p className="mt-2 text-sage">✓ 端末から削除しました。</p>}
+                {cleanState === "cancelled" && (
+                  <p className="mt-2 text-ink-faint">削除をキャンセルしました。</p>
+                )}
+                {cleanState === "notfound" && (
+                  <p className="mt-2 text-ink-faint">
+                    対象のスクショを特定できませんでした。お手数ですが写真アプリから削除してください。
+                  </p>
+                )}
+                {cleanState === "error" && (
+                  <p className="mt-2 text-vermilion">
+                    削除に失敗しました。写真アプリから削除してください。
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="mt-1 text-ink-faint">
+                読み取った内容はアプリに保存済み。アプリから端末の写真は削除できない仕組み（ブラウザの制限）のため、お手数ですが写真アプリから削除してください。
+              </p>
+            )}
           </div>
           <button
             onClick={() => {

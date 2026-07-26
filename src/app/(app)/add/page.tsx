@@ -3,6 +3,7 @@
 // 手入力 ＋ 自然文/音声入力（「昨日セブンで昼飯650円」→AIパース→確認→保存）
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import RewardCredit from "@/components/RewardCredit";
 import { fmtYen, todayLocal } from "@/lib/format";
 
 interface Category {
@@ -40,6 +41,8 @@ export default function AddPage() {
   const [memo, setMemo] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // AI解析の無料枠超過（429 limit）のとき、ネイティブでは「動画を見て+3回」を出す
+  const [limitHit, setLimitHit] = useState(false);
 
   const [text, setText] = useState("");
   const [parsing, setParsing] = useState(false);
@@ -132,6 +135,7 @@ export default function AddPage() {
     if (!t) return;
     setParsing(true);
     setError("");
+    setLimitHit(false);
     setParsedNote("");
     try {
       const res = await fetch("/api/parse-entry", {
@@ -141,7 +145,10 @@ export default function AddPage() {
       });
       const d = await res.json();
       // error:'limit'（無料枠超過）のときは message に日本語の案内が入る
-      if (!res.ok) throw new Error(d.message ?? d.error ?? "解析に失敗しました。");
+      if (!res.ok) {
+        if (d.error === "limit") setLimitHit(true);
+        throw new Error(d.message ?? d.error ?? "解析に失敗しました。");
+      }
       setAmount(String(d.parsed.amount));
       setDate(d.parsed.date);
       setMemo(d.parsed.memo);
@@ -239,6 +246,17 @@ export default function AddPage() {
           </div>
         )}
         {parsedNote && <p className="mt-2 text-[11px] text-sage">✓ {parsedNote}</p>}
+        {limitHit && (
+          <div className="mt-2">
+            <RewardCredit
+              kind="parses"
+              onGranted={() => {
+                setError("");
+                setLimitHit(false);
+              }}
+            />
+          </div>
+        )}
       </section>
 
       {/* 手入力フォーム */}

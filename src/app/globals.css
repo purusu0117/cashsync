@@ -130,6 +130,11 @@ body {
   }
 }
 
+/* ネイティブアプリ（Capacitor）で上部AdMobバナー表示中：バナー高さ50px＋セーフエリア分の余白 */
+body.native-banner {
+  padding-top: calc(50px + env(safe-area-inset-top, 0px));
+}
+
 /* number input のスピナー消し */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
