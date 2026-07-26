@@ -30,19 +30,30 @@ function platform(): "ios" | "android" {
 // AdMob（無料プランのみ上部バナー＋リワード動画）
 // ---------------------------------------------------------------------------
 
-// 既定は Google 公式のテスト用ユニットID。本番IDは NEXT_PUBLIC_ 環境変数で差し替える。
+// 本番モード: NEXT_PUBLIC_ADMOB_PRODUCTION=1 で本番ユニットID＋テストモード解除。
+// それ以外（開発・TestFlight検証中）は Google 公式テストIDで配信する
+//（自分の本番広告を表示・クリックするとAdMobポリシー違反になるため）。
+const AD_TESTING = process.env.NEXT_PUBLIC_ADMOB_PRODUCTION !== "1";
+
+// 本番の広告ユニットID（iOS・2026-07-26 大翔のAdMobアカウントで発行済み）。
+// ユニットIDは公開情報のため直書きでよい。NEXT_PUBLIC_ 環境変数があればそちらを優先。
+const PROD_BANNER_ID_IOS = "ca-app-pub-8116409688907735/1061329015";
+const PROD_REWARDED_ID_IOS = "ca-app-pub-8116409688907735/2182838994";
+
 const BANNER_AD_ID: Record<"ios" | "android", string> = {
-  ios: process.env.NEXT_PUBLIC_ADMOB_BANNER_ID_IOS || "ca-app-pub-3940256099942544/2934735716",
+  ios:
+    process.env.NEXT_PUBLIC_ADMOB_BANNER_ID_IOS ||
+    (AD_TESTING ? "ca-app-pub-3940256099942544/2934735716" : PROD_BANNER_ID_IOS),
   android:
     process.env.NEXT_PUBLIC_ADMOB_BANNER_ID_ANDROID || "ca-app-pub-3940256099942544/6300978111",
 };
 const REWARDED_AD_ID: Record<"ios" | "android", string> = {
-  ios: process.env.NEXT_PUBLIC_ADMOB_REWARDED_ID_IOS || "ca-app-pub-3940256099942544/1712485313",
+  ios:
+    process.env.NEXT_PUBLIC_ADMOB_REWARDED_ID_IOS ||
+    (AD_TESTING ? "ca-app-pub-3940256099942544/1712485313" : PROD_REWARDED_ID_IOS),
   android:
     process.env.NEXT_PUBLIC_ADMOB_REWARDED_ID_ANDROID || "ca-app-pub-3940256099942544/5224354917",
 };
-// 本番IDを設定したら NEXT_PUBLIC_ADMOB_PRODUCTION=1 でテストモードを解除する
-const AD_TESTING = process.env.NEXT_PUBLIC_ADMOB_PRODUCTION !== "1";
 
 async function admob() {
   return await import("@capacitor-community/admob");
