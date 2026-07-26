@@ -2,7 +2,7 @@
 
 // 設定：プラン（プレミアム課金）／バイト先（時給）／定期支出・収入／カテゴリ／ログアウト
 import Link from "next/link";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { type ReactNode, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { CardIcon, CategoryIcon, CoinIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
 import { CATEGORY_ICON_KEYS, DEFAULT_CATEGORY_ICON } from "@/lib/categoryIcons";
@@ -60,6 +60,38 @@ const PLAN_LABEL: Record<PlanName, string> = {
 };
 function planOf(v: unknown): PlanName {
   return v === "premium" || v === "founder" ? v : "free";
+}
+
+// 分割払いは「◯◯（分割N回）」名の定期支出として保存されている（addSplit 参照）
+const SPLIT_RE = /（分割(\d+)回）/;
+
+/** 'YYYY-MM' 同士の月差（to - from）。to が過去なら負 */
+function monthsBetween(from: string, to: string): number {
+  const [fy, fm] = from.split("-").map(Number);
+  const [ty, tm] = to.split("-").map(Number);
+  return (ty - fy) * 12 + (tm - fm);
+}
+
+/**
+ * 折りたたみ一覧：登録が増えてもページが伸びないよう、既定は閉じて要約だけ印字する。
+ * レシート世界観に合わせて開閉は ▼／▲ の活字記号（絵文字なし）。
+ */
+function Fold({ summary, children }: { summary: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-baseline rounded-md border border-rule bg-paper px-3 py-2 text-left active:translate-y-0.5"
+      >
+        <span className="dot min-w-0 flex-1 truncate text-xs tabular-nums">{summary}</span>
+        <span className="ml-2 shrink-0 text-xs text-ink-faint">{open ? "とじる ▲" : "ひらく ▼"}</span>
+      </button>
+      {open && <div className="mt-2">{children}</div>}
+    </div>
+  );
 }
 
 export default function SettingsPage() {
@@ -374,6 +406,30 @@ export default function SettingsPage() {
   const addBtn =
     "dot rounded-md border border-ink px-4 py-2 text-sm active:translate-y-0.5 disabled:opacity-40";
 
+  // --- 折りたたみ要約：閉じたままでも「何件・月いくら」が一目でわかるように ---
+  const splits = recurring.filter((r) => SPLIT_RE.test(r.name));
+  const regulars = recurring.filter((r) => !SPLIT_RE.test(r.name));
+  const sumAmt = (arr: Recurring[]) => arr.reduce((s, r) => s + r.amount, 0);
+  const regExpMonthly = sumAmt(regulars.filter((r) => r.kind === "expense" && r.interval !== "yearly"));
+  const regExpYearly = sumAmt(regulars.filter((r) => r.kind === "expense" && r.interval === "yearly"));
+  const regIncMonthly = sumAmt(regulars.filter((r) => r.kind === "income" && r.interval !== "yearly"));
+  const regIncYearly = sumAmt(regulars.filter((r) => r.kind === "income" && r.interval === "yearly"));
+  // 分割払いの残り回数（今月を含む。支払い完了なら0）
+  const splitRemain = (r: Recurring) =>
+    r.end_month
+      ? Math.max(0, monthsBetween(thisMonth > r.start_month ? thisMonth : r.start_month, r.end_month) + 1)
+      : 0;
+  const splitMonthlySum = sumAmt(splits.filter((r) => splitRemain(r) > 0)); // 支払い中のみ
+  const splitRemainTotal = splits.reduce((s, r) => s + r.amount * splitRemain(r), 0);
+  let regSummary = `${regulars.length}件`;
+  if (regExpMonthly > 0) regSummary += ` ・ 月 ${fmtYen(regExpMonthly)}`;
+  if (regExpYearly > 0) regSummary += ` ＋年払い ${fmtYen(regExpYearly)}`;
+  if (regIncMonthly + regIncYearly > 0)
+    regSummary += ` ・ 収入 月 ${fmtYen(regIncMonthly)}${regIncYearly > 0 ? `＋年 ${fmtYen(regIncYearly)}` : ""}`;
+  let splitSummary = `${splits.length}件`;
+  if (splitMonthlySum > 0) splitSummary += ` ・ 月 ${fmtYen(splitMonthlySum)}`;
+  if (splitRemainTotal > 0) splitSummary += ` ・ 残り ${fmtYen(splitRemainTotal)}`;
+
   if (!ready) return <Loading />;
 
   return (
@@ -469,7 +525,9 @@ export default function SettingsPage() {
             シフト入力へ
           </Link>
         </div>
-        <ul className="mt-2 space-y-1.5">
+        <Fold summary={`${jobs.length}件`}>
+        <ul className="space-y-1.5">
+          {jobs.length === 0 && <li className="text-[11px] text-ink-faint">まだ登録がありません</li>}
           {jobs.map((j) => (
             <li key={j.id}>
               <div className="flex items-baseline text-sm">
@@ -494,6 +552,7 @@ export default function SettingsPage() {
             </li>
           ))}
         </ul>
+        </Fold>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <input value={jobName} onChange={(e) => setJobName(e.target.value)} placeholder="バイト先名" className={`${input} col-span-2`} />
           <input type="number" inputMode="numeric" value={wdRate} onChange={(e) => setWdRate(e.target.value)} placeholder="平日時給" className={input} />
@@ -531,34 +590,40 @@ export default function SettingsPage() {
       <section id="recurring" className="zig zig-t zig-b px-4 py-4 shadow-sm">
         <h2 className="dot text-sm">定期支出・収入</h2>
         <p className="mt-0.5 text-[11px] text-ink-faint">家賃・サブスク・仕送りなど。指定日に自動で記録されます（月払い／年払い）。</p>
-        <ul className="mt-2 space-y-1">
-          {recurring.map((r) => (
-            <li key={r.id}>
-              <div className="flex items-baseline text-sm">
-                <span className="flex min-w-0 items-center gap-1 truncate">
-                  {r.kind === "income" ? (
-                    <CoinIcon className="h-4 w-4 shrink-0 text-sage" />
-                  ) : (
-                    <CategoryIcon icon="subscription" className="h-4 w-4 shrink-0 text-ink-faint" />
-                  )}
-                  <span className="min-w-0 truncate">{r.name}</span>
-                </span>
-                <span className="leader" />
-                <span className={`dot shrink-0 tabular-nums ${r.kind === "income" ? "text-sage" : ""}`}>{fmtYen(r.amount)}</span>
-                <button onClick={() => del(`/api/recurring?id=${r.id}`)} className="ml-2 shrink-0 text-xs text-vermilion">
-                  ✕
-                </button>
-              </div>
-              <p className="ml-5 text-[11px] text-ink-faint">
-                {r.interval === "yearly"
-                  ? `毎年${Number(r.start_month.slice(5))}月${r.post_day >= 28 ? "末日" : `${r.post_day}日`}`
-                  : `毎月${r.post_day >= 28 ? "末日" : `${r.post_day}日`}`}
-                ・{fmtYen(r.amount)}
-                {r.end_month && `・${r.end_month.replace("-", "年")}月まで`}
-              </p>
-            </li>
-          ))}
-        </ul>
+        <Fold summary={regSummary}>
+          {regulars.length === 0 ? (
+            <p className="text-[11px] text-ink-faint">まだ登録がありません</p>
+          ) : (
+            <ul className="space-y-1">
+              {regulars.map((r) => (
+                <li key={r.id}>
+                  <div className="flex items-baseline text-sm">
+                    <span className="flex min-w-0 items-center gap-1 truncate">
+                      {r.kind === "income" ? (
+                        <CoinIcon className="h-4 w-4 shrink-0 text-sage" />
+                      ) : (
+                        <CategoryIcon icon="subscription" className="h-4 w-4 shrink-0 text-ink-faint" />
+                      )}
+                      <span className="min-w-0 truncate">{r.name}</span>
+                    </span>
+                    <span className="leader" />
+                    <span className={`dot shrink-0 tabular-nums ${r.kind === "income" ? "text-sage" : ""}`}>{fmtYen(r.amount)}</span>
+                    <button onClick={() => del(`/api/recurring?id=${r.id}`)} className="ml-2 shrink-0 text-xs text-vermilion">
+                      ✕
+                    </button>
+                  </div>
+                  <p className="ml-5 text-[11px] text-ink-faint">
+                    {r.interval === "yearly"
+                      ? `毎年${Number(r.start_month.slice(5))}月${r.post_day >= 28 ? "末日" : `${r.post_day}日`}`
+                      : `毎月${r.post_day >= 28 ? "末日" : `${r.post_day}日`}`}
+                    ・{fmtYen(r.amount)}
+                    {r.end_month && `・${r.end_month.slice(0, 4)}年${Number(r.end_month.slice(5))}月まで`}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Fold>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <select value={recKind} onChange={(e) => setRecKind(e.target.value as "expense" | "income")} className={`${input} min-w-0`}>
             <option value="expense">支出</option>
@@ -607,9 +672,41 @@ export default function SettingsPage() {
 
         <div className="cutline mt-4 pt-3">
           <h3 className="dot flex items-center gap-1 text-xs">
-            <CardIcon className="h-4 w-4" /> 分割払いを追加
+            <CardIcon className="h-4 w-4" /> 分割払い
           </h3>
-          <p className="mt-0.5 text-[11px] text-ink-faint">
+          <Fold summary={splitSummary}>
+            {splits.length === 0 ? (
+              <p className="text-[11px] text-ink-faint">まだ登録がありません</p>
+            ) : (
+              <ul className="space-y-1">
+                {splits.map((r) => {
+                  const rem = splitRemain(r);
+                  const total = Number(r.name.match(SPLIT_RE)?.[1] ?? 0);
+                  return (
+                    <li key={r.id}>
+                      <div className="flex items-baseline text-sm">
+                        <span className="flex min-w-0 items-center gap-1 truncate">
+                          <CardIcon className="h-4 w-4 shrink-0 text-ink-faint" />
+                          <span className="min-w-0 truncate">{r.name.replace(SPLIT_RE, "")}</span>
+                        </span>
+                        <span className="leader" />
+                        <span className="dot shrink-0 tabular-nums">{fmtYen(r.amount)}/月</span>
+                        <button onClick={() => del(`/api/recurring?id=${r.id}`)} className="ml-2 shrink-0 text-xs text-vermilion">
+                          ✕
+                        </button>
+                      </div>
+                      <p className="ml-5 text-[11px] text-ink-faint">
+                        {rem > 0
+                          ? `毎月${r.post_day >= 28 ? "末日" : `${r.post_day}日`}・残り${rem}回${total > 0 ? `／全${total}回` : ""}（あと${fmtYen(r.amount * rem)}）${r.end_month ? `・${r.end_month.slice(0, 4)}年${Number(r.end_month.slice(5))}月まで` : ""}`
+                          : "支払い完了（消してOK）"}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Fold>
+          <p className="mt-2 text-[11px] text-ink-faint">
             総額と回数を入れると月々の支払いを自動計算して、期間ぶんだけ毎月計上します。
           </p>
           <div className="mt-2 grid grid-cols-2 gap-2">
@@ -652,7 +749,9 @@ export default function SettingsPage() {
         <p className="mt-0.5 text-[11px] text-ink-faint">
           Suicaチャージなど、レシートやスクショで撮りにくい定型支出を登録すると、ホームに1タップ記録ボタンが並びます（{MAX_PRESETS}個まで）。
         </p>
-        <ul className="mt-2 space-y-1.5">
+        <Fold summary={`${presets.length}件`}>
+        <ul className="space-y-1.5">
+          {presets.length === 0 && <li className="text-[11px] text-ink-faint">まだ登録がありません</li>}
           {presets.map((p) => (
             <li key={p.id} className="flex items-baseline text-sm">
               <CategoryIcon icon={p.icon} className="mr-1.5 h-4 w-4 shrink-0 self-center text-ink-faint" />
@@ -666,6 +765,7 @@ export default function SettingsPage() {
             </li>
           ))}
         </ul>
+        </Fold>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <input
             value={pName}
@@ -702,16 +802,19 @@ export default function SettingsPage() {
 
       <section id="categories" className="zig zig-t zig-b px-4 py-4 shadow-sm">
         <h2 className="dot text-sm">カテゴリ</h2>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {categories.map((c) => (
-            <span key={c.id} className="flex items-center gap-1 rounded-full border border-rule bg-paper px-3 py-1 text-sm">
-              <CategoryIcon icon={c.icon} className="h-4 w-4 text-ink-faint" /> {c.name}
-              <button onClick={() => del(`/api/categories?id=${c.id}`)} className="text-xs text-vermilion">
-                ✕
-              </button>
-            </span>
-          ))}
-        </div>
+        <Fold summary={`${categories.length}件`}>
+          <div className="flex flex-wrap gap-1.5">
+            {categories.length === 0 && <p className="text-[11px] text-ink-faint">まだ登録がありません</p>}
+            {categories.map((c) => (
+              <span key={c.id} className="flex items-center gap-1 rounded-full border border-rule bg-paper px-3 py-1 text-sm">
+                <CategoryIcon icon={c.icon} className="h-4 w-4 text-ink-faint" /> {c.name}
+                <button onClick={() => del(`/api/categories?id=${c.id}`)} className="text-xs text-vermilion">
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        </Fold>
         <div className="mt-3 space-y-2">
           <div className="flex gap-2">
             <input value={cName} onChange={(e) => setCName(e.target.value)} placeholder="カテゴリ名" className={`${input} flex-1 min-w-0`} />

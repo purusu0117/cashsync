@@ -304,6 +304,119 @@ export async function postRecurringForMonth(userId: string, upToMonth: string) {
   }
 }
 
+export interface PlannedRecurring {
+  recurringId: string;
+  kind: "expense" | "income";
+  date: string;
+  name: string;
+  amount: number;
+  category: string | null;
+  icon: string | null;
+}
+
+export interface PlannedPayday {
+  date: string;
+  jobId: string;
+  jobName: string;
+  color: string;
+  amount: number; // 0 = シフト未入力で金額未定（給料日マーカーのみ）
+  periodStart: string;
+  periodEnd: string;
+  confirmed: boolean; // true = 入力済みシフトから計算した金額
+}
+
+export interface MonthPlan {
+  expenses: PlannedRecurring[];
+  incomes: PlannedRecurring[];
+  paydays: PlannedPayday[];
+  expenseTotal: number;
+  incomeTotal: number; // 定期収入 ＋ 金額確定の給料日
+}
+
+/**
+ * 未来月の「予定」：定期支出・収入（分割払い含む）と給料日を、実体化せずに計算する（読み取り専用・冪等）。
+ * 当月は postRecurringForMonth が月初に一括計上済み（＝実記録側に出る）ので、
+ * 二重表示を避けるため当月・過去月は常に空を返す。
+ */
+export async function monthPlan(userId: string, month: string): Promise<MonthPlan> {
+  const plan: MonthPlan = { expenses: [], incomes: [], paydays: [], expenseTotal: 0, incomeTotal: 0 };
+  if (month <= currentMonth()) return plan;
+  const d = await db();
+
+  // 定期支出・収入（分割払いは end_month 付きの定期支出として登録されている）
+  const items = await d.all<{
+    id: string;
+    kind: string;
+    name: string;
+    amount: number;
+    start_month: string;
+    end_month: string | null;
+    post_day: number;
+    interval: string;
+    category: string | null;
+    icon: string | null;
+  }>(
+    `SELECT r.id, r.kind, r.name, r.amount, r.start_month, r.end_month, r.post_day, r.interval,
+            c.name AS category, c.icon
+     FROM recurring_items r
+     LEFT JOIN categories c ON c.id = r.category_id AND c.user_id = r.user_id
+     WHERE r.user_id = ? AND r.start_month <= ? AND (r.end_month IS NULL OR r.end_month >= ?)`,
+    userId,
+    month,
+    month,
+  );
+  for (const it of items) {
+    // 年払いは「毎年、開始月と同じ月」だけ（postRecurringForMonth と同じ判定）
+    if (it.interval === "yearly" && month.slice(5) !== it.start_month.slice(5)) continue;
+    const entry: PlannedRecurring = {
+      recurringId: it.id,
+      kind: it.kind === "income" ? "income" : "expense",
+      date: dateStr(month, Math.max(1, it.post_day)),
+      name: it.name,
+      amount: it.amount,
+      category: it.category,
+      icon: it.icon,
+    };
+    if (entry.kind === "income") {
+      plan.incomes.push(entry);
+      plan.incomeTotal += it.amount;
+    } else {
+      plan.expenses.push(entry);
+      plan.expenseTotal += it.amount;
+    }
+  }
+  plan.expenses.sort((a, b) => a.date.localeCompare(b.date));
+  plan.incomes.sort((a, b) => a.date.localeCompare(b.date));
+
+  // 給料日：入力済みシフトがあれば金額つき、無ければ「給料日」マーカーのみ（当日払いは日が読めないので出さない）
+  const confirmed = await paydays(userId, month);
+  const covered = new Set(confirmed.map((p) => p.jobId));
+  for (const p of confirmed) {
+    plan.paydays.push({ ...p, confirmed: true });
+    plan.incomeTotal += p.amount;
+  }
+  const jobs = await d.all<JobRow & { pay_day: number; color: string }>(
+    "SELECT id, name, color, closing_day, pay_month_offset, pay_day, pay_same_day FROM jobs WHERE user_id = ?",
+    userId,
+  );
+  for (const job of jobs) {
+    if (job.pay_same_day || covered.has(job.id)) continue;
+    const period = payPeriodFor(job, month);
+    plan.paydays.push({
+      date: dateStr(month, Math.min(job.pay_day || 25, daysInMonth(month))),
+      jobId: job.id,
+      jobName: job.name,
+      color: job.color,
+      amount: 0,
+      periodStart: period.start,
+      periodEnd: period.end,
+      confirmed: false,
+    });
+  }
+  plan.paydays.sort((a, b) => a.date.localeCompare(b.date));
+  return plan;
+}
+
 export interface MonthSummary {
   month: string;
   incomeTotal: number; // シフト見込み ＋ 収入レコード

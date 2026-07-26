@@ -5,10 +5,12 @@ import {
   currentMonth,
   dailyAllowance,
   daysRemainingInMonth,
+  monthPlan,
   monthSummary,
   paydays,
   postRecurringForMonth,
 } from "@/lib/money";
+import type { Payday } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +23,12 @@ export async function GET(request: Request) {
       ? (params.get("month") as string)
       : currentMonth();
     const d = await db();
+    // 未来月：定期・分割・給料日を「予定」として計算（実体化しない読み取り専用）。
+    // 給料日はシフト確定分も予定側にまとめ、実記録と混ざらないようにする。
+    const isFuture = month > currentMonth();
     // クラウド版（Vercel⇄Supabase）はDB往復ごとにレイテンシが乗るため、独立クエリは並列で投げる。
     // シフト収入は monthSummary が内包する値を使い、重複計算（monthShiftIncome の二重実行）も削除。
-    const [expenses, incomes, pd, summary, goalRow] = await Promise.all([
+    const [expenses, incomes, pd, plan, summary, goalRow] = await Promise.all([
       d.all(
         `SELECT e.id, e.date, e.amount, e.memo, e.source, c.name AS category, c.icon
          FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
@@ -36,7 +41,8 @@ export async function GET(request: Request) {
         user.id,
         `${month}-%`,
       ),
-      paydays(user.id, month),
+      isFuture ? Promise.resolve<Payday[]>([]) : paydays(user.id, month),
+      monthPlan(user.id, month),
       // 今日使えるお金の計算内訳（今月のみ意味を持つ）
       monthSummary(user.id, month),
       d.get<{ savings_goal: number }>("SELECT savings_goal FROM users WHERE id = ?", user.id),
@@ -50,6 +56,7 @@ export async function GET(request: Request) {
       expenses,
       incomes,
       paydays: pd,
+      plan,
       breakdown: {
         shiftIncome: shift.total,
         otherIncome,

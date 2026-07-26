@@ -33,11 +33,38 @@ interface Payday {
   periodStart: string;
   periodEnd: string;
 }
+interface PlannedRecurring {
+  recurringId: string;
+  kind: "expense" | "income";
+  date: string;
+  name: string;
+  amount: number;
+  category: string | null;
+  icon: string | null;
+}
+interface PlannedPayday {
+  date: string;
+  jobId: string;
+  jobName: string;
+  color: string;
+  amount: number; // 0 = シフト未入力で金額未定
+  periodStart: string;
+  periodEnd: string;
+  confirmed: boolean;
+}
+interface MonthPlan {
+  expenses: PlannedRecurring[];
+  incomes: PlannedRecurring[];
+  paydays: PlannedPayday[];
+  expenseTotal: number;
+  incomeTotal: number;
+}
 interface CalData {
   month: string;
   expenses: CalExpense[];
   incomes: CalIncome[];
   paydays: Payday[];
+  plan?: MonthPlan; // 未来月のみ中身が入る（旧キャッシュには無いので optional）
   breakdown: {
     shiftIncome: number;
     otherIncome: number;
@@ -112,10 +139,34 @@ export default function CalendarPage() {
     a.push(p);
     pdByDate.set(p.date, a);
   }
+  // 未来月の「予定」（定期・分割・給料日）。実記録と別マップにして薄い表示で区別する
+  const plan = data.plan;
+  const planExpByDate = new Map<string, PlannedRecurring[]>();
+  const planIncByDate = new Map<string, PlannedRecurring[]>();
+  const planPdByDate = new Map<string, PlannedPayday[]>();
+  for (const e of plan?.expenses ?? []) {
+    const a = planExpByDate.get(e.date) ?? [];
+    a.push(e);
+    planExpByDate.set(e.date, a);
+  }
+  for (const i of plan?.incomes ?? []) {
+    const a = planIncByDate.get(i.date) ?? [];
+    a.push(i);
+    planIncByDate.set(i.date, a);
+  }
+  for (const p of plan?.paydays ?? []) {
+    const a = planPdByDate.get(p.date) ?? [];
+    a.push(p);
+    planPdByDate.set(p.date, a);
+  }
+  const hasPlan = !!plan && (plan.expenses.length > 0 || plan.incomes.length > 0 || plan.paydays.length > 0);
   const b = data.breakdown;
   const selExp = selected ? (expByDate.get(selected) ?? []) : [];
   const selInc = selected ? (incByDate.get(selected) ?? []) : [];
   const selPd = selected ? (pdByDate.get(selected) ?? []) : [];
+  const selPlanExp = selected ? (planExpByDate.get(selected) ?? []) : [];
+  const selPlanInc = selected ? (planIncByDate.get(selected) ?? []) : [];
+  const selPlanPd = selected ? (planPdByDate.get(selected) ?? []) : [];
 
   async function removeExpense(e: CalExpense) {
     if (!confirm(`「${e.memo || e.category || "支出"} ${fmtYen(e.amount)}」を削除しますか？`)) return;
@@ -158,6 +209,12 @@ export default function CalendarPage() {
             const got =
               (inc?.reduce((s, x) => s + x.amount, 0) ?? 0) +
               (pd?.reduce((s, x) => s + x.amount, 0) ?? 0);
+            // 予定（未来月のみ入る）。薄い表示で実記録と区別する
+            const ppd = planPdByDate.get(date);
+            const planSpent = planExpByDate.get(date)?.reduce((s, e) => s + e.amount, 0) ?? 0;
+            const planGot =
+              (planIncByDate.get(date)?.reduce((s, x) => s + x.amount, 0) ?? 0) +
+              (ppd?.reduce((s, x) => s + x.amount, 0) ?? 0);
             const today = date === todayLocal();
             const hasData = spent > 0 || got > 0;
             return (
@@ -177,8 +234,10 @@ export default function CalendarPage() {
                 >
                   {day}
                 </span>
-                {pd && (
-                  <span className="dot text-[9px] leading-none text-sage">給料日</span>
+                {(pd || ppd) && (
+                  <span className={`dot text-[9px] leading-none ${pd ? "text-sage" : "text-sage/55"}`}>
+                    給料日
+                  </span>
                 )}
                 {got > 0 && (
                   <span className="dot text-[10px] leading-none tabular-nums text-sage">
@@ -190,12 +249,22 @@ export default function CalendarPage() {
                     -{spent.toLocaleString()}
                   </span>
                 )}
+                {planGot > 0 && (
+                  <span className="dot text-[10px] leading-none tabular-nums text-sage/55">
+                    +{planGot.toLocaleString()}
+                  </span>
+                )}
+                {planSpent > 0 && (
+                  <span className="dot text-[10px] leading-none tabular-nums text-ink-faint/80">
+                    -{planSpent.toLocaleString()}
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
         <p className="cutline mt-2 pt-2 text-center text-[11px] text-ink-faint">
-          日付をタップで詳細
+          {hasPlan ? "薄い数字は予定（まだ記帳前）・日付をタップで詳細" : "日付をタップで詳細"}
         </p>
       </div>
 
@@ -211,6 +280,15 @@ export default function CalendarPage() {
           )}
           <span className="ml-1 text-xs text-ink-faint">{showCalc ? "▲" : "▼"}</span>
         </button>
+        {hasPlan && plan && (
+          <div className="mt-1.5 flex items-baseline text-xs">
+            <span className="text-ink-faint">予定合計</span>
+            <span className="leader" />
+            <span className="dot shrink-0 tabular-nums text-ink-faint">
+              支出 −{fmtYen(plan.expenseTotal)} ・ 収入 +{fmtYen(plan.incomeTotal)}
+            </span>
+          </div>
+        )}
         {showCalc && (
           <div className="mt-2 space-y-1 text-sm">
             <div className="flex items-baseline">
@@ -312,7 +390,75 @@ export default function CalendarPage() {
                 ))}
               </ul>
             )}
-            {selPd.length === 0 && selInc.length === 0 && selExp.length === 0 && (
+            {(selPlanPd.length > 0 || selPlanInc.length > 0 || selPlanExp.length > 0) && (
+              <div className="mt-3 cutline pt-2">
+                <p className="dot text-[11px] text-ink-faint">＊ 予定（まだ記帳前） ＊</p>
+                {selPlanPd.map((p) => (
+                  <div
+                    key={p.jobId}
+                    className="mt-2 rounded-md border border-dashed px-3 py-2 opacity-80"
+                    style={{ borderColor: p.color }}
+                  >
+                    <div className="flex items-baseline text-sm">
+                      <span
+                        className="mr-1.5 inline-block h-2.5 w-2.5 self-center rounded-full opacity-70"
+                        style={{ backgroundColor: p.color }}
+                      />
+                      <span>{p.jobName} 給料日</span>
+                      <span className="ml-1 shrink-0 text-[10px] text-ink-faint">予定</span>
+                      <span className="leader" />
+                      {p.amount > 0 ? (
+                        <span className="dot shrink-0 tabular-nums text-sage">+{fmtYen(p.amount)}</span>
+                      ) : (
+                        <span className="shrink-0 text-[11px] text-ink-faint">金額未定</span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-ink-faint">
+                      {p.confirmed
+                        ? `${fmtDateJa(p.periodStart)}〜${fmtDateJa(p.periodEnd)}の入力済みシフト分`
+                        : "シフト未入力のため金額は未定です"}
+                    </p>
+                  </div>
+                ))}
+                {selPlanInc.length > 0 && (
+                  <ul className="mt-2">
+                    {selPlanInc.map((x) => (
+                      <li key={x.recurringId} className="flex items-baseline py-1 text-sm opacity-80">
+                        <span className="text-sage">＋</span>
+                        <span className="ml-1 truncate">{x.name}</span>
+                        <span className="ml-1 shrink-0 text-[10px] text-ink-faint">予定</span>
+                        <span className="leader" />
+                        <span className="dot shrink-0 tabular-nums text-sage">+{fmtYen(x.amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {selPlanExp.length > 0 && (
+                  <ul className="mt-2">
+                    {selPlanExp.map((x) => (
+                      <li key={x.recurringId} className="flex items-baseline gap-1 py-1 text-sm opacity-80">
+                        {x.category && (
+                          <CategoryIcon icon={x.icon} className="h-4 w-4 shrink-0 self-center text-ink-faint" />
+                        )}
+                        <span className="truncate">{x.name}</span>
+                        <span className="shrink-0 text-[10px] text-ink-faint">予定</span>
+                        <span className="leader" />
+                        <span className="dot shrink-0 tabular-nums text-ink-faint">−{fmtYen(x.amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="mt-2 text-[10px] text-ink-faint">
+                  予定はその月が来ると自動で記帳されます。内容は「設定 › 定期支出・収入」から変更できます。
+                </p>
+              </div>
+            )}
+            {selPd.length === 0 &&
+              selInc.length === 0 &&
+              selExp.length === 0 &&
+              selPlanPd.length === 0 &&
+              selPlanInc.length === 0 &&
+              selPlanExp.length === 0 && (
               <p className="mt-4 pb-2 text-center text-xs text-ink-faint">
                 この日のお金の動きはありません（ノーマネーデー）
               </p>

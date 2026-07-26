@@ -17,12 +17,20 @@ import {
   categoryBreakdown,
   currentMonth,
   isWeekendOrHoliday,
+  monthPlan,
   monthShiftIncome,
   monthSummary,
   monthWorkIncome,
   postRecurringForMonth,
   todayStr,
 } from "../src/lib/money";
+
+/** 'YYYY-MM' に delta ヶ月足す（テスト用） */
+function addMonths(month: string, delta: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
 let passed = 0;
 let failed = 0;
@@ -691,6 +699,152 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
     userId,
   ))!;
   check("上限判定用COUNTが取れる（残1個）", Number(presetCount.n) === 1, presetCount);
+
+  // --- 14. 未来月の「予定」計算（monthPlan：実体化しない読み取り専用） ---
+  console.log("[14] 未来月の予定（monthPlan）");
+  const m1 = addMonths(month, 1);
+  const m2 = addMonths(month, 2);
+  // 分割払い（設定画面と同じ形式：end_month 付き・名前に（分割N回））
+  await d.run(
+    "INSERT INTO recurring_items (id, user_id, kind, name, amount, category_id, start_month, end_month, post_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    uid(),
+    userId,
+    "expense",
+    "ゲーム機（分割3回）",
+    2000,
+    null,
+    m1,
+    addMonths(m1, 2),
+    27,
+  );
+  // 年払い：来月と同じ「月」に毎年計上（来月の予定に出るはず）
+  await d.run(
+    "INSERT INTO recurring_items (id, user_id, kind, name, amount, category_id, start_month, end_month, post_day, interval) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    uid(),
+    userId,
+    "expense",
+    "保険（年払い）",
+    12000,
+    null,
+    `${Number(m1.slice(0, 4)) - 1}-${m1.slice(5)}`,
+    null,
+    10,
+    "yearly",
+  );
+  // 定期収入（来月開始なのでまだ実体化されない）
+  await d.run(
+    "INSERT INTO recurring_items (id, user_id, kind, name, amount, category_id, start_month, end_month, post_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    uid(),
+    userId,
+    "income",
+    "仕送り",
+    3000,
+    null,
+    m1,
+    null,
+    20,
+  );
+  // 来月の確定シフト（キミハンは末日締め当月払い・25日払い → 来月の給料日に金額が乗る）
+  const futureShiftDate = `${m1}-05`;
+  await d.run(
+    "INSERT INTO shifts (id, user_id, job_id, date, start_min, end_min, break_min, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    uid(),
+    userId,
+    jobId,
+    futureShiftDate,
+    540, // 09:00
+    720, // 12:00
+    0,
+    "manual",
+  );
+  const futurePay = 3 * (isWeekendOrHoliday(futureShiftDate) ? 1200 : 1000) + 100;
+
+  const plan1 = await monthPlan(userId, m1);
+  check(
+    "来月予定: 月払いサブスクが post_day に入る",
+    plan1.expenses.some((e) => e.name === "サブスク" && e.date === `${m1}-01` && e.amount === 500),
+    plan1.expenses,
+  );
+  check(
+    "来月予定: 分割払いが27日に入る",
+    plan1.expenses.some((e) => e.name === "ゲーム機（分割3回）" && e.date === `${m1}-27` && e.amount === 2000),
+    plan1.expenses,
+  );
+  check(
+    "来月予定: 年払いは該当月なので入る",
+    plan1.expenses.some((e) => e.name === "保険（年払い）" && e.date === `${m1}-10` && e.amount === 12000),
+    plan1.expenses,
+  );
+  const oldYearlyIn = (mm: string) => (mm.slice(5) === "03" ? 9800 : 0); // 既存の「年払いサブスク」（3月計上）が重なる月だけ加算
+  check(
+    "来月予定: 支出合計が一致",
+    plan1.expenseTotal === 500 + 2000 + 12000 + oldYearlyIn(m1),
+    plan1.expenseTotal,
+  );
+  check(
+    "来月予定: 定期収入が入る",
+    plan1.incomes.some((i) => i.name === "仕送り" && i.date === `${m1}-20` && i.amount === 3000),
+    plan1.incomes,
+  );
+  check(
+    "来月予定: 確定シフトの給料日（金額つき・confirmed）",
+    plan1.paydays.some((p) => p.date === `${m1}-25` && p.amount === futurePay && p.confirmed),
+    plan1.paydays,
+  );
+  check("来月予定: 収入合計 = 定期収入 + 確定給料", plan1.incomeTotal === 3000 + futurePay, plan1.incomeTotal);
+
+  const plan2 = await monthPlan(userId, m2);
+  check(
+    "再来月予定: 分割は期間内なのでまだ入る",
+    plan2.expenses.some((e) => e.name === "ゲーム機（分割3回）"),
+    plan2.expenses,
+  );
+  check(
+    "再来月予定: 年払いは月違いなので入らない",
+    plan2.expenses.every((e) => e.name !== "保険（年払い）"),
+    plan2.expenses,
+  );
+  check(
+    "再来月予定: シフト未入力の給料日はマーカーのみ（金額0・未確定）",
+    plan2.paydays.some((p) => p.date === `${m2}-25` && p.amount === 0 && !p.confirmed),
+    plan2.paydays,
+  );
+  const plan4 = await monthPlan(userId, addMonths(m1, 3));
+  check(
+    "分割終了後の月には分割が入らない",
+    plan4.expenses.every((e) => e.name !== "ゲーム機（分割3回）"),
+    plan4.expenses,
+  );
+  check(
+    "分割終了後も無期限の定期は入り続ける",
+    plan4.expenses.some((e) => e.name === "サブスク"),
+    plan4.expenses,
+  );
+
+  // 当月・過去月は空（当月は月初一括計上済みのため二重表示しない）
+  const planNow = await monthPlan(userId, month);
+  check(
+    "当月の予定は常に空（実記録との二重表示なし）",
+    planNow.expenses.length === 0 && planNow.incomes.length === 0 && planNow.paydays.length === 0,
+    planNow,
+  );
+  const planPast = await monthPlan(userId, addMonths(month, -1));
+  check(
+    "過去月の予定は常に空",
+    planPast.expenses.length === 0 && planPast.incomes.length === 0 && planPast.paydays.length === 0,
+    planPast,
+  );
+
+  // 読み取り専用・冪等：何度呼んでもレコードは実体化されない
+  await monthPlan(userId, m1);
+  const m1Rows = (await d.get<{ c: number | string }>(
+    "SELECT (SELECT COUNT(*) FROM expenses WHERE user_id = ? AND date LIKE ?) + (SELECT COUNT(*) FROM incomes WHERE user_id = ? AND date LIKE ?) AS c",
+    userId,
+    `${m1}-%`,
+    userId,
+    `${m1}-%`,
+  ))!;
+  check("monthPlan は何度呼んでも実体化しない（読み取り専用）", Number(m1Rows.c) === 0, m1Rows);
 
   console.log(`\n結果: ${passed} passed / ${failed} failed`);
   return { passed, failed };
