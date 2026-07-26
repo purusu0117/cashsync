@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CameraIcon, CategoryIcon, PencilIcon, ScreenshotIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
 import { cachedFetch } from "@/lib/cachedFetch";
+import { apiCall, apiJson } from "@/lib/clientApi";
 import {
   DEFAULT_EXCLUDES,
   getCalendarToken,
@@ -41,6 +42,15 @@ interface Summary {
   }[];
 }
 
+interface Preset {
+  id: string;
+  label: string;
+  amount: number;
+  category_id: string | null;
+  category: string | null;
+  icon: string | null;
+}
+
 function yesterdayLocal(): string {
   const n = new Date();
   n.setDate(n.getDate() - 1);
@@ -55,6 +65,11 @@ export default function HomePage() {
   const [reviewMonth, setReviewMonth] = useState<string | null>(null); // 月初の振り返り案内
   const [weeklyKey, setWeeklyKey] = useState<string | null>(null); // 週次振り返り案内（週の前半だけ）
   const [isIOS, setIsIOS] = useState(false);
+  const [presets, setPresets] = useState<Preset[]>([]);
+  // かんたん入力のトースト：記録直後は「元に戻す」つき、エラー時はメッセージのみ
+  const [toast, setToast] = useState<{ msg: string; undoId?: string } | null>(null);
+  const [presetBusy, setPresetBusy] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncedRef = useRef(false);
   const camRef = useRef<HTMLInputElement>(null);
   const libRef = useRef<HTMLInputElement>(null);
@@ -72,7 +87,55 @@ export default function HomePage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "読み込みに失敗しました。");
     }
+    // かんたん入力ボタン（0件なら非表示なので、失敗してもホームは止めない）
+    cachedFetch<{ presets?: Preset[] }>("/api/presets", (d) => setPresets(d.presets ?? [])).catch(
+      () => {},
+    );
   }, []);
+
+  function showToast(msg: string, undoId?: string) {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ msg, undoId });
+    // Undoつきは考える時間を長めに（8秒）、通常メッセージは4秒
+    toastTimer.current = setTimeout(() => setToast(null), undoId ? 8000 : 4000);
+  }
+
+  // かんたん入力：確認なしで即記録（date=今日）。間違えたらトーストの「元に戻す」で削除。
+  // 同じボタンを1日に2回押すのは正当（例：Suicaチャージ2回）なので重複ガードはかけない。
+  async function recordPreset(p: Preset) {
+    if (presetBusy) return; // 連打による意図しない多重記録だけ防ぐ
+    setPresetBusy(true);
+    try {
+      const d = await apiCall<{ id: string }>(
+        "/api/expenses",
+        apiJson({
+          amount: p.amount,
+          memo: p.label,
+          categoryId: p.category_id,
+          source: "quick",
+        }),
+      );
+      showToast(`記録しました ${fmtYen(p.amount)}`, d.id);
+      load();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "記録に失敗しました。");
+    } finally {
+      setPresetBusy(false);
+    }
+  }
+
+  // 「元に戻す」：直前のかんたん入力を削除
+  async function undoPreset(expenseId: string) {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(null);
+    try {
+      await apiCall(`/api/expenses?id=${expenseId}`, { method: "DELETE" });
+      showToast("記録を取り消しました");
+      load();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "取り消しに失敗しました。");
+    }
+  }
 
   // カレンダー自動同期（ホームを開くたび・裏で静かに）
   const autoSync = useCallback(async () => {
@@ -404,6 +467,24 @@ export default function HomePage() {
         <p className="mt-1.5 text-center text-[11px] text-ink-faint">
           レシートは撮るだけで自動入力・手入力は話すのもOK
         </p>
+
+        {/* かんたん入力ボタン：設定で登録した定型支出を1タップで即記録（0件なら非表示） */}
+        {presets.length > 0 && (
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {presets.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => recordPreset(p)}
+                disabled={presetBusy}
+                className="rounded-sm border border-rule bg-card px-1.5 py-2.5 text-center shadow-sm active:translate-y-0.5 disabled:opacity-50"
+              >
+                <CategoryIcon icon={p.icon} className="mx-auto h-5 w-5 text-ink-faint" />
+                <span className="mt-1 block truncate text-xs">{p.label}</span>
+                <span className="dot block text-[13px] tabular-nums">{fmtYen(p.amount)}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* 直近の支出：カードにせず、地の上にそのまま印字（主役はメインレシート1枚） */}
@@ -440,6 +521,21 @@ export default function HomePage() {
           ))}
         </ul>
       </section>
+
+      {/* かんたん入力のトースト（記録直後は「元に戻す」つき） */}
+      {toast && (
+        <div className="fixed bottom-24 left-1/2 z-50 flex w-[calc(100%-3rem)] max-w-sm -translate-x-1/2 items-center gap-2 rounded-md bg-ink px-4 py-3 text-sm text-card shadow-lg">
+          <span className="min-w-0 flex-1">{toast.msg}</span>
+          {toast.undoId && (
+            <button
+              onClick={() => undoPreset(toast.undoId!)}
+              className="dot shrink-0 rounded border border-card/70 px-2.5 py-1 text-xs"
+            >
+              元に戻す
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

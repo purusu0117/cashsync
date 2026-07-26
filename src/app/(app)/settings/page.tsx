@@ -40,6 +40,17 @@ interface Category {
   name: string;
   icon: string;
 }
+interface Preset {
+  id: string;
+  label: string;
+  amount: number;
+  category_id: string | null;
+  category: string | null;
+  icon: string | null;
+}
+
+// かんたん入力ボタンの上限（/api/presets 側の制限と同じ値）
+const MAX_PRESETS = 12;
 
 type PlanName = "free" | "premium" | "founder";
 const PLAN_LABEL: Record<PlanName, string> = {
@@ -86,6 +97,7 @@ export default function SettingsPage() {
         const sub = (d.categories ?? []).find((x) => x.name === "サブスク");
         if (sub) setRecCat((prev: string) => prev || sub.id);
       }),
+      cachedFetch<{ presets?: Preset[] }>("/api/presets", (d) => setPresets(d.presets ?? [])),
     ]).catch(() => {
       /* 初回読み込み失敗時はスケルトンのまま */
     });
@@ -254,6 +266,24 @@ export default function SettingsPage() {
       );
       setSpName("");
       setSpTotal("");
+      load();
+    });
+  }
+
+  // --- かんたん入力ボタン（ホームで1タップ記録する定型支出） ---
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [pName, setPName] = useState("");
+  const [pAmount, setPAmount] = useState("");
+  const [pCat, setPCat] = useState("");
+  async function addPreset() {
+    if (!pName || !pAmount) return;
+    await tryApi(async () => {
+      await apiCall(
+        "/api/presets",
+        apiJson({ label: pName, amount: Number(pAmount), categoryId: pCat || null }),
+      );
+      setPName("");
+      setPAmount("");
       load();
     });
   }
@@ -615,6 +645,59 @@ export default function SettingsPage() {
             {spMonthly > 0 ? `月々${fmtYen(spMonthly)} × ${spCount}回で追加` : "＋ 追加"}
           </button>
         </div>
+      </section>
+
+      <section id="presets" className="zig zig-t zig-b px-4 py-4 shadow-sm">
+        <h2 className="dot text-sm">かんたん入力ボタン</h2>
+        <p className="mt-0.5 text-[11px] text-ink-faint">
+          Suicaチャージなど、レシートやスクショで撮りにくい定型支出を登録すると、ホームに1タップ記録ボタンが並びます（{MAX_PRESETS}個まで）。
+        </p>
+        <ul className="mt-2 space-y-1.5">
+          {presets.map((p) => (
+            <li key={p.id} className="flex items-baseline text-sm">
+              <CategoryIcon icon={p.icon} className="mr-1.5 h-4 w-4 shrink-0 self-center text-ink-faint" />
+              <span className="min-w-0 truncate">{p.label}</span>
+              {p.category && <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">{p.category}</span>}
+              <span className="leader" />
+              <span className="dot shrink-0 tabular-nums">{fmtYen(p.amount)}</span>
+              <button onClick={() => del(`/api/presets?id=${p.id}`)} className="ml-2 shrink-0 text-xs text-vermilion">
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <input
+            value={pName}
+            onChange={(e) => setPName(e.target.value)}
+            placeholder="例：Suicaチャージ"
+            maxLength={20}
+            className={input}
+          />
+          <input
+            type="number"
+            inputMode="numeric"
+            value={pAmount}
+            onChange={(e) => setPAmount(e.target.value)}
+            placeholder="金額"
+            className={`${input} tabular-nums`}
+          />
+          <select value={pCat} onChange={(e) => setPCat(e.target.value)} className={`${input} col-span-2`}>
+            <option value="">カテゴリなし</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          onClick={addPreset}
+          disabled={!pName || !pAmount || Number(pAmount) <= 0 || presets.length >= MAX_PRESETS}
+          className={`${addBtn} mt-2 w-full`}
+        >
+          {presets.length >= MAX_PRESETS ? `上限（${MAX_PRESETS}個）に達しています` : "＋ 追加"}
+        </button>
       </section>
 
       <section id="categories" className="zig zig-t zig-b px-4 py-4 shadow-sm">

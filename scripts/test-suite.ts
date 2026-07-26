@@ -591,6 +591,107 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
     await duplicateExpenseExists(userId, today, 2113, "ロケットナウ"),
   );
 
+  // --- 13. かんたん入力ボタン（quick_presets）とワンタップ記録 ---
+  // 設定で登録したプリセットを、ホームで1タップ→即記録→Undo削除する流れのDBレベル検証。
+  console.log("[13] かんたん入力ボタン（プリセット）");
+  const transportCat = cats.find((c) => c.name === "交通")!;
+  const presetId = uid();
+  await d.run(
+    "INSERT INTO quick_presets (id, user_id, label, amount, category_id, sort) VALUES (?, ?, ?, ?, ?, ?)",
+    presetId,
+    userId,
+    "Suicaチャージ",
+    1000,
+    transportCat.id,
+    0,
+  );
+  await d.run(
+    "INSERT INTO quick_presets (id, user_id, label, amount, category_id, sort) VALUES (?, ?, ?, ?, ?, ?)",
+    uid(),
+    userId,
+    "コインランドリー",
+    300,
+    null,
+    1,
+  );
+  const presetList = await d.all<{
+    id: string;
+    label: string;
+    amount: number;
+    category: string | null;
+    icon: string | null;
+  }>(
+    `SELECT p.id, p.label, p.amount, c.name AS category, c.icon
+     FROM quick_presets p
+     LEFT JOIN categories c ON c.id = p.category_id AND c.user_id = p.user_id
+     WHERE p.user_id = ? ORDER BY p.sort`,
+    userId,
+  );
+  check(
+    "プリセット一覧がsort順＋カテゴリJOINで取れる",
+    presetList.length === 2 &&
+      presetList[0].label === "Suicaチャージ" &&
+      presetList[0].category === "交通" &&
+      presetList[0].icon === "transport" &&
+      presetList[1].category === null,
+    presetList,
+  );
+  check(
+    "他ユーザーのプリセットは見えない",
+    (await d.all("SELECT id FROM quick_presets WHERE user_id = ?", uid())).length === 0,
+  );
+  // ワンタップ記録：date=今日・memo=プリセット名・source='quick'。
+  // 同じボタンを1日2回押すのは正当（Suicaチャージ2回等）なので、同一内容でも2件保存できること。
+  const tap = async () => {
+    const eid = uid();
+    await d.run(
+      "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'quick', ?, ?)",
+      eid,
+      userId,
+      today,
+      1000,
+      transportCat.id,
+      "Suicaチャージ",
+      null,
+      Date.now(),
+    );
+    return eid;
+  };
+  await tap();
+  const tap2 = await tap();
+  const quickRows = (await d.get<{ c: number | string }>(
+    "SELECT COUNT(*) AS c FROM expenses WHERE user_id = ? AND source = 'quick' AND date = ? AND memo = ?",
+    userId,
+    today,
+    "Suicaチャージ",
+  ))!;
+  check("同じボタンを1日2回押しても両方記録される（重複ガード対象外）", Number(quickRows.c) === 2, quickRows);
+  // Undo（トーストの「元に戻す」）：直前の1件だけ削除される
+  const undo = await d.run("DELETE FROM expenses WHERE id = ? AND user_id = ?", tap2, userId);
+  const afterUndo = (await d.get<{ c: number | string }>(
+    "SELECT COUNT(*) AS c FROM expenses WHERE user_id = ? AND source = 'quick' AND memo = ?",
+    userId,
+    "Suicaチャージ",
+  ))!;
+  check("Undoで直前の1件だけ削除される", undo.changes === 1 && Number(afterUndo.c) === 1, afterUndo);
+  // プリセット削除（設定画面の✕）：本人のものだけ消せる
+  await d.run("DELETE FROM quick_presets WHERE id = ? AND user_id = ?", presetId, uid());
+  check(
+    "他ユーザーはプリセットを削除できない",
+    (await d.get("SELECT id FROM quick_presets WHERE id = ?", presetId)) !== undefined,
+  );
+  await d.run("DELETE FROM quick_presets WHERE id = ? AND user_id = ?", presetId, userId);
+  check(
+    "本人はプリセットを削除できる",
+    (await d.get("SELECT id FROM quick_presets WHERE id = ?", presetId)) === undefined,
+  );
+  // 上限判定（APIの12個制限）と同じCOUNTが方言差なくnumberで判定できること
+  const presetCount = (await d.get<{ n: number | string }>(
+    "SELECT COUNT(*) AS n FROM quick_presets WHERE user_id = ?",
+    userId,
+  ))!;
+  check("上限判定用COUNTが取れる（残1個）", Number(presetCount.n) === 1, presetCount);
+
   console.log(`\n結果: ${passed} passed / ${failed} failed`);
   return { passed, failed };
 }
