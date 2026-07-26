@@ -151,6 +151,14 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, ymd)
   )`,
+  // マーチャント学習（店名→ユーザーが確定したカテゴリ）。updated_at はエポックms → BIGINT
+  `CREATE TABLE IF NOT EXISTS merchant_categories (
+    user_id TEXT NOT NULL,
+    merchant TEXT NOT NULL,
+    category_id TEXT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    PRIMARY KEY (user_id, merchant)
+  )`,
 ];
 
 /** 移行スクリプト用：sqlite→postgresでコピーするテーブル一覧（依存の無い順） */
@@ -171,4 +179,5 @@ export const MIGRATION_TABLES: string[] = [
   "monthly_reviews",
   "ai_usage",
   "ai_reward_days",
+  "merchant_categories",
 ];

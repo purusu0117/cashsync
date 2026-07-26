@@ -5,6 +5,13 @@ import { randomBytes, scryptSync } from "node:crypto";
 import { setDbForTesting, seedCategories, uid, type Db } from "../src/lib/db";
 import { checkAndCountUsage, getUserPlan, FREE_LIMITS } from "../src/lib/aiUsage";
 import {
+  duplicateExpenseExists,
+  duplicateIncomeExists,
+  learnMerchantCategory,
+  learnedCategoryId,
+  normalizeMerchant,
+} from "../src/lib/merchant";
+import {
   categoryBreakdown,
   currentMonth,
   isWeekendOrHoliday,
@@ -326,6 +333,88 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
     usageRow?.scans === FREE_LIMITS.scans + 1 && usageRow?.parses === 1,
     usageRow,
   );
+
+  // --- 11. マーチャント学習（店名→ユーザー確定カテゴリ） ---
+  console.log("[11] マーチャント学習");
+  check(
+    "normalizeMerchant（trim・全角英数→半角・小文字化・空白統合）",
+    normalizeMerchant("  ＲｏｃｋｅｔＮｏｗ　渋谷店 ") === "rocketnow 渋谷店" &&
+      normalizeMerchant("Rocket  Now") === "rocket now",
+  );
+  const gameCat = cats.find((c) => c.name === "娯楽")!;
+  // 誤分類シナリオ：ロケットナウをAIが「娯楽」と提案 → 初回は学習なし
+  check("初回は学習なし（AI提案がそのまま）", (await learnedCategoryId(userId, "ロケットナウ")) === null);
+  // ユーザーが確認シートで「食費」に修正して保存 → 学習
+  await learnMerchantCategory(userId, "ロケットナウ", foodCat.id);
+  check(
+    "修正保存で学習され、次回は学習値がAI提案より優先",
+    (await learnedCategoryId(userId, "ロケットナウ ")) === foodCat.id,
+  );
+  check(
+    "表記ゆれ（全角/大小文字）でも学習が当たる",
+    (await (async () => {
+      await learnMerchantCategory(userId, "ROCKET NOW", foodCat.id);
+      return learnedCategoryId(userId, "ｒｏｃｋｅｔ　ｎｏｗ");
+    })()) === foodCat.id,
+  );
+  // upsert：再修正で上書き・行は増えない
+  await learnMerchantCategory(userId, "ロケットナウ", gameCat.id);
+  const learnedRows = (await d.get<{ c: number }>(
+    "SELECT COUNT(*) AS c FROM merchant_categories WHERE user_id = ? AND merchant = ?",
+    userId,
+    "ロケットナウ",
+  ))!;
+  check(
+    "再修正でupsert上書き（行は増えない）",
+    (await learnedCategoryId(userId, "ロケットナウ")) === gameCat.id && Number(learnedRows.c) === 1,
+    learnedRows,
+  );
+  // 削除済みカテゴリの学習は適用しない
+  const tmpCatId = uid();
+  await d.run(
+    "INSERT INTO categories (id, user_id, name, icon, sort) VALUES (?, ?, ?, ?, ?)",
+    tmpCatId,
+    userId,
+    "一時カテゴリ",
+    "🧪",
+    99,
+  );
+  await learnMerchantCategory(userId, "閉店した店", tmpCatId);
+  await d.run("DELETE FROM categories WHERE id = ?", tmpCatId);
+  check("カテゴリ削除後は学習値を適用しない", (await learnedCategoryId(userId, "閉店した店")) === null);
+
+  // --- 12. 重複保存ガード（スキャン/ショートカット自動保存用） ---
+  console.log("[12] 重複保存ガード");
+  await d.run(
+    "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'receipt', ?, ?)",
+    uid(),
+    userId,
+    today,
+    2113,
+    foodCat.id,
+    "ロケットナウ",
+    null,
+    Date.now(),
+  );
+  check("同一ユーザー×日付×金額×memoの支出を検出", await duplicateExpenseExists(userId, today, 2113, "ロケットナウ"));
+  check(
+    "金額/日付/memo/ユーザーが違えば重複扱いしない",
+    !(await duplicateExpenseExists(userId, today, 2114, "ロケットナウ")) &&
+      !(await duplicateExpenseExists(userId, "2000-01-01", 2113, "ロケットナウ")) &&
+      !(await duplicateExpenseExists(userId, today, 2113, "セブンイレブン")) &&
+      !(await duplicateExpenseExists(uid(), today, 2113, "ロケットナウ")),
+  );
+  await d.run(
+    "INSERT INTO incomes (id, user_id, date, amount, type, memo, created_at) VALUES (?, ?, ?, ?, 'other', ?, ?)",
+    uid(),
+    userId,
+    today,
+    5000,
+    "PayPay受け取り",
+    Date.now(),
+  );
+  check("収入の重複も検出", await duplicateIncomeExists(userId, today, 5000, "PayPay受け取り"));
+  check("memoが違う収入は重複扱いしない", !(await duplicateIncomeExists(userId, today, 5000, "別の人から")));
 
   console.log(`\n結果: ${passed} passed / ${failed} failed`);
   return { passed, failed };

@@ -10,6 +10,12 @@ import { LIMIT_MESSAGE, checkAndCountUsage, getUserPlan } from "@/lib/aiUsage";
 import { userFromBearer } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 import { fmtYen } from "@/lib/format";
+import {
+  DUPLICATE_MESSAGE,
+  duplicateExpenseExists,
+  duplicateIncomeExists,
+  learnedCategoryId,
+} from "@/lib/merchant";
 import { todayStr } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -67,13 +73,21 @@ export async function POST(request: Request) {
 
     // 受け取り画面（PayPay受け取り・給与振込等）は収入として記録
     if (scan.kind === "income") {
+      const memo = scan.store || "スクショ収入";
+      // 同じスクショを2回読ませた等の二重登録ガード
+      if (await duplicateIncomeExists(user.id, date, scan.total, memo)) {
+        return Response.json(
+          { ok: "false", message: `${DUPLICATE_MESSAGE}保存しませんでした。` },
+          { status: 409 },
+        );
+      }
       await d.run(
         "INSERT INTO incomes (id, user_id, date, amount, type, memo, created_at) VALUES (?, ?, ?, ?, 'other', ?, ?)",
         uid(),
         user.id,
         date,
         scan.total,
-        scan.store || "スクショ収入",
+        memo,
         Date.now(),
       );
       return Response.json({
@@ -86,7 +100,25 @@ export async function POST(request: Request) {
       });
     }
 
-    const category = categories.find((c) => c.name === scan.category);
+    // マーチャント学習：この店で過去にユーザーが確定したカテゴリがあれば、AIの提案より優先
+    let categoryId = categories.find((c) => c.name === scan.category)?.id ?? null;
+    let categoryLabel = scan.category || "カテゴリなし";
+    let learned = false;
+    if (scan.store) {
+      const l = await learnedCategoryId(user.id, scan.store);
+      if (l) {
+        categoryId = l;
+        categoryLabel = categories.find((c) => c.id === l)?.name ?? categoryLabel;
+        learned = true;
+      }
+    }
+    // 同じスクショを2回読ませた等の二重登録ガード
+    if (await duplicateExpenseExists(user.id, date, scan.total, scan.store)) {
+      return Response.json(
+        { ok: "false", message: `${DUPLICATE_MESSAGE}保存しませんでした。` },
+        { status: 409 },
+      );
+    }
     const receiptId = uid();
     // レシートと支出は必ずセットで保存（片方だけ残る中途半端な状態を防ぐ）
     await d.transaction(async (tx) => {
@@ -106,7 +138,7 @@ export async function POST(request: Request) {
         user.id,
         date,
         scan.total,
-        category?.id ?? null,
+        categoryId,
         scan.store,
         receiptId,
         Date.now(),
@@ -115,10 +147,10 @@ export async function POST(request: Request) {
 
     return Response.json({
       ok: "true",
-      message: `${fmtYen(scan.total)}（${scan.store || "店名不明"}／${scan.category || "カテゴリなし"}）を記録しました`,
+      message: `${fmtYen(scan.total)}（${scan.store || "店名不明"}／${categoryLabel}${learned ? "📌学習済み" : ""}）を記録しました`,
       store: scan.store,
       total: scan.total,
-      category: scan.category,
+      category: learned ? categoryLabel : scan.category,
       date,
     });
   } catch (e) {
