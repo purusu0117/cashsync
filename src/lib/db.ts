@@ -429,10 +429,22 @@ export async function createPgPoolDriver(url: string): Promise<PgDriver & { end(
   // （エポックmsも金額もNumber安全域に収まる）
   pg.types.setTypeParser(20, (v: string) => Number(v));
   pg.types.setTypeParser(1700, (v: string) => Number(v));
-  const local = /localhost|127\.0\.0\.1/.test(url);
+  // Supabase Session pooler(5432) は同時接続の実体が pool_size(無料枠15) で頭打ちになり、
+  // サーバーレスの同時実行で (EMAXCONNSESSION) max clients reached を起こす。
+  // Transaction pooler(6543) は多重化されるため、Supabaseのpoolerホストなら自動で切り替える。
+  // （プリペアドステートメント名を使わない単純クエリのみなのでtransactionモード互換）
+  let effectiveUrl = url;
+  if (/\.pooler\.supabase\.com:5432\//.test(url) && !process.env.CASHSYNC_PG_KEEP_SESSION_POOLER) {
+    effectiveUrl = url.replace(".pooler.supabase.com:5432/", ".pooler.supabase.com:6543/");
+    console.log("[db] Supabase session pooler(5432) → transaction pooler(6543) に自動切替");
+  }
+  const local = /localhost|127\.0\.0\.1/.test(effectiveUrl);
   const pool = new pg.Pool({
-    connectionString: url,
-    max: Number(process.env.CASHSYNC_PG_POOL_MAX || 5),
+    connectionString: effectiveUrl,
+    // サーバーレスはインスタンスが横に増えるため、1インスタンスあたりの接続は最小限にする
+    max: Number(process.env.CASHSYNC_PG_POOL_MAX || 2),
+    idleTimeoutMillis: 20_000,
+    allowExitOnIdle: true,
     // Supabase等のマネージドPostgresはTLS必須（証明書検証はプロバイダ側のCA差異があるため緩める）
     ssl: local ? undefined : { rejectUnauthorized: false },
   });
