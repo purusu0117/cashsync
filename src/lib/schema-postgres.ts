@@ -135,7 +135,18 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     ym TEXT NOT NULL,
     scans INTEGER NOT NULL DEFAULT 0,
     parses INTEGER NOT NULL DEFAULT 0,
+    bonus_scans INTEGER NOT NULL DEFAULT 0,
+    bonus_parses INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, ym)
+  )`,
+  // 既存DBへの追加カラム（冪等）
+  `ALTER TABLE ai_usage ADD COLUMN IF NOT EXISTS bonus_scans INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE ai_usage ADD COLUMN IF NOT EXISTS bonus_parses INTEGER NOT NULL DEFAULT 0`,
+  `CREATE TABLE IF NOT EXISTS ai_reward_days (
+    user_id TEXT NOT NULL,
+    ymd TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, ymd)
   )`,
 ];
 
@@ -156,4 +167,5 @@ export const MIGRATION_TABLES: string[] = [
   "push_subscriptions",
   "monthly_reviews",
   "ai_usage",
+  "ai_reward_days",
 ];

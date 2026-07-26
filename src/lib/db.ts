@@ -308,7 +308,15 @@ function migrateSqlite(d: DatabaseSync) {
       ym TEXT NOT NULL,                 -- 'YYYY-MM'
       scans INTEGER NOT NULL DEFAULT 0,
       parses INTEGER NOT NULL DEFAULT 0,
+      bonus_scans INTEGER NOT NULL DEFAULT 0,   -- リワード動画で獲得した当月ボーナス枠
+      bonus_parses INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (user_id, ym)
+    );
+    CREATE TABLE IF NOT EXISTS ai_reward_days (
+      user_id TEXT NOT NULL,
+      ymd TEXT NOT NULL,                -- 'YYYY-MM-DD'
+      count INTEGER NOT NULL DEFAULT 0, -- その日に視聴したリワード動画本数（日次上限ガード）
+      PRIMARY KEY (user_id, ymd)
     );
   `);
   // 追加カラムのマイグレーション（既存DBにも効くよう ALTER を冪等に流す）
@@ -321,6 +329,8 @@ function migrateSqlite(d: DatabaseSync) {
   addColumn(d, "jobs", "pay_day INTEGER NOT NULL DEFAULT 25"); // 支払日（カレンダー表示用）
   addColumn(d, "jobs", "pay_same_day INTEGER NOT NULL DEFAULT 0"); // 1=当日払い（働いた日にその場で支給）
   addColumn(d, "users", "last_overspend_push TEXT"); // 使いすぎ通知の最終送信日（1日1回制限）
+  addColumn(d, "ai_usage", "bonus_scans INTEGER NOT NULL DEFAULT 0"); // リワード動画ボーナス枠
+  addColumn(d, "ai_usage", "bonus_parses INTEGER NOT NULL DEFAULT 0");
   // AIプラン階層。カラム新設時のみ、既存ユーザーを founder（無制限）に引き上げる
   // （PC版の2人の既存挙動を変えないため。以後の新規ユーザーは 'free'）
   if (addColumn(d, "users", "plan TEXT NOT NULL DEFAULT 'free'")) {
