@@ -174,6 +174,7 @@ function migrate(d: DatabaseSync) {
   addColumn(d, "jobs", "pay_day INTEGER NOT NULL DEFAULT 25"); // 支払日（カレンダー表示用）
   addColumn(d, "jobs", "pay_same_day INTEGER NOT NULL DEFAULT 0"); // 1=当日払い（働いた日にその場で支給）
   addColumn(d, "users", "last_overspend_push TEXT"); // 使いすぎ通知の最終送信日（1日1回制限）
+  addColumn(d, "recurring_items", "interval TEXT NOT NULL DEFAULT 'monthly'"); // 'monthly' | 'yearly'（年払いサブスク対応）
 }
 
 // 掛け持ちバイトの色パレット（紙背景で判別しやすい順）
