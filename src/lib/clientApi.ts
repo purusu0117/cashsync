@@ -2,12 +2,15 @@
 
 // 書き込み系 fetch の共通ラッパー：401はログインへ、エラーは throw して呼び出し元で表示する。
 // （以前は res.ok を見ずに成功扱いしてサイレント失敗していたバグの対策）
+import { clearApiCache } from "./cachedFetch";
+
 export async function apiCall<T = Record<string, unknown>>(
   url: string,
   init?: RequestInit,
 ): Promise<T> {
   const res = await fetch(url, init);
   if (res.status === 401) {
+    clearApiCache(); // セッション切れ：別ユーザーで再ログインしてもキャッシュが混ざらないように
     location.href = "/login";
     throw new Error("ログインしてください。");
   }

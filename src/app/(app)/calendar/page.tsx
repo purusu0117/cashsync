@@ -2,7 +2,9 @@
 
 // お金カレンダー：日付ごとの−支出/+収入と給料日を月表示。タップで詳細。
 // 上部に「今日使えるお金」の計算内訳（何がいくらで、どう割られているか）を表示。
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Loading from "@/components/Loading";
+import { cachedFetch } from "@/lib/cachedFetch";
 import { fmtDateJa, fmtMonthJa, fmtYen, todayLocal } from "@/lib/format";
 
 interface CalExpense {
@@ -59,14 +61,18 @@ export default function CalendarPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [showCalc, setShowCalc] = useState(false);
 
+  // 月切替の連打時に古い月のレスポンスで上書きされないよう、最新リクエストだけ反映する
+  const reqRef = useRef(0);
   const load = useCallback(async (m: string) => {
-    const res = await fetch(`/api/calendar?month=${m}`);
-    if (res.status === 401) {
-      location.href = "/login";
-      return;
+    const req = ++reqRef.current;
+    try {
+      // キャッシュファースト：見たことのある月は即表示→裏で最新に差し替え
+      await cachedFetch<CalData>(`/api/calendar?month=${m}`, (d) => {
+        if (reqRef.current === req) setData(d);
+      });
+    } catch {
+      /* 初回読み込み失敗時はスケルトンのまま（復帰時の visibilitychange で再試行される） */
     }
-    const d = await res.json();
-    setData(d);
   }, []);
 
   useEffect(() => {
@@ -78,13 +84,7 @@ export default function CalendarPage() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [month, load]);
 
-  if (!data)
-    return (
-      <div className="mt-16 flex flex-col items-center gap-3 text-ink-faint">
-        <div className="zig zig-b h-24 w-40 printing" />
-        <p className="dot text-sm">読み込み中・・・</p>
-      </div>
-    );
+  if (!data) return <Loading />;
 
   const [y, m] = month.split("-").map(Number);
   const first = new Date(y, m - 1, 1);

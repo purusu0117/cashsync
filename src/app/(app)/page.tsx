@@ -5,6 +5,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import Loading from "@/components/Loading";
+import { cachedFetch } from "@/lib/cachedFetch";
 import {
   DEFAULT_EXCLUDES,
   getCalendarToken,
@@ -58,18 +60,14 @@ export default function HomePage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/summary");
-      if (res.status === 401) {
-        location.href = "/login";
-        return;
-      }
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error);
-      setData(d);
-      // つけ忘れ赦免：昨日の記録が1件も無ければ、細いカードで確認（完璧主義による離脱対策）
-      const yd = (d.yesterday?.date as string) ?? yesterdayLocal();
-      const dismissed = localStorage.getItem(`cashsync-amnesty-${yd}`);
-      setAmnesty(!d.yesterday?.recorded && !dismissed && yd.startsWith(d.month) ? yd : null);
+      // キャッシュファースト：前回のデータを即表示→裏で最新に差し替え（タブ切替のフラッシュ対策）
+      await cachedFetch<Summary>("/api/summary", (d) => {
+        setData(d);
+        // つけ忘れ赦免：昨日の記録が1件も無ければ、細いカードで確認（完璧主義による離脱対策）
+        const yd = d.yesterday?.date ?? yesterdayLocal();
+        const dismissed = localStorage.getItem(`cashsync-amnesty-${yd}`);
+        setAmnesty(!d.yesterday?.recorded && !dismissed && yd.startsWith(d.month) ? yd : null);
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "読み込みに失敗しました。");
     }
@@ -183,14 +181,8 @@ export default function HomePage() {
     }
   }
 
-  if (error) return <p className="mt-10 text-center text-sm text-vermilion">{error}</p>;
-  if (!data)
-    return (
-      <div className="mt-16 flex flex-col items-center gap-3 text-ink-faint">
-        <div className="zig zig-b h-24 w-40 printing" />
-        <p className="dot text-sm">読み込み中・・・</p>
-      </div>
-    );
+  if (error && !data) return <p className="mt-10 text-center text-sm text-vermilion">{error}</p>;
+  if (!data) return <Loading />;
 
   const { summary, forecast, savingsGoal, noMoney } = data;
   // 予算信号機（Zaim方式）：赤=このままだと赤字 / 黄=黒字だが貯金目標に届かない / 緑=目標達成ペース

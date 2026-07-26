@@ -19,32 +19,38 @@ export async function GET() {
     const user = await requireUser();
     const month = currentMonth();
     await postRecurringForMonth(user.id, month);
-    const summary = await monthSummary(user.id, month);
     const d = await db();
-    const goalRow = await d.get<{ savings_goal: number }>(
-      "SELECT savings_goal FROM users WHERE id = ?",
-      user.id,
-    );
-    const savingsGoal = goalRow?.savings_goal ?? 0;
-    const recent = await d.all(
-      `SELECT e.id, e.date, e.amount, e.memo, e.source, c.name AS category, c.icon
-       FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
-       WHERE e.user_id = ? ORDER BY e.date DESC, e.created_at DESC LIMIT 5`,
-      user.id,
-    );
     // つけ忘れ判定は recent(5件) ではなく昨日を直接数える（今日多く記録すると誤判定するため）
     const ydStr = jstTodayStr(-1);
-    const ydCount = (await d.get<{ c: number }>(
-      "SELECT COUNT(*) AS c FROM expenses WHERE user_id = ? AND date = ?",
-      user.id,
-      ydStr,
-    )) as { c: number };
-    const presets = await d.all(
-      `SELECT p.id, p.label, p.amount, p.category_id, c.icon
-       FROM quick_presets p LEFT JOIN categories c ON c.id = p.category_id
-       WHERE p.user_id = ? ORDER BY p.sort`,
-      user.id,
-    );
+    // クラウド版（Vercel⇄Supabase）はDB往復ごとにレイテンシが乗るため、独立クエリは並列で投げる。
+    // forecast だけは summary に依存するので、summary の完了に連結する。
+    const [sf, goalRow, recent, ydCount, presets, noMoney] = await Promise.all([
+      monthSummary(user.id, month).then(async (summary) => ({
+        summary,
+        forecast: await monthForecast(user.id, summary),
+      })),
+      d.get<{ savings_goal: number }>("SELECT savings_goal FROM users WHERE id = ?", user.id),
+      d.all(
+        `SELECT e.id, e.date, e.amount, e.memo, e.source, c.name AS category, c.icon
+         FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
+         WHERE e.user_id = ? ORDER BY e.date DESC, e.created_at DESC LIMIT 5`,
+        user.id,
+      ),
+      d.get<{ c: number }>(
+        "SELECT COUNT(*) AS c FROM expenses WHERE user_id = ? AND date = ?",
+        user.id,
+        ydStr,
+      ) as Promise<{ c: number }>,
+      d.all(
+        `SELECT p.id, p.label, p.amount, p.category_id, c.icon
+         FROM quick_presets p LEFT JOIN categories c ON c.id = p.category_id
+         WHERE p.user_id = ? ORDER BY p.sort`,
+        user.id,
+      ),
+      noMoneyDays(user.id, month),
+    ]);
+    const { summary, forecast } = sf;
+    const savingsGoal = goalRow?.savings_goal ?? 0;
     return Response.json({
       user: { name: user.name },
       month,
@@ -52,8 +58,8 @@ export async function GET() {
       savingsGoal,
       allowance: dailyAllowance(summary, savingsGoal),
       daysRemaining: daysRemainingInMonth(),
-      noMoney: await noMoneyDays(user.id, month),
-      forecast: await monthForecast(user.id, summary),
+      noMoney,
+      forecast,
       yesterday: { date: ydStr, recorded: ydCount.c > 0 },
       recent,
       presets,

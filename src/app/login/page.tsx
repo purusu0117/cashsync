@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { clearApiCache } from "@/lib/cachedFetch";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -14,6 +15,7 @@ export default function LoginPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return; // 連打防止
     setBusy(true);
     setError("");
     try {
@@ -25,13 +27,17 @@ export default function LoginPage() {
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? "失敗しました。");
+        setBusy(false);
         return;
       }
+      // 前のユーザーのキャッシュが残らないよう、遷移前に全消し
+      clearApiCache();
       router.replace("/");
       router.refresh();
+      // 成功時は busy を戻さない：遷移完了（このページのアンマウント）まで
+      // 「ログイン中・・・」のまま維持して、失敗したように見えるのを防ぐ
     } catch {
       setError("通信に失敗しました。");
-    } finally {
       setBusy(false);
     }
   }
@@ -85,13 +91,20 @@ export default function LoginPage() {
             disabled={busy}
             className="dot w-full rounded-md bg-vermilion py-3 text-lg text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none disabled:opacity-50"
           >
-            {busy ? "・・・" : mode === "login" ? "ログイン" : "はじめる"}
+            {busy
+              ? mode === "login"
+                ? "ログイン中・・・"
+                : "アカウント作成中・・・"
+              : mode === "login"
+                ? "ログイン"
+                : "はじめる"}
           </button>
         </form>
         <button
           type="button"
+          disabled={busy}
           onClick={() => setMode(mode === "login" ? "register" : "login")}
-          className="mt-4 w-full text-center text-xs text-ink-faint underline underline-offset-4"
+          className="mt-4 w-full text-center text-xs text-ink-faint underline underline-offset-4 disabled:opacity-40"
         >
           {mode === "login" ? "アカウントを作る" : "ログインに戻る"}
         </button>

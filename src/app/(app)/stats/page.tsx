@@ -1,7 +1,7 @@
 "use client";
 
 // グラフ：月次の収入/支出バー（ページャで何ヶ月でも遡れる）＋選択月のカテゴリ内訳
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -11,6 +11,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import Loading from "@/components/Loading";
+import { cachedFetch } from "@/lib/cachedFetch";
 import { fmtMonthJa, fmtYen, todayLocal } from "@/lib/format";
 
 interface Point {
@@ -60,9 +62,12 @@ export default function StatsPage() {
   const [editPocket, setEditPocket] = useState<string | null>(null);
   const [pocketAmount, setPocketAmount] = useState("");
 
+  const [ready, setReady] = useState(false); // 初回データ（キャッシュ含む）が来るまでスケルトン表示
+
   const loadPockets = useCallback(async () => {
-    const d = await fetch("/api/budgets").then((r) => r.json());
-    setPockets(d.pockets ?? []);
+    await cachedFetch<{ pockets?: Pocket[] }>("/api/budgets", (d) =>
+      setPockets(d.pockets ?? []),
+    ).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -80,15 +85,22 @@ export default function StatsPage() {
     loadPockets();
   }
 
+  // 期間切替の連打時に古いレスポンスで上書きされないよう、最新リクエストだけ反映する
+  const reqRef = useRef(0);
   const load = useCallback(async (b: string, sel: string) => {
-    const res = await fetch(`/api/stats?months=${WINDOW}&before=${b}&month=${sel}`);
-    if (res.status === 401) {
-      location.href = "/login";
-      return;
-    }
-    const d = await res.json();
-    setSeries(d.series ?? []);
-    setBreakdown(d.breakdown ?? []);
+    const req = ++reqRef.current;
+    // キャッシュファースト：前回のデータを即表示→裏で最新に差し替え
+    await cachedFetch<{ series?: Point[]; breakdown?: Breakdown[] }>(
+      `/api/stats?months=${WINDOW}&before=${b}&month=${sel}`,
+      (d) => {
+        if (reqRef.current !== req) return;
+        setSeries(d.series ?? []);
+        setBreakdown(d.breakdown ?? []);
+        setReady(true);
+      },
+    ).catch(() => {
+      /* 初回読み込み失敗時はスケルトンのまま（復帰時の visibilitychange で再試行される） */
+    });
   }, []);
 
   useEffect(() => {
@@ -129,6 +141,8 @@ export default function StatsPage() {
 
   const sel = series.find((p) => p.month === selected);
   const maxBd = Math.max(1, ...breakdown.map((b) => b.amount));
+
+  if (!ready) return <Loading label="集計中・・・" />;
 
   return (
     <div className="space-y-4">

@@ -1,7 +1,9 @@
 "use client";
 
 // 履歴：月切替＋日別グルーピング。タップで編集/削除/複製（「もう一度」）。
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Loading from "@/components/Loading";
+import { cachedFetch } from "@/lib/cachedFetch";
 import { apiCall, apiJson } from "@/lib/clientApi";
 import { fmtDateJa, fmtMonthJa, fmtYen, todayLocal } from "@/lib/format";
 
@@ -42,24 +44,33 @@ export default function HistoryPage() {
   const [editing, setEditing] = useState<Expense | null>(null);
   const [busy, setBusy] = useState(false);
   const [editError, setEditError] = useState("");
+  const [ready, setReady] = useState(false); // 初回データ（キャッシュ含む）が来るまでスケルトン表示
 
+  // 月切替の連打時に古い月のレスポンスで上書きされないよう、最新リクエストだけ反映する
+  const reqRef = useRef(0);
   const load = useCallback(async (m: string) => {
-    const res = await fetch(`/api/expenses?month=${m}`);
-    if (res.status === 401) {
-      location.href = "/login";
-      return;
-    }
-    const d = await res.json();
-    setExpenses(d.expenses ?? []);
-    const ri = await fetch(`/api/incomes?month=${m}`).then((r) => r.json());
-    setIncomes(ri.incomes ?? []);
+    const req = ++reqRef.current;
+    // キャッシュファースト＋並列取得：前回のデータを即表示→裏で最新に差し替え
+    await Promise.all([
+      cachedFetch<{ expenses?: Expense[] }>(`/api/expenses?month=${m}`, (d) => {
+        if (reqRef.current !== req) return;
+        setExpenses(d.expenses ?? []);
+        setReady(true);
+      }),
+      cachedFetch<{ incomes?: Income[] }>(`/api/incomes?month=${m}`, (d) => {
+        if (reqRef.current !== req) return;
+        setIncomes(d.incomes ?? []);
+      }),
+    ]).catch(() => {
+      /* 初回読み込み失敗時はスケルトンのまま（復帰時の visibilitychange で再試行される） */
+    });
   }, []);
 
   useEffect(() => {
     load(month);
-    fetch("/api/categories")
-      .then((r) => r.json())
-      .then((d) => setCategories(d.categories ?? []));
+    cachedFetch<{ categories?: Category[] }>("/api/categories", (d) =>
+      setCategories(d.categories ?? []),
+    ).catch(() => {});
     // アプリに戻ってきたら最新化
     const onVisible = () => {
       if (document.visibilityState === "visible") load(month);
@@ -151,6 +162,8 @@ export default function HistoryPage() {
       setBusy(false);
     }
   }
+
+  if (!ready) return <Loading />;
 
   return (
     <div className="space-y-4">

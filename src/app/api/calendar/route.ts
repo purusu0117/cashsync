@@ -5,7 +5,6 @@ import {
   currentMonth,
   dailyAllowance,
   daysRemainingInMonth,
-  monthShiftIncome,
   monthSummary,
   paydays,
   postRecurringForMonth,
@@ -22,27 +21,27 @@ export async function GET(request: Request) {
       ? (params.get("month") as string)
       : currentMonth();
     const d = await db();
-    const expenses = await d.all(
-      `SELECT e.id, e.date, e.amount, e.memo, e.source, c.name AS category, c.icon
-       FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
-       WHERE e.user_id = ? AND e.date LIKE ? ORDER BY e.date, e.created_at`,
-      user.id,
-      `${month}-%`,
-    );
-    const incomes = await d.all(
-      "SELECT id, date, amount, type, memo FROM incomes WHERE user_id = ? AND date LIKE ? ORDER BY date",
-      user.id,
-      `${month}-%`,
-    );
-    const pd = await paydays(user.id, month);
-
-    // 今日使えるお金の計算内訳（今月のみ意味を持つ）
-    const summary = await monthSummary(user.id, month);
-    const shift = await monthShiftIncome(user.id, month);
-    const goalRow = await d.get<{ savings_goal: number }>(
-      "SELECT savings_goal FROM users WHERE id = ?",
-      user.id,
-    );
+    // クラウド版（Vercel⇄Supabase）はDB往復ごとにレイテンシが乗るため、独立クエリは並列で投げる。
+    // シフト収入は monthSummary が内包する値を使い、重複計算（monthShiftIncome の二重実行）も削除。
+    const [expenses, incomes, pd, summary, goalRow] = await Promise.all([
+      d.all(
+        `SELECT e.id, e.date, e.amount, e.memo, e.source, c.name AS category, c.icon
+         FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
+         WHERE e.user_id = ? AND e.date LIKE ? ORDER BY e.date, e.created_at`,
+        user.id,
+        `${month}-%`,
+      ),
+      d.all(
+        "SELECT id, date, amount, type, memo FROM incomes WHERE user_id = ? AND date LIKE ? ORDER BY date",
+        user.id,
+        `${month}-%`,
+      ),
+      paydays(user.id, month),
+      // 今日使えるお金の計算内訳（今月のみ意味を持つ）
+      monthSummary(user.id, month),
+      d.get<{ savings_goal: number }>("SELECT savings_goal FROM users WHERE id = ?", user.id),
+    ]);
+    const shift = summary.shift;
     const savingsGoal = goalRow?.savings_goal ?? 0;
     const otherIncome = summary.incomeTotal - shift.total;
 

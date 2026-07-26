@@ -3,6 +3,8 @@
 // シフト：カレンダー自動同期（一度設定すれば開くたびに差分同期）＋音声/文章入力＋月カレンダー＋一覧。
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import Loading from "@/components/Loading";
+import { cachedFetch } from "@/lib/cachedFetch";
 import {
   DEFAULT_EXCLUDES,
   getCalendarToken,
@@ -128,22 +130,34 @@ export default function ShiftsPage() {
     toastTimer.current = setTimeout(() => setToast(""), 5000);
   }
 
+  const [ready, setReady] = useState(false); // バイト先データ（キャッシュ含む）が来るまでスケルトン表示
+
+  // 月切替の連打時に古い月のレスポンスで上書きされないよう、最新リクエストだけ反映する
+  const loadReqRef = useRef(0);
   const load = useCallback(async (m: string) => {
-    const res = await fetch(`/api/shifts?month=${m}`);
-    if (res.status === 401) {
-      location.href = "/login";
-      return;
-    }
-    const d = await res.json();
-    setShifts(d.shifts ?? []);
-    setIncome(d.income ?? null);
+    const req = ++loadReqRef.current;
+    // キャッシュファースト：前回のデータを即表示→裏で最新に差し替え
+    await cachedFetch<{ shifts?: Shift[]; income?: Income | null }>(
+      `/api/shifts?month=${m}`,
+      (d) => {
+        if (loadReqRef.current !== req) return;
+        setShifts(d.shifts ?? []);
+        setIncome(d.income ?? null);
+      },
+    ).catch(() => {
+      /* 初回読み込み失敗時は復帰時の visibilitychange で再試行される */
+    });
   }, []);
 
   const loadJobs = useCallback(async () => {
-    const d = await fetch("/api/jobs").then((r) => r.json());
-    const list: Job[] = d.jobs ?? [];
-    setJobs(list);
-    if (list[0]) setJobId((prev) => prev || list[0].id);
+    let list: Job[] = [];
+    await cachedFetch<{ jobs?: Job[] }>("/api/jobs", (d) => {
+      list = d.jobs ?? [];
+      setJobs(list);
+      if (list[0]) setJobId((prev) => prev || list[0].id);
+      // jobs が返るまでは「バイト先を登録しましょう」（初期設定画面）を出さない
+      setReady(true);
+    }).catch(() => {});
     return list;
   }, []);
 
@@ -524,6 +538,8 @@ export default function ShiftsPage() {
       setParsing(false);
     }
   }
+
+  if (!ready) return <Loading />;
 
   if (jobs.length === 0) {
     return (

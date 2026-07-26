@@ -3,6 +3,8 @@
 // 設定：バイト先（時給）／定期支出・収入／クイックボタン／カテゴリ／ログアウト
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import Loading from "@/components/Loading";
+import { cachedFetch, clearApiCache } from "@/lib/cachedFetch";
 import { apiCall, apiJson } from "@/lib/clientApi";
 import { fmtYen } from "@/lib/format";
 
@@ -54,27 +56,33 @@ export default function SettingsPage() {
     }
   }
 
+  const [ready, setReady] = useState(false); // 初回データ（キャッシュ含む）が来るまでスケルトン表示
+
   const load = useCallback(async () => {
-    const [j, r, c] = await Promise.all([
-      fetch("/api/jobs").then((x) => x.json()),
-      fetch("/api/recurring").then((x) => x.json()),
-      fetch("/api/categories").then((x) => x.json()),
-    ]);
-    setJobs(j.jobs ?? []);
-    setRecurring(r.items ?? []);
-    setCategories(c.categories ?? []);
-    const sub = (c.categories ?? []).find((x: Category) => x.name === "サブスク");
-    if (sub) setRecCat((prev: string) => prev || sub.id);
+    // キャッシュファースト＋並列取得：前回のデータを即表示→裏で最新に差し替え
+    // （これが無いとタブ切替のたびに一瞬「未設定の初期画面」が見える）
+    await Promise.all([
+      cachedFetch<{ jobs?: Job[] }>("/api/jobs", (d) => {
+        setJobs(d.jobs ?? []);
+        setReady(true);
+      }),
+      cachedFetch<{ items?: Recurring[] }>("/api/recurring", (d) => setRecurring(d.items ?? [])),
+      cachedFetch<{ categories?: Category[] }>("/api/categories", (d) => {
+        setCategories(d.categories ?? []);
+        const sub = (d.categories ?? []).find((x) => x.name === "サブスク");
+        if (sub) setRecCat((prev: string) => prev || sub.id);
+      }),
+    ]).catch(() => {
+      /* 初回読み込み失敗時はスケルトンのまま */
+    });
   }, []);
 
   useEffect(() => {
     load();
-    fetch("/api/profile")
-      .then((r) => r.json())
-      .then((d) => {
-        setGoal(d.savingsGoal ? String(d.savingsGoal) : "");
-        setApiToken(d.apiToken ?? "");
-      });
+    cachedFetch<{ savingsGoal?: number; apiToken?: string }>("/api/profile", (d) => {
+      setGoal(d.savingsGoal ? String(d.savingsGoal) : "");
+      setApiToken(d.apiToken ?? "");
+    }).catch(() => {});
   }, [load]);
 
   async function saveGoal() {
@@ -255,6 +263,8 @@ export default function SettingsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "logout" }),
     });
+    // 別ユーザーでログインし直しても前のデータが見えないよう、キャッシュを必ず全消し
+    clearApiCache();
     location.href = "/login";
   }
 
@@ -262,6 +272,8 @@ export default function SettingsPage() {
     "rounded-md border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink";
   const addBtn =
     "dot rounded-md border border-ink px-4 py-2 text-sm active:translate-y-0.5 disabled:opacity-40";
+
+  if (!ready) return <Loading />;
 
   return (
     <div className="space-y-5">
