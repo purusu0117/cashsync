@@ -47,8 +47,9 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<!-- AdMob 本番アプリID（iOS）。広告ユニットIDは src/lib/native.ts（テストID＋NEXT_PUBLIC_ADMOB_* 上書き）を参照 -->
 	<key>GADApplicationIdentifier</key>
-	<string>ca-app-pub-3940256099942544~1458002511</string>
+	<string>ca-app-pub-8116409688907735~8441125581</string>
 	<key>SKAdNetworkItems</key>
 	<array>
 		<dict>
