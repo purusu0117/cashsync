@@ -58,7 +58,8 @@ export default function ScanPage() {
       form.append("image", file);
       const res = await fetch("/api/scan-receipt", { method: "POST", body: form });
       const d = await res.json();
-      if (!res.ok) throw new Error(d.error ?? "解析に失敗しました。");
+      // error:'limit'（無料枠超過）のときは message に日本語の案内が入る
+      if (!res.ok) throw new Error(d.message ?? d.error ?? "解析に失敗しました。");
       setScan({ ...d.scan, date: d.scan.date || todayLocal() });
       setCategoryId(d.categoryId);
       setPhase("confirm");

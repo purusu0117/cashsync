@@ -1,6 +1,7 @@
 // 月次振り返りレポート：終わった月の収支をAIが分析し、使いすぎ指摘と貯金アドバイスを返す。
-// 生成は月ごとに1回だけ（monthly_reviews にキャッシュ）。モデルはSonnet。
+// 生成は月ごとに1回だけ（monthly_reviews にキャッシュ）。モデルはプラン準拠（premium/founder=Sonnet, free=Haiku）。
 import { askClaudeForJsonSmart } from "@/lib/ai";
+import { getUserPlan } from "@/lib/aiUsage";
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
@@ -41,30 +42,33 @@ export async function GET(request: Request) {
         { status: 400 },
       );
     }
-    const d = db();
-    const cached = d
-      .prepare("SELECT report FROM monthly_reviews WHERE user_id = ? AND month = ?")
-      .get(user.id, month) as { report: string } | undefined;
+    const d = await db();
+    const cached = await d.get<{ report: string }>(
+      "SELECT report FROM monthly_reviews WHERE user_id = ? AND month = ?",
+      user.id,
+      month,
+    );
     if (cached) {
       return Response.json({ review: JSON.parse(cached.report), month, cached: true });
     }
 
-    postRecurringForMonth(user.id, currentMonth());
-    const summary = monthSummary(user.id, month);
+    await postRecurringForMonth(user.id, currentMonth());
+    const summary = await monthSummary(user.id, month);
     if (summary.expenseTotal === 0 && summary.incomeTotal === 0) {
       return Response.json(
         { error: "この月には記録がないため、レポートを作成できません。" },
         { status: 400 },
       );
     }
-    const breakdown = categoryBreakdown(user.id, month);
+    const breakdown = await categoryBreakdown(user.id, month);
     const prev = prevMonth(month);
-    const prevSummary = monthSummary(user.id, prev);
-    const prevBreakdown = categoryBreakdown(user.id, prev);
-    const nmd = noMoneyDays(user.id, month);
-    const goalRow = d.prepare("SELECT savings_goal FROM users WHERE id = ?").get(user.id) as
-      | { savings_goal: number }
-      | undefined;
+    const prevSummary = await monthSummary(user.id, prev);
+    const prevBreakdown = await categoryBreakdown(user.id, prev);
+    const nmd = await noMoneyDays(user.id, month);
+    const goalRow = await d.get<{ savings_goal: number }>(
+      "SELECT savings_goal FROM users WHERE id = ?",
+      user.id,
+    );
 
     const data = {
       month,
@@ -86,10 +90,15 @@ export async function GET(request: Request) {
       "・数字はデータにあるものだけを使い、でっち上げない。",
       '出力はJSONだけ: {"headline":"…","overspend":[{"category":"…","amount":0,"prevAmount":0,"comment":"…"}],"good":["…"],"advice":[{"title":"…","detail":"…","saveEstimate":0}]}',
     ].join("\n");
-    const review = await askClaudeForJsonSmart<Review>(prompt);
-    d.prepare(
+    const plan = await getUserPlan(user.id);
+    const review = await askClaudeForJsonSmart<Review>(prompt, plan);
+    await d.run(
       "INSERT INTO monthly_reviews (user_id, month, report, created_at) VALUES (?, ?, ?, ?)",
-    ).run(user.id, month, JSON.stringify(review), Date.now());
+      user.id,
+      month,
+      JSON.stringify(review),
+      Date.now(),
+    );
     return Response.json({ review, month, cached: false });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();

@@ -6,6 +6,7 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import { askClaudeReceipt } from "@/lib/ai";
+import { LIMIT_MESSAGE, checkAndCountUsage, getUserPlan } from "@/lib/aiUsage";
 import { userFromBearer } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 import { fmtYen } from "@/lib/format";
@@ -19,11 +20,19 @@ export async function POST(request: Request) {
   try {
     // 注意: ok は boolean ではなく文字列 "true"/"false" で返す。
     // iOSショートカットのif文は JSON の boolean をテキスト "true" と比較すると一致しないため。
-    const user = userFromBearer(request);
+    const user = await userFromBearer(request);
     if (!user) {
       return Response.json(
         { ok: "false", message: "認証エラー：設定画面のトークンをショートカットに設定してください。" },
         { status: 401 },
+      );
+    }
+    const plan = await getUserPlan(user.id);
+    const usage = await checkAndCountUsage(user.id, plan, "scans");
+    if (!usage.allowed) {
+      return Response.json(
+        { ok: "false", error: "limit", message: LIMIT_MESSAGE.scans },
+        { status: 429 },
       );
     }
     const form = await request.formData();
@@ -38,13 +47,15 @@ export async function POST(request: Request) {
     tmp = path.join(dir, `${globalThis.crypto.randomUUID()}.${ext}`);
     await fs.writeFile(tmp, buf);
 
-    const d = db();
-    const categories = d
-      .prepare("SELECT id, name FROM categories WHERE user_id = ? ORDER BY sort")
-      .all(user.id) as unknown as { id: string; name: string }[];
+    const d = await db();
+    const categories = await d.all<{ id: string; name: string }>(
+      "SELECT id, name FROM categories WHERE user_id = ? ORDER BY sort",
+      user.id,
+    );
     const scan = await askClaudeReceipt(
       tmp,
       categories.map((c) => c.name),
+      plan,
     );
     if (!scan.total || scan.total <= 0) {
       return Response.json(
@@ -56,9 +67,15 @@ export async function POST(request: Request) {
 
     // 受け取り画面（PayPay受け取り・給与振込等）は収入として記録
     if (scan.kind === "income") {
-      d.prepare(
+      await d.run(
         "INSERT INTO incomes (id, user_id, date, amount, type, memo, created_at) VALUES (?, ?, ?, ?, 'other', ?, ?)",
-      ).run(uid(), user.id, date, scan.total, scan.store || "スクショ収入", Date.now());
+        uid(),
+        user.id,
+        date,
+        scan.total,
+        scan.store || "スクショ収入",
+        Date.now(),
+      );
       return Response.json({
         ok: "true",
         message: `💰${fmtYen(scan.total)}（${scan.store || "受け取り"}）を収入として記録しました`,
@@ -72,19 +89,29 @@ export async function POST(request: Request) {
     const category = categories.find((c) => c.name === scan.category);
     const receiptId = uid();
     // レシートと支出は必ずセットで保存（片方だけ残る中途半端な状態を防ぐ）
-    d.exec("BEGIN");
-    try {
-      d.prepare(
+    await d.transaction(async (tx) => {
+      await tx.run(
         "INSERT INTO receipts (id, user_id, store, taken_date, total, items_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      ).run(receiptId, user.id, scan.store, date, scan.total, JSON.stringify(scan.items), Date.now());
-      d.prepare(
+        receiptId,
+        user.id,
+        scan.store,
+        date,
+        scan.total,
+        JSON.stringify(scan.items),
+        Date.now(),
+      );
+      await tx.run(
         "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'receipt', ?, ?)",
-      ).run(uid(), user.id, date, scan.total, category?.id ?? null, scan.store, receiptId, Date.now());
-      d.exec("COMMIT");
-    } catch (e) {
-      d.exec("ROLLBACK");
-      throw e;
-    }
+        uid(),
+        user.id,
+        date,
+        scan.total,
+        category?.id ?? null,
+        scan.store,
+        receiptId,
+        Date.now(),
+      );
+    });
 
     return Response.json({
       ok: "true",

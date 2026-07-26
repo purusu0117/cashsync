@@ -140,7 +140,8 @@ export default function AddPage() {
         body: JSON.stringify({ text: t }),
       });
       const d = await res.json();
-      if (!res.ok) throw new Error(d.error ?? "解析に失敗しました。");
+      // error:'limit'（無料枠超過）のときは message に日本語の案内が入る
+      if (!res.ok) throw new Error(d.message ?? d.error ?? "解析に失敗しました。");
       setAmount(String(d.parsed.amount));
       setDate(d.parsed.date);
       setMemo(d.parsed.memo);

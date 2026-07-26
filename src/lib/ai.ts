@@ -5,15 +5,25 @@
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import Anthropic from "@anthropic-ai/sdk";
+import type { Plan } from "./aiUsage";
+import { jstToday, jstDateStr } from "./jst";
 
 const TIMEOUT_MS = 180_000;
 
 const USE_API = !!process.env.ANTHROPIC_API_KEY;
-// モデルは全用途 Sonnet（2026-07-26大翔判断: Haikuはカテゴリ分類・相対日付が甘く、
+// premium/founder は全用途 Sonnet（2026-07-26大翔判断: Haikuはカテゴリ分類・相対日付が甘く、
 // 手直しコストの方が高い。節約したい場合は CASHSYNC_AI_MODEL_LIGHT で戻せる）
+// free プランは Haiku 4.5（コスト削減。env CASHSYNC_AI_MODEL_FREE で上書き可）
 const API_MODEL = process.env.CASHSYNC_AI_MODEL || "claude-sonnet-5";
 const API_MODEL_LIGHT = process.env.CASHSYNC_AI_MODEL_LIGHT || "claude-sonnet-5";
+const API_MODEL_FREE = process.env.CASHSYNC_AI_MODEL_FREE || "claude-haiku-4-5-20251001";
 type CliModel = "haiku" | "sonnet" | "opus";
+
+/** プラン別モデル選択。standard=分析系タスク / light=整形系タスク（従来のenv上書きは維持） */
+function apiModelFor(plan: Plan, tier: "standard" | "light"): string {
+  if (plan === "free") return API_MODEL_FREE;
+  return tier === "light" ? API_MODEL_LIGHT : API_MODEL;
+}
 
 let _client: Anthropic | null = null;
 function api(): Anthropic {
@@ -29,12 +39,12 @@ function textOf(msg: Anthropic.Message): string {
 
 // 役割固定の system prompt（英語＝Windows argvでも文字化けしない）。
 // プロジェクトのCLAUDE.md/AGENTS.mdに引きずられないよう明示。
-/** サーバーのローカル時刻（日本時間）での今日。toISOString()はUTCで0-9時JSTに日付がズレるため使わない */
+/** 日本時間での今日（サーバーTZ非依存・jst.ts に一元化） */
 function localToday(): { str: string; dow: number } {
-  const n = new Date();
+  const t = jstToday();
   return {
-    str: `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`,
-    dow: n.getDay(),
+    str: `${t.y}-${String(t.m).padStart(2, "0")}-${String(t.d).padStart(2, "0")}`,
+    dow: t.dow,
   };
 }
 
@@ -113,20 +123,25 @@ export function extractJson<T>(text: string): T {
   return JSON.parse(t.slice(start, end + 1)) as T;
 }
 
+/** systemプロンプトに prompt caching（ephemeral）を付けたブロック形式 */
+function cachedSystem(system: string): Anthropic.TextBlockParam[] {
+  return [{ type: "text", text: system, cache_control: { type: "ephemeral" } }];
+}
+
 async function apiText(system: string, prompt: string, model: string = API_MODEL): Promise<string> {
   const msg = await api().messages.create({
     model,
     max_tokens: 4096,
-    system,
+    system: cachedSystem(system),
     messages: [{ role: "user", content: prompt }],
   });
   return textOf(msg).trim();
 }
 
 /** Web無しでJSONを得る（自然文パースなど整形タスク用） */
-export async function askClaudeForJson<T>(prompt: string): Promise<T> {
+export async function askClaudeForJson<T>(prompt: string, plan: Plan = "founder"): Promise<T> {
   const text = USE_API
-    ? await apiText(SYSTEM_JSON, prompt, API_MODEL_LIGHT)
+    ? await apiText(SYSTEM_JSON, prompt, apiModelFor(plan, "light"))
     : await runClaude(prompt, SYSTEM_JSON, undefined, "sonnet");
   try {
     return extractJson<T>(text);
@@ -136,9 +151,9 @@ export async function askClaudeForJson<T>(prompt: string): Promise<T> {
 }
 
 /** Web無しでJSONを得る（分析・文章品質が要るタスク用・標準モデル） */
-export async function askClaudeForJsonSmart<T>(prompt: string): Promise<T> {
+export async function askClaudeForJsonSmart<T>(prompt: string, plan: Plan = "founder"): Promise<T> {
   const text = USE_API
-    ? await apiText(SYSTEM_JSON, prompt, API_MODEL)
+    ? await apiText(SYSTEM_JSON, prompt, apiModelFor(plan, "standard"))
     : await runClaude(prompt, SYSTEM_JSON, undefined, "sonnet");
   try {
     return extractJson<T>(text);
@@ -169,28 +184,48 @@ function receiptPromptBody(categoryNames: string[], today: string): string {
   ].join("\n");
 }
 
+/** APIに送る前に長辺1280pxへリサイズ（トークン＝コスト削減）。失敗時は元画像のまま */
+async function resizeForApi(imagePath: string): Promise<{ data: string; media: "image/jpeg" | "image/png" }> {
+  const buf = await fs.readFile(imagePath);
+  try {
+    const sharp = (await import("sharp")).default;
+    const resized = await sharp(buf)
+      .rotate() // EXIFの向きを反映（スマホ撮影レシート対策）
+      .resize({ width: 1280, height: 1280, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+    return { data: resized.toString("base64"), media: "image/jpeg" };
+  } catch {
+    // sharp未対応環境・壊れ画像などは元のまま送る（挙動を止めない）
+    return {
+      data: buf.toString("base64"),
+      media: imagePath.endsWith(".png") ? "image/png" : "image/jpeg",
+    };
+  }
+}
+
 /** レシート画像 → 店名・日付・合計・カテゴリ・品目（レシートOCRの本体） */
 export async function askClaudeReceipt(
   imagePath: string,
   categoryNames: string[],
+  plan: Plan = "founder",
 ): Promise<ReceiptScan> {
   const today = localToday().str;
   if (USE_API) {
-    const buf = await fs.readFile(imagePath);
-    const media: "image/png" | "image/jpeg" = imagePath.endsWith(".png")
-      ? "image/png"
-      : "image/jpeg";
+    const { data, media } = await resizeForApi(imagePath);
     const msg = await api().messages.create({
-      model: API_MODEL, // レシート読取は精度優先でSonnet（分類ミスの手直しコストの方が高い・2026-07-25大翔判断）
+      // レシート読取は精度優先でSonnet（分類ミスの手直しコストの方が高い・2026-07-25大翔判断）。
+      // free プランのみ Haiku（apiModelFor）。
+      model: apiModelFor(plan, "standard"),
       max_tokens: 2048,
-      system: SYSTEM_RECEIPT_VISION_API,
+      system: cachedSystem(SYSTEM_RECEIPT_VISION_API),
       messages: [
         {
           role: "user",
           content: [
             {
               type: "image",
-              source: { type: "base64", media_type: media, data: buf.toString("base64") },
+              source: { type: "base64", media_type: media, data },
             },
             {
               type: "text",
@@ -254,17 +289,17 @@ export interface ParsedShiftItem {
 export async function askClaudeParseShifts(
   text: string,
   jobs: { id: string; name: string }[],
+  plan: Plan = "founder",
 ): Promise<ParsedShiftItem[]> {
   const today = localToday();
   const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
   // 「来週月曜」等の相対日付を軽量モデルが計算ミスしないよう、向こう4週間の日付↔曜日対応表を渡す
+  // （JST基準・サーバーTZ非依存）
   const cal: string[] = [];
-  const base = new Date();
+  const base = jstToday();
   for (let i = 0; i < 28; i++) {
-    const dt = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
-    cal.push(
-      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}(${dayNames[dt.getDay()]})`,
-    );
+    const str = jstDateStr(base.y, base.m, base.d + i);
+    cal.push(`${str}(${dayNames[(today.dow + i) % 7]})`);
   }
   const prompt = [
     `今日は ${today.str}（${dayNames[today.dow]}曜日）。次の日本語のシフトメモを、バイトのシフト（複数可）にパースしてください。`,
@@ -277,7 +312,7 @@ export async function askClaudeParseShifts(
     "・バイト先名は略称・音声認識の誤変換（ひらがな化・当て字）もゆるく照合する。どのバイト先か言っていないシフトは jobId を null にする。",
     '出力はJSONだけ: {"shifts":[{"date":"YYYY-MM-DD","startMin":1080,"endMin":1350,"jobId":"id または null"}]}',
   ].join("\n");
-  const raw = await askClaudeForJson<{ shifts?: Partial<ParsedShiftItem>[] }>(prompt);
+  const raw = await askClaudeForJson<{ shifts?: Partial<ParsedShiftItem>[] }>(prompt, plan);
   const validIds = new Set(jobs.map((j) => j.id));
   return (raw.shifts ?? [])
     .map((s) => {
@@ -312,6 +347,7 @@ export interface ParsedEntry {
 export async function askClaudeParseEntry(
   text: string,
   categoryNames: string[],
+  plan: Plan = "founder",
 ): Promise<ParsedEntry> {
   const today = localToday();
   const todayStr = today.str;
@@ -325,7 +361,7 @@ export async function askClaudeParseEntry(
     "・memo: 店名や内容の短い要約（金額と日付表現は含めない）。",
     '出力はJSONだけ: {"date":"YYYY-MM-DD","amount":650,"category":"…","memo":"…"}',
   ].join("\n");
-  const raw = await askClaudeForJson<Partial<ParsedEntry>>(prompt);
+  const raw = await askClaudeForJson<Partial<ParsedEntry>>(prompt, plan);
   if (typeof raw.amount !== "number" || raw.amount <= 0) {
     throw new Error("金額を読み取れませんでした。");
   }

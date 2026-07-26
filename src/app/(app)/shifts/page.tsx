@@ -486,7 +486,8 @@ export default function ShiftsPage() {
         body: JSON.stringify({ text: t }),
       });
       const d = await res.json();
-      if (!res.ok) throw new Error(d.error ?? "解析に失敗しました。");
+      // error:'limit'（無料枠超過）のときは message に日本語の案内が入る
+      if (!res.ok) throw new Error(d.message ?? d.error ?? "解析に失敗しました。");
       // バイト先を言っていないシフトは、選択中（なければ先頭）のバイト先に倒す
       const fallback = jobId || d.defaultJobId || null;
       setParsed(

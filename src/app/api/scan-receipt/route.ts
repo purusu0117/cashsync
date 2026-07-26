@@ -4,6 +4,7 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import { askClaudeReceipt } from "@/lib/ai";
+import { checkAndCountUsage, getUserPlan, limitResponseBody } from "@/lib/aiUsage";
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db } from "@/lib/db";
 
@@ -14,6 +15,12 @@ export async function POST(request: Request) {
   let tmp = "";
   try {
     const user = await requireUser();
+    const plan = await getUserPlan(user.id);
+    const usage = await checkAndCountUsage(user.id, plan, "scans");
+    if (!usage.allowed) {
+      // { ok:false, error:'limit', message:'…' }。UI側は message を優先表示する
+      return Response.json(limitResponseBody("scans", usage), { status: 429 });
+    }
     const form = await request.formData();
     const file = form.get("image");
     if (!(file instanceof File)) {
@@ -26,12 +33,15 @@ export async function POST(request: Request) {
     tmp = path.join(dir, `${globalThis.crypto.randomUUID()}.${ext}`);
     await fs.writeFile(tmp, buf);
 
-    const categories = db()
-      .prepare("SELECT id, name FROM categories WHERE user_id = ? ORDER BY sort")
-      .all(user.id) as unknown as { id: string; name: string }[];
+    const d = await db();
+    const categories = await d.all<{ id: string; name: string }>(
+      "SELECT id, name FROM categories WHERE user_id = ? ORDER BY sort",
+      user.id,
+    );
     const scan = await askClaudeReceipt(
       tmp,
       categories.map((c) => c.name),
+      plan,
     );
     const category = categories.find((c) => c.name === scan.category);
     return Response.json({ scan, categoryId: category?.id ?? null });
