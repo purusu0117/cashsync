@@ -20,6 +20,7 @@ export async function POST(request: Request) {
       categoryId?: string | null;
       suggestedCategoryId?: string | null; // 確認シートに最初に表示した提案（AI or 学習値）
       items?: { name: string; price: number }[];
+      allowDuplicate?: boolean; // 409後にユーザーが「本当に別の支払い」と確認した再送信のみ true
     };
     const total = Math.round(Number(body.total));
     if (!Number.isFinite(total) || total <= 0) {
@@ -30,8 +31,10 @@ export async function POST(request: Request) {
     const store = (body.store ?? "").trim();
     const items = Array.isArray(body.items) ? body.items.slice(0, 30) : [];
     // スキャン保存の二重登録ガード（同じスクショを2回読ませた等）。手入力(/add)はこのAPIを通らない。
-    if (duplicateExpenseExists(user.id, date, total, store)) {
-      return Response.json({ error: DUPLICATE_MESSAGE }, { status: 409 });
+    // 本当に同じものを2回買うこともあるので完全拒否にはせず、
+    // クライアントが409を受けてユーザーに確認 → allowDuplicate: true で再送信したら保存する。
+    if (!body.allowDuplicate && duplicateExpenseExists(user.id, date, total, store)) {
+      return Response.json({ error: DUPLICATE_MESSAGE, duplicate: true }, { status: 409 });
     }
     const d = db();
     const receiptId = uid();

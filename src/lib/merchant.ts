@@ -67,3 +67,7 @@ export function duplicateIncomeExists(
 }
 
 export const DUPLICATE_MESSAGE = "⚠️同じ内容が既に記録されています（同じ日付・金額・メモ）。";
+
+// ショートカット自動保存は対話できないので常にブロック。ただし「本当に2回買った」救済ルートを案内する。
+export const DUPLICATE_SHORTCUT_MESSAGE =
+  "⚠️同じ内容が既に記録されています。本当に2回支払った場合は、アプリのスキャン画面から読み取ると確認のうえ記録できます。";
