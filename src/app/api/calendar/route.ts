@@ -5,6 +5,7 @@ import {
   currentMonth,
   dailyAllowance,
   daysRemainingInMonth,
+  monthPlan,
   monthShiftIncome,
   monthSummary,
   paydays,
@@ -34,7 +35,11 @@ export async function GET(request: Request) {
         "SELECT id, date, amount, type, memo FROM incomes WHERE user_id = ? AND date LIKE ? ORDER BY date",
       )
       .all(user.id, `${month}-%`);
-    const pd = paydays(user.id, month);
+    // 未来月：定期・分割・給料日を「予定」として計算（実体化しない読み取り専用）。
+    // 給料日はシフト確定分も予定側にまとめ、実記録と混ざらないようにする。
+    const isFuture = month > currentMonth();
+    const plan = monthPlan(user.id, month);
+    const pd = isFuture ? [] : paydays(user.id, month);
 
     // 今日使えるお金の計算内訳（今月のみ意味を持つ）
     const summary = monthSummary(user.id, month);
@@ -50,6 +55,7 @@ export async function GET(request: Request) {
       expenses,
       incomes,
       paydays: pd,
+      plan,
       breakdown: {
         shiftIncome: shift.total,
         otherIncome,
