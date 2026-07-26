@@ -3,6 +3,9 @@
 // 週次振り返り：先週（月〜日）の支出をレシート風カード3枚で。
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { CategoryIcon } from "@/components/Icons";
+import Loading from "@/components/Loading";
+import { cachedFetch } from "@/lib/cachedFetch";
 import { fmtDateJa, fmtYen } from "@/lib/format";
 
 interface Weekly {
@@ -19,23 +22,14 @@ export default function WeeklyPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch("/api/weekly")
-      .then((r) => {
-        if (r.status === 401) location.href = "/login";
-        return r.json();
-      })
-      .then((d) => (d.error ? setError(d.error) : setData(d)))
-      .catch(() => setError("読み込みに失敗しました。"));
+    // キャッシュファースト：前回のデータを即表示→裏で最新に差し替え
+    cachedFetch<Weekly>("/api/weekly", (d) => setData(d)).catch((e) =>
+      setError(e instanceof Error ? e.message : "読み込みに失敗しました。"),
+    );
   }, []);
 
-  if (error) return <p className="mt-10 text-center text-sm text-vermilion">{error}</p>;
-  if (!data)
-    return (
-      <div className="mt-16 flex flex-col items-center gap-3 text-ink-faint">
-        <div className="zig zig-b h-24 w-40 printing" />
-        <p className="dot text-sm">集計中・・・</p>
-      </div>
-    );
+  if (error && !data) return <p className="mt-10 text-center text-sm text-vermilion">{error}</p>;
+  if (!data) return <Loading label="集計中・・・" />;
 
   const diff = data.total - data.prevTotal;
   const diffPct = data.prevTotal > 0 ? Math.round((diff / data.prevTotal) * 100) : null;
@@ -56,7 +50,6 @@ export default function WeeklyPage() {
           <p className={`dot mt-2 text-sm ${saved ? "text-sage" : "text-vermilion"}`}>
             前の週より {saved ? "▼" : "▲"}
             {fmtYen(Math.abs(diff))}（{Math.abs(diffPct)}%{saved ? "節約" : "増"}）
-            {saved && " 🎉"}
           </p>
         ) : (
           <p className="mt-2 text-xs text-ink-faint">前の週の記録はありません</p>
@@ -68,7 +61,10 @@ export default function WeeklyPage() {
         <p className="dot text-xs text-ink-faint">＊ ハイライト ＊</p>
         {data.top && (
           <div className="mt-2 flex items-baseline text-sm">
-            <span>いちばん使ったのは {data.top.icon} {data.top.category}</span>
+            <span className="flex items-center gap-1">
+              いちばん使ったのは <CategoryIcon icon={data.top.icon} className="h-4 w-4 text-ink-faint" />
+              {data.top.category}
+            </span>
             <span className="leader" />
             <span className="dot tabular-nums">{fmtYen(data.top.amount)}</span>
           </div>
@@ -89,7 +85,8 @@ export default function WeeklyPage() {
       <section className="zig zig-t zig-b px-5 py-4 text-center shadow-sm">
         <p className="dot text-xs text-ink-faint">＊ ノーマネーデー ＊</p>
         <p className="dot mt-1 text-3xl">
-          🈚 × {data.noMoneyDays}<span className="text-base text-ink-faint">/7日</span>
+          <span className="mu">無</span> × {data.noMoneyDays}
+          <span className="text-base text-ink-faint">/7日</span>
         </p>
         <p className="mt-1 text-xs text-ink-faint">
           {data.noMoneyDays >= 4
@@ -105,7 +102,7 @@ export default function WeeklyPage() {
         href="/stats"
         className="block rounded-md border border-dashed border-rule py-3 text-center text-sm text-ink-faint"
       >
-        📊 月全体のグラフを見る
+        月全体のグラフを見る
       </Link>
     </div>
   );

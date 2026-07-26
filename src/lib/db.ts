@@ -5,9 +5,11 @@
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
+import { migrateCategoryRow } from "./categoryIcons";
 
-const DIR = path.join(process.cwd(), ".data");
-const FILE = path.join(DIR, "cashsync.db");
+// CASHSYNC_DB_PATH はテスト・マイグレーション検証用の上書き。既定は従来どおり .data/cashsync.db
+const FILE = process.env.CASHSYNC_DB_PATH || path.join(process.cwd(), ".data", "cashsync.db");
+const DIR = path.dirname(FILE);
 
 let _db: DatabaseSync | null = null;
 
@@ -182,6 +184,31 @@ function migrate(d: DatabaseSync) {
   addColumn(d, "jobs", "pay_same_day INTEGER NOT NULL DEFAULT 0"); // 1=当日払い（働いた日にその場で支給）
   addColumn(d, "users", "last_overspend_push TEXT"); // 使いすぎ通知の最終送信日（1日1回制限）
   addColumn(d, "recurring_items", "interval TEXT NOT NULL DEFAULT 'monthly'"); // 'monthly' | 'yearly'（年払いサブスク対応）
+  addColumn(d, "categories", "icon TEXT NOT NULL DEFAULT ''"); // 旧DB（icon列なし）向け
+  migrateCategoryIcons(d);
+}
+
+/**
+ * 既存カテゴリの絵文字を一掃するマイグレーション（冪等・起動時に毎回流してよい）。
+ *  - name: 絵文字を除去（「サブスク🔁」→「サブスク」）
+ *  - icon: 旧絵文字/空 → アイコンキー（'subscription' 等。独自カテゴリは 'tag'）
+ * AI分類プロンプトへ渡すカテゴリ名（SELECT name FROM categories）もこれで綺麗になる。
+ */
+export function migrateCategoryIcons(d: DatabaseSync): number {
+  const rows = d.prepare("SELECT id, name, icon FROM categories").all() as {
+    id: string;
+    name: string;
+    icon: string;
+  }[];
+  const upd = d.prepare("UPDATE categories SET name = ?, icon = ? WHERE id = ?");
+  let changed = 0;
+  for (const r of rows) {
+    const m = migrateCategoryRow(r.name, r.icon ?? "");
+    if (!m) continue;
+    upd.run(m.name, m.icon, r.id);
+    changed++;
+  }
+  return changed;
 }
 
 // 掛け持ちバイトの色パレット（紙背景で判別しやすい順）
@@ -195,21 +222,22 @@ function addColumn(d: DatabaseSync, table: string, colDef: string) {
   }
 }
 
+// icon はキー文字列（categoryIcons.ts のアイコンキー）。絵文字はDBに保存しない。
 export const DEFAULT_CATEGORIES: { name: string; icon: string }[] = [
-  { name: "食費", icon: "🍚" },
-  { name: "交通", icon: "🚃" },
-  { name: "娯楽", icon: "🎮" },
-  { name: "日用品", icon: "🧻" },
-  { name: "交際", icon: "🍻" },
-  { name: "サブスク", icon: "🔁" },
-  { name: "洋服", icon: "👕" },
-  { name: "美容", icon: "💄" },
-  { name: "医療", icon: "💊" },
-  { name: "旅行", icon: "✈️" },
-  { name: "学び", icon: "📚" },
-  { name: "住まい", icon: "🏠" },
-  { name: "通信", icon: "📱" },
-  { name: "その他", icon: "🧾" },
+  { name: "食費", icon: "food" },
+  { name: "交通", icon: "transport" },
+  { name: "娯楽", icon: "fun" },
+  { name: "日用品", icon: "daily" },
+  { name: "交際", icon: "social" },
+  { name: "サブスク", icon: "subscription" },
+  { name: "洋服", icon: "clothes" },
+  { name: "美容", icon: "beauty" },
+  { name: "医療", icon: "medical" },
+  { name: "旅行", icon: "travel" },
+  { name: "学び", icon: "study" },
+  { name: "住まい", icon: "home" },
+  { name: "通信", icon: "comm" },
+  { name: "その他", icon: "other" },
 ];
 
 export function seedCategories(userId: string) {

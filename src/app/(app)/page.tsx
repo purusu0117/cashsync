@@ -5,6 +5,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CameraIcon, CategoryIcon, PencilIcon, ScreenshotIcon } from "@/components/Icons";
+import Loading from "@/components/Loading";
+import { cachedFetch } from "@/lib/cachedFetch";
 import {
   DEFAULT_EXCLUDES,
   getCalendarToken,
@@ -58,18 +61,14 @@ export default function HomePage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/summary");
-      if (res.status === 401) {
-        location.href = "/login";
-        return;
-      }
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error);
-      setData(d);
-      // つけ忘れ赦免：昨日の記録が1件も無ければ、細いカードで確認（完璧主義による離脱対策）
-      const yd = (d.yesterday?.date as string) ?? yesterdayLocal();
-      const dismissed = localStorage.getItem(`cashsync-amnesty-${yd}`);
-      setAmnesty(!d.yesterday?.recorded && !dismissed && yd.startsWith(d.month) ? yd : null);
+      // キャッシュファースト：前回のデータを即表示→裏で最新に差し替え（タブ切替のフラッシュ対策）
+      await cachedFetch<Summary>("/api/summary", (d) => {
+        setData(d);
+        // つけ忘れ赦免：昨日の記録が1件も無ければ、細いカードで確認（完璧主義による離脱対策）
+        const yd = d.yesterday?.date ?? yesterdayLocal();
+        const dismissed = localStorage.getItem(`cashsync-amnesty-${yd}`);
+        setAmnesty(!d.yesterday?.recorded && !dismissed && yd.startsWith(d.month) ? yd : null);
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "読み込みに失敗しました。");
     }
@@ -183,14 +182,8 @@ export default function HomePage() {
     }
   }
 
-  if (error) return <p className="mt-10 text-center text-sm text-vermilion">{error}</p>;
-  if (!data)
-    return (
-      <div className="mt-16 flex flex-col items-center gap-3 text-ink-faint">
-        <div className="zig zig-b h-24 w-40 printing" />
-        <p className="dot text-sm">読み込み中・・・</p>
-      </div>
-    );
+  if (error && !data) return <p className="mt-10 text-center text-sm text-vermilion">{error}</p>;
+  if (!data) return <Loading />;
 
   const { summary, forecast, savingsGoal, noMoney } = data;
   // 予算信号機（Zaim方式）：赤=このままだと赤字 / 黄=黒字だが貯金目標に届かない / 緑=目標達成ペース
@@ -225,18 +218,10 @@ export default function HomePage() {
         className="hidden"
       />
 
-      <header className="flex items-baseline justify-between">
-        <p className="dot text-sm text-ink-faint">{fmtDateJa(todayLocal())}</p>
-        <p className="text-xs text-ink-faint">
-          {noMoney.streak >= 2 && <span className="mr-2">🈚{noMoney.streak}日連続</span>}
-          {data.user.name} さん
-        </p>
-      </header>
-
       {/* 月初：先月の振り返りレポート案内 */}
       {reviewMonth && (
         <div className="flex items-center gap-2 rounded-md border border-rule bg-card px-3 py-2 text-xs">
-          <span className="min-w-0 flex-1">🧾 先月の振り返りレポートができます</span>
+          <span className="min-w-0 flex-1">先月の振り返りレポートができます</span>
           <Link
             href={`/stats?m=${reviewMonth}`}
             onClick={() => localStorage.setItem(`cashsync-review-note-${reviewMonth}`, "1")}
@@ -260,7 +245,7 @@ export default function HomePage() {
       {/* 週次振り返り案内（月〜水） */}
       {weeklyKey && (
         <div className="flex items-center gap-2 rounded-md border border-rule bg-card px-3 py-2 text-xs">
-          <span className="min-w-0 flex-1">🧾 先週の振り返りができました</span>
+          <span className="min-w-0 flex-1">先週の振り返りができました</span>
           <Link
             href="/weekly"
             onClick={() => localStorage.setItem(`cashsync-weekly-note-${weeklyKey}`, "1")}
@@ -286,7 +271,7 @@ export default function HomePage() {
         <div className="flex items-center gap-2 rounded-md border border-rule bg-card px-3 py-2 text-xs">
           <span className="min-w-0 flex-1">昨日（{fmtDateJa(amnesty)}）の記録がありません</span>
           <button onClick={dismissAmnesty} className="dot shrink-0 rounded border border-sage px-2 py-1 text-sage">
-            0円だった🈚
+            0円だった
           </button>
           <Link
             href={`/add?date=${amnesty}`}
@@ -298,36 +283,56 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* ヒーロー：レシート片（予算信号機） */}
-      <section className="zig zig-t zig-b px-5 pt-6 pb-5 shadow-sm">
-        <p className="dot text-center text-sm text-ink-faint">＊ 今日使えるお金 ＊</p>
-        <p className={`dot text-center text-6xl mt-2 tabular-nums ${signalColor}`}>
+      {/* メインレシート：この画面の主役は1枚だけ（店名ヘッダ→金額→予測→内訳→バーコード） */}
+      <section className="zig zig-t zig-b px-5 pt-5 pb-4 shadow-sm">
+        <p className="dot text-center text-sm tracking-[0.42em]">CASHSYNC</p>
+        <p className="mt-1 text-center text-[11px] text-ink-faint">
+          {fmtDateJa(todayLocal())} ・ {data.user.name} さん
+        </p>
+
+        <div className="cutline my-3.5" />
+
+        <p className="dot text-center text-sm tracking-[0.18em] text-ink-faint">＊ 今日使えるお金 ＊</p>
+        <p className={`dot mt-3 text-center text-[64px] leading-none tabular-nums ${signalColor}`}>
           {fmtYen(Math.max(0, data.allowance))}
         </p>
-        <p className="mt-1 text-center text-[11px] text-ink-faint">
+        <p className="mt-2 text-center text-xs text-ink-faint">
           残り{data.daysRemaining}日{savingsGoal > 0 && " ・ 貯金目標を先取りした残り"}から計算
         </p>
 
-        {/* 月末予測（黒字チェッカー） */}
-        <p className={`mt-2 text-center text-sm ${signalColor}`}>
-          このペースだと月末{" "}
-          <span className="dot tabular-nums">
-            {forecast.forecast >= 0 ? "+" : ""}
-            {fmtYen(forecast.forecast).replace("¥-", "-¥")}
+        <div className="cutline my-4" />
+
+        {/* 月末予測 ＋ 判子（黒字/注意/赤字）：署名要素はここに1つだけ */}
+        <div className="relative pr-16">
+          <div className="flex items-baseline text-sm">
+            <span className="text-ink-faint">このペースだと月末</span>
+            <span className="leader" />
+            <span className={`dot text-xl tabular-nums ${signalColor}`}>
+              {forecast.forecast >= 0 ? "+" : ""}
+              {fmtYen(forecast.forecast).replace("¥-", "-¥")}
+            </span>
+          </div>
+          <p className={`mt-0.5 text-[11px] ${signal === "red" ? "text-vermilion" : "text-ink-faint"}`}>
+            {signal === "green" && "貯金目標を達成するペースです"}
+            {signal === "red" && `1日あと${fmtYen(recoverPerDay)}減らせば黒字`}
+            {signal === "yellow" && "黒字だが目標まであと少し"}
+          </p>
+          <span
+            className={`stamp dot absolute right-0 top-1/2 -translate-y-1/2 px-2 py-1 text-sm ${signalColor}`}
+            style={{ borderColor: "currentColor" }}
+          >
+            {signal === "green" ? "黒字" : signal === "yellow" ? "注意" : "赤字"}
           </span>
-          {signal === "green" && " 🎉"}
-          {signal === "red" && ` ⚠ 1日あと${fmtYen(recoverPerDay)}減らせば黒字`}
-          {signal === "yellow" && " （目標まであと少し）"}
-        </p>
+        </div>
 
         {/* 貯金目標の進捗 */}
         {savingsGoal > 0 && (
           <div className="mt-3">
-            <div className="flex items-baseline justify-between text-[11px] text-ink-faint">
-              <span>💰 貯金目標 {fmtYen(savingsGoal)}</span>
-              <span className="dot">{goalPct}%</span>
+            <div className="flex items-baseline justify-between text-xs text-ink-faint">
+              <span>貯金目標 {fmtYen(savingsGoal)}</span>
+              <span className="dot tabular-nums">{goalPct}%</span>
             </div>
-            <div className="mt-1 h-1.5 rounded-full bg-paper">
+            <div className="mt-1 h-2 rounded-full bg-paper">
               <div
                 className={`h-full rounded-full ${signal === "red" ? "bg-vermilion" : signal === "yellow" ? "bg-caution" : "bg-sage"}`}
                 style={{ width: `${goalPct}%` }}
@@ -337,86 +342,96 @@ export default function HomePage() {
         )}
 
         <div className="cutline my-4" />
-        <div className="flex justify-between text-sm">
+        <div className="flex items-baseline justify-between text-sm">
           <span className="text-ink-faint">収入</span>
           <span className="leader" />
-          <span className="dot tabular-nums text-sage">{fmtYen(summary.incomeTotal)}</span>
-        </div>
-        <div className="mt-1.5 flex justify-between text-sm">
-          <span className="text-ink-faint">支出</span>
-          <span className="leader" />
-          <span className="dot tabular-nums text-vermilion">{fmtYen(summary.expenseTotal)}</span>
-        </div>
-        <div className="mt-1.5 flex justify-between text-[11px] text-ink-faint">
-          <span>🈚 ノーマネーデー</span>
-          <span className="leader" />
-          <span className="dot tabular-nums">今月{noMoney.count}日</span>
+          <span className="dot text-base tabular-nums text-sage">{fmtYen(summary.incomeTotal)}</span>
         </div>
         {summary.shift.shiftCount > 0 && (
-          <p className="mt-2 text-right text-[11px] text-ink-faint">
+          <p className="mt-0.5 text-right text-[11px] text-ink-faint">
             うちバイト見込み {fmtYen(summary.shift.total)}（{summary.shift.shiftCount}回）
           </p>
         )}
+        <div className="mt-2 flex items-baseline justify-between text-sm">
+          <span className="text-ink-faint">支出</span>
+          <span className="leader" />
+          <span className="dot text-base tabular-nums text-vermilion">
+            {fmtYen(summary.expenseTotal)}
+          </span>
+        </div>
+        <div className="mt-2 flex items-baseline justify-between text-xs text-ink-faint">
+          <span>
+            <span className="mu">無</span> ノーマネーデー
+          </span>
+          <span className="leader" />
+          <span className="dot tabular-nums">
+            今月{noMoney.count}日{noMoney.streak >= 2 && `・${noMoney.streak}日連続`}
+          </span>
+        </div>
+
+        <div className="barcode mt-4" />
+        <p className="dot mt-1 text-center text-[10px] tracking-[0.3em] text-ink-faint">
+          {data.month.replace("-", "")}
+        </p>
       </section>
 
-      {/* 支出の入力方法（3つを明確に） */}
+      {/* 支出の入力：3つの入口を1段のボタン列に圧縮（最近の支出を1画面に入れるため） */}
       <section>
-        <h2 className="dot text-xs text-ink-faint">支出を記録する</h2>
-        <div className="mt-2 grid grid-cols-2 gap-2">
+        <h2 className="dot text-sm tracking-[0.14em]">支出を記録する</h2>
+        <div className="mt-2 grid grid-cols-3 gap-2">
           <button
             onClick={() => camRef.current?.click()}
-            className="zig zig-t zig-b px-3 py-4 text-center shadow-sm active:translate-y-0.5"
+            className="rounded-sm border border-rule bg-card px-2 py-3 text-center shadow-sm active:translate-y-0.5"
           >
-            <span className="text-3xl">📷</span>
-            <span className="dot mt-1 block text-sm">レシートを撮る</span>
-            <span className="block text-[10px] text-ink-faint">撮るだけで自動入力</span>
+            <CameraIcon className="mx-auto h-6 w-6" />
+            <span className="dot mt-1 block text-[13px]">撮る</span>
           </button>
           <button
             onClick={() => (isIOS ? runShortcut() : libRef.current?.click())}
-            className="zig zig-t zig-b px-3 py-4 text-center shadow-sm active:translate-y-0.5"
+            className="rounded-sm border border-rule bg-card px-2 py-3 text-center shadow-sm active:translate-y-0.5"
           >
-            <span className="text-3xl">🖼️</span>
-            <span className="dot mt-1 block text-sm">スクショから</span>
-            <span className="block text-[10px] text-ink-faint">
-              {isIOS ? "記録後に自動削除・1回10枚まで" : "PayPay・通販画面もOK"}
-            </span>
+            <ScreenshotIcon className="mx-auto h-6 w-6" />
+            <span className="dot mt-1 block text-[13px]">スクショ</span>
           </button>
+          <Link
+            href="/add"
+            className="rounded-sm border border-rule bg-card px-2 py-3 text-center shadow-sm active:translate-y-0.5"
+          >
+            <PencilIcon className="mx-auto h-6 w-6" />
+            <span className="dot mt-1 block text-[13px]">手入力</span>
+          </Link>
         </div>
-        <Link
-          href="/add"
-          className="zig zig-t zig-b mt-2 block px-4 py-4 text-center shadow-sm active:translate-y-0.5"
-        >
-          <span className="text-2xl">✏️</span>
-          <span className="dot ml-2 align-middle text-base">自分で入力する</span>
-          <span className="mt-0.5 block text-[10px] text-ink-faint">
-            金額を打つ／🎤話す（「昨日セブンで650円」）のどちらでも
-          </span>
-        </Link>
+        <p className="mt-1.5 text-center text-[11px] text-ink-faint">
+          レシートは撮るだけで自動入力・手入力は話すのもOK
+        </p>
       </section>
 
-      {/* 直近の支出 */}
-      <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h2 className="dot text-xs text-ink-faint">最近の支出</h2>
+      {/* 直近の支出：カードにせず、地の上にそのまま印字（主役はメインレシート1枚） */}
+      <section>
+        <div className="flex items-baseline justify-between">
+          <h2 className="dot text-sm tracking-[0.14em]">最近の支出</h2>
           <Link href="/history" className="text-[11px] text-ink-faint underline underline-offset-2">
             すべて見る
           </Link>
         </div>
-        <ul className="mt-2">
+        <ul className="mt-1">
           {data.recent.length === 0 && (
             <li className="py-4 text-center text-xs text-ink-faint">
-              まだ記録がありません。上の📷からレシートを撮ってみましょう。
+              まだ記録がありません。上の「撮る」から始めましょう。
             </li>
           )}
           {data.recent.map((e) => (
-            <li key={e.id} className="flex items-baseline gap-1 py-1.5 text-sm">
-              <span>{e.icon}</span>
+            <li key={e.id} className="flex items-baseline gap-1 border-b border-rule/70 py-2 text-sm">
+              {e.category && (
+                <CategoryIcon icon={e.icon} className="h-4 w-4 shrink-0 self-center text-ink-faint" />
+              )}
               <span className="truncate">{e.memo || e.category || "支出"}</span>
+              <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">{e.category}</span>
               <span className="leader" />
-              <span className="dot tabular-nums">{fmtYen(e.amount)}</span>
+              <span className="dot text-[15px] tabular-nums">{fmtYen(e.amount)}</span>
               <button
                 onClick={() => removeExpense(e)}
-                className="shrink-0 px-1 text-xs text-vermilion"
+                className="shrink-0 px-1 text-xs text-ink-faint"
                 aria-label="削除"
               >
                 ✕
@@ -424,10 +439,6 @@ export default function HomePage() {
             </li>
           ))}
         </ul>
-        <div className="barcode mt-4" />
-        <p className="dot mt-1 text-center text-[10px] tracking-[0.3em] text-ink-faint">
-          {data.month.replace("-", "")}
-        </p>
       </section>
     </div>
   );

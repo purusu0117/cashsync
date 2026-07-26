@@ -8,7 +8,7 @@
   --paper: #ece7dd; /* 背景：少しグレーがかった温かい紙色 */
   --card: #fbf8f2; /* レシート片：感熱紙の白 */
   --ink: #211d18; /* 印字の黒 */
-  --ink-faint: #8e8779; /* 薄い印字 */
+  --ink-faint: #6d6656; /* 薄い印字（紙背景でWCAG AA を満たす濃さに調整） */
   --rule: #d9d2c4; /* 罫線 */
   --vermilion: #e8442e; /* 朱赤（印鑑レッド）：唯一のアクセント */
   --vermilion-deep: #c93520;
@@ -84,8 +84,20 @@ body {
 .leader {
   flex: 1;
   margin: 0 0.5rem;
-  border-bottom: 2px dotted color-mix(in srgb, var(--ink) 30%, transparent);
+  border-bottom: 2px dotted color-mix(in srgb, var(--ink) 22%, transparent);
   transform: translateY(-0.3em);
+}
+
+/* 「無」スタンプ（ノーマネーデー）：絵文字の代替。朱肉ではなく印字の枠 */
+.mu {
+  display: inline-block;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  font-family: var(--font-dot);
+  font-size: 0.72em;
+  line-height: 1;
+  padding: 1px 2px;
+  vertical-align: 0.08em;
 }
 
 /* ============ バーコード（装飾フッター） ============ */
@@ -128,6 +140,11 @@ body {
   .printing {
     animation: none;
   }
+}
+
+/* ネイティブアプリ（Capacitor）で上部AdMobバナー表示中：バナー高さ50px＋セーフエリア分の余白 */
+body.native-banner {
+  padding-top: calc(50px + env(safe-area-inset-top, 0px));
 }
 
 /* number input のスピナー消し */

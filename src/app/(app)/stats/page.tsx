@@ -1,7 +1,7 @@
 "use client";
 
 // グラフ：月次の収入/支出バー（ページャで何ヶ月でも遡れる）＋選択月のカテゴリ内訳
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -11,6 +11,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { CategoryIcon } from "@/components/Icons";
+import Loading from "@/components/Loading";
+import { cachedFetch } from "@/lib/cachedFetch";
 import { fmtMonthJa, fmtYen, todayLocal } from "@/lib/format";
 
 interface Point {
@@ -60,9 +63,12 @@ export default function StatsPage() {
   const [editPocket, setEditPocket] = useState<string | null>(null);
   const [pocketAmount, setPocketAmount] = useState("");
 
+  const [ready, setReady] = useState(false); // 初回データ（キャッシュ含む）が来るまでスケルトン表示
+
   const loadPockets = useCallback(async () => {
-    const d = await fetch("/api/budgets").then((r) => r.json());
-    setPockets(d.pockets ?? []);
+    await cachedFetch<{ pockets?: Pocket[] }>("/api/budgets", (d) =>
+      setPockets(d.pockets ?? []),
+    ).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -80,15 +86,22 @@ export default function StatsPage() {
     loadPockets();
   }
 
+  // 期間切替の連打時に古いレスポンスで上書きされないよう、最新リクエストだけ反映する
+  const reqRef = useRef(0);
   const load = useCallback(async (b: string, sel: string) => {
-    const res = await fetch(`/api/stats?months=${WINDOW}&before=${b}&month=${sel}`);
-    if (res.status === 401) {
-      location.href = "/login";
-      return;
-    }
-    const d = await res.json();
-    setSeries(d.series ?? []);
-    setBreakdown(d.breakdown ?? []);
+    const req = ++reqRef.current;
+    // キャッシュファースト：前回のデータを即表示→裏で最新に差し替え
+    await cachedFetch<{ series?: Point[]; breakdown?: Breakdown[] }>(
+      `/api/stats?months=${WINDOW}&before=${b}&month=${sel}`,
+      (d) => {
+        if (reqRef.current !== req) return;
+        setSeries(d.series ?? []);
+        setBreakdown(d.breakdown ?? []);
+        setReady(true);
+      },
+    ).catch(() => {
+      /* 初回読み込み失敗時はスケルトンのまま（復帰時の visibilitychange で再試行される） */
+    });
   }, []);
 
   useEffect(() => {
@@ -129,6 +142,8 @@ export default function StatsPage() {
 
   const sel = series.find((p) => p.month === selected);
   const maxBd = Math.max(1, ...breakdown.map((b) => b.amount));
+
+  if (!ready) return <Loading label="集計中・・・" />;
 
   return (
     <div className="space-y-4">
@@ -202,8 +217,8 @@ export default function StatsPage() {
                   );
                 }}
               />
-              <Bar dataKey="income" fill={INCOME} radius={[4, 4, 0, 0]} maxBarSize={18} />
-              <Bar dataKey="expense" fill={EXPENSE} radius={[4, 4, 0, 0]} maxBarSize={18} />
+              <Bar dataKey="income" fill={INCOME} radius={[1, 1, 0, 0]} maxBarSize={18} />
+              <Bar dataKey="expense" fill={EXPENSE} radius={[1, 1, 0, 0]} maxBarSize={18} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -211,42 +226,53 @@ export default function StatsPage() {
       </section>
 
       <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
-        <div className="flex items-baseline justify-between">
-          <h2 className="dot text-sm">{fmtMonthJa(selected)} の内訳</h2>
-          {sel && (
-            <span className="text-[11px] text-ink-faint">
-              貯蓄 <span className="dot" style={{ color: sel.savings >= 0 ? INCOME : EXPENSE }}>{fmtYen(sel.savings)}</span>
+        <h2 className="dot text-sm tracking-[0.1em]">{fmtMonthJa(selected)} の内訳</h2>
+        {sel && (
+          <div className="mt-2 flex items-baseline text-sm">
+            <span className="text-ink-faint">この月の貯蓄</span>
+            <span className="leader" />
+            <span
+              className="dot text-xl tabular-nums"
+              style={{ color: sel.savings >= 0 ? INCOME : EXPENSE }}
+            >
+              {sel.savings >= 0 ? "+" : ""}
+              {fmtYen(sel.savings).replace("¥-", "-¥")}
             </span>
-          )}
-        </div>
-        <ul className="mt-3 space-y-2">
+          </div>
+        )}
+        <ul className="cutline mt-3 space-y-2.5 pt-3">
           {breakdown.length === 0 && (
             <li className="py-4 text-center text-xs text-ink-faint">この月の支出はありません。</li>
           )}
-          {breakdown.map((b) => (
-            <li key={b.category}>
-              <div className="flex items-baseline text-sm">
-                <span>
-                  {b.icon} {b.category}
-                </span>
-                <span className="leader" />
-                <span className="dot tabular-nums">{fmtYen(b.amount)}</span>
-              </div>
-              <div className="mt-1 h-1.5 rounded-full bg-paper">
-                <div
-                  className="h-full rounded-full bg-ink"
-                  style={{ width: `${(b.amount / maxBd) * 100}%` }}
-                />
-              </div>
-            </li>
-          ))}
+          {breakdown.map((b) => {
+            const share = sel && sel.expense > 0 ? Math.round((b.amount / sel.expense) * 100) : 0;
+            return (
+              <li key={b.category}>
+                <div className="flex items-baseline text-sm">
+                  {b.category !== "未分類" && (
+                    <CategoryIcon icon={b.icon} className="mr-1 h-4 w-4 shrink-0 self-center text-ink-faint" />
+                  )}
+                  <span>{b.category}</span>
+                  <span className="ml-1.5 text-[10px] text-ink-faint">{share}%</span>
+                  <span className="leader" />
+                  <span className="dot text-[15px] tabular-nums">{fmtYen(b.amount)}</span>
+                </div>
+                <div className="mt-1 h-1 rounded-full bg-paper">
+                  <div
+                    className="h-full rounded-full bg-ink/50"
+                    style={{ width: `${(b.amount / maxBd) * 100}%` }}
+                  />
+                </div>
+              </li>
+            );
+          })}
         </ul>
         <div className="barcode mt-5" />
       </section>
 
       {/* 袋分けポケット：カテゴリ別の今月予算と残り */}
       <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
-        <h2 className="dot text-sm">👛 袋分けポケット（今月）</h2>
+        <h2 className="dot text-sm tracking-[0.1em]">袋分けポケット（今月）</h2>
         <p className="mt-0.5 text-[11px] text-ink-faint">
           カテゴリごとに月予算を決めて封筒に入れるイメージ。残りが見えると使いすぎが止まります。
         </p>
@@ -259,9 +285,8 @@ export default function StatsPage() {
             return (
               <li key={p.id}>
                 <div className="flex items-baseline text-sm">
-                  <span>
-                    {p.icon} {p.name}
-                  </span>
+                  <CategoryIcon icon={p.icon} className="mr-1 h-4 w-4 shrink-0 self-center text-ink-faint" />
+                  <span>{p.name}</span>
                   <span className="leader" />
                   {p.budget > 0 ? (
                     <span className={`dot tabular-nums ${over ? "text-vermilion" : ""}`}>
@@ -326,7 +351,7 @@ export default function StatsPage() {
                     : "bg-vermilion text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5"
                 }`}
               >
-                {reviewLoading ? "＊＊＊ 分析中・・・ ＊＊＊" : `🧾 ${fmtMonthJa(selected)}の振り返りレポート`}
+                {reviewLoading ? "＊＊＊ 分析中・・・ ＊＊＊" : `${fmtMonthJa(selected)}の振り返りレポート`}
               </button>
               {reviewLoading && (
                 <p className="mt-2 text-center text-[11px] text-ink-faint">
@@ -344,7 +369,7 @@ export default function StatsPage() {
               <p className="dot mt-2 text-center text-lg">{review.headline}</p>
               {review.overspend.length > 0 && (
                 <div className="mt-3">
-                  <h3 className="dot text-xs text-vermilion">⚠ 使いすぎポイント</h3>
+                  <h3 className="dot text-xs text-vermilion">▲ 使いすぎポイント</h3>
                   <ul className="mt-1 space-y-1.5">
                     {review.overspend.map((o, i) => (
                       <li key={i} className="text-sm">
@@ -380,7 +405,7 @@ export default function StatsPage() {
               )}
               {review.advice.length > 0 && (
                 <div className="mt-3 cutline pt-3">
-                  <h3 className="dot text-xs text-ink-faint">💡 来月のアドバイス</h3>
+                  <h3 className="dot text-xs text-ink-faint">◇ 来月のアドバイス</h3>
                   <ul className="mt-1 space-y-2">
                     {review.advice.map((a, i) => (
                       <li key={i} className="text-sm">

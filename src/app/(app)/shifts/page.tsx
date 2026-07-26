@@ -3,6 +3,9 @@
 // シフト：カレンダー自動同期（一度設定すれば開くたびに差分同期）＋音声/文章入力＋月カレンダー＋一覧。
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CalendarIcon, MicIcon, PencilIcon } from "@/components/Icons";
+import Loading from "@/components/Loading";
+import { cachedFetch } from "@/lib/cachedFetch";
 import {
   DEFAULT_EXCLUDES,
   getCalendarToken,
@@ -128,22 +131,34 @@ export default function ShiftsPage() {
     toastTimer.current = setTimeout(() => setToast(""), 5000);
   }
 
+  const [ready, setReady] = useState(false); // バイト先データ（キャッシュ含む）が来るまでスケルトン表示
+
+  // 月切替の連打時に古い月のレスポンスで上書きされないよう、最新リクエストだけ反映する
+  const loadReqRef = useRef(0);
   const load = useCallback(async (m: string) => {
-    const res = await fetch(`/api/shifts?month=${m}`);
-    if (res.status === 401) {
-      location.href = "/login";
-      return;
-    }
-    const d = await res.json();
-    setShifts(d.shifts ?? []);
-    setIncome(d.income ?? null);
+    const req = ++loadReqRef.current;
+    // キャッシュファースト：前回のデータを即表示→裏で最新に差し替え
+    await cachedFetch<{ shifts?: Shift[]; income?: Income | null }>(
+      `/api/shifts?month=${m}`,
+      (d) => {
+        if (loadReqRef.current !== req) return;
+        setShifts(d.shifts ?? []);
+        setIncome(d.income ?? null);
+      },
+    ).catch(() => {
+      /* 初回読み込み失敗時は復帰時の visibilitychange で再試行される */
+    });
   }, []);
 
   const loadJobs = useCallback(async () => {
-    const d = await fetch("/api/jobs").then((r) => r.json());
-    const list: Job[] = d.jobs ?? [];
-    setJobs(list);
-    if (list[0]) setJobId((prev) => prev || list[0].id);
+    let list: Job[] = [];
+    await cachedFetch<{ jobs?: Job[] }>("/api/jobs", (d) => {
+      list = d.jobs ?? [];
+      setJobs(list);
+      if (list[0]) setJobId((prev) => prev || list[0].id);
+      // jobs が返るまでは「バイト先を登録しましょう」（初期設定画面）を出さない
+      setReady(true);
+    }).catch(() => {});
     return list;
   }, []);
 
@@ -176,7 +191,7 @@ export default function ShiftsPage() {
         }
         if (added + updated + removed > 0) {
           showToast(
-            `📅 カレンダー同期: 追加${added}・変更${updated}・削除${removed}`,
+            `カレンダー同期: 追加${added}・変更${updated}・削除${removed}`,
           );
           load(m);
         }
@@ -392,7 +407,7 @@ export default function ShiftsPage() {
       setAutoOn(true);
       syncedRef.current.clear();
       setLinkOpen(false);
-      showToast(`📅 連携ON: 追加${added}・変更${updated}・削除${removed}。今後は開くたびに自動同期します`);
+      showToast(`連携ON: 追加${added}・変更${updated}・削除${removed}。今後は開くたびに自動同期します`);
       load(month);
       loadJobs();
     } catch (e) {
@@ -486,7 +501,8 @@ export default function ShiftsPage() {
         body: JSON.stringify({ text: t }),
       });
       const d = await res.json();
-      if (!res.ok) throw new Error(d.error ?? "解析に失敗しました。");
+      // error:'limit'（無料枠超過）のときは message に日本語の案内が入る
+      if (!res.ok) throw new Error(d.message ?? d.error ?? "解析に失敗しました。");
       // バイト先を言っていないシフトは、選択中（なければ先頭）のバイト先に倒す
       const fallback = jobId || d.defaultJobId || null;
       setParsed(
@@ -524,6 +540,8 @@ export default function ShiftsPage() {
     }
   }
 
+  if (!ready) return <Loading />;
+
   if (jobs.length === 0) {
     return (
       <div className="space-y-4">
@@ -554,14 +572,15 @@ export default function ShiftsPage() {
       </header>
 
       {income && (
-        <div className="zig zig-t zig-b px-5 py-3 shadow-sm">
-          <div className="flex items-baseline justify-between">
-            <span className="dot text-xs text-ink-faint">この月の勤務で稼ぐ額</span>
-            <span className="dot text-2xl tabular-nums text-sage">{fmtYen(income.total)}</span>
-          </div>
-          <p className="text-right text-[10px] text-ink-faint">振込日はカレンダーの💰参照</p>
-          <p className="mt-1 text-right text-[11px] text-ink-faint">
-            平日 {income.weekdayHours.toFixed(1)}h ／ 土日祝 {income.weekendHolidayHours.toFixed(1)}h ／ {income.shiftCount}回
+        <div className="zig zig-t zig-b px-5 pt-4 pb-3 shadow-sm">
+          <p className="dot text-center text-xs tracking-[0.18em] text-ink-faint">
+            ＊ この月の勤務で稼ぐ額 ＊
+          </p>
+          <p className="dot mt-1 text-center text-4xl leading-none tabular-nums text-sage">
+            {fmtYen(income.total)}
+          </p>
+          <p className="mt-1.5 text-center text-[11px] text-ink-faint">
+            平日 {income.weekdayHours.toFixed(1)}h ／ 土日祝 {income.weekendHolidayHours.toFixed(1)}h ／ {income.shiftCount}回 ・ 振込日はカレンダー参照
           </p>
         </div>
       )}
@@ -571,10 +590,11 @@ export default function ShiftsPage() {
         {!parsed && (
           <>
             {speechOk && (
+            <>
             <button
               onClick={toggleVoice}
               disabled={parsing}
-              className={`w-full rounded-lg py-4 text-center transition-colors ${
+              className={`flex w-full items-center justify-center gap-2.5 rounded-md py-3.5 transition-colors ${
                 listening
                   ? "animate-pulse bg-vermilion text-card"
                   : parsing
@@ -582,20 +602,25 @@ export default function ShiftsPage() {
                     : "bg-vermilion text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none"
               }`}
             >
-              <span className="text-2xl">{listening ? "⏺" : "🎤"}</span>
-              <span className="dot block text-lg">
+              {listening ? (
+                <span className="inline-block h-4 w-4 shrink-0 rounded-full bg-card" />
+              ) : (
+                <MicIcon className="h-5 w-5 shrink-0" />
+              )}
+              <span className="dot text-lg">
                 {listening ? "録音中… タップで確定" : parsing ? "AIが解析中・・・" : "話してシフトを追加"}
               </span>
-              <span className={`block text-[11px] ${listening || parsing ? "" : "opacity-80"}`}>
-                {listening
-                  ? "全部話し終わったら、もう一度ここをタップ"
-                  : parsing
-                    ? "そのままお待ちください"
-                    : jobs.length > 1
-                      ? "バイト先名も一緒に話すと自動で振り分けます"
-                      : "話し終わったら自分でタップして確定する方式です"}
-              </span>
             </button>
+            <p className="mt-1.5 text-center text-[11px] text-ink-faint">
+              {listening
+                ? "全部話し終わったら、もう一度上をタップ"
+                : parsing
+                  ? "そのままお待ちください"
+                  : jobs.length > 1
+                    ? "バイト先名も一緒に話すと自動で振り分けます"
+                    : "話し終わったら自分でタップして確定する方式です"}
+            </p>
+            </>
             )}
             {listening && liveText && (
               <p className="mt-2 rounded-md border border-rule bg-paper px-3 py-2 text-sm text-ink">
@@ -611,7 +636,7 @@ export default function ShiftsPage() {
                 }}
                 className="mt-2 w-full text-center text-[11px] text-ink-faint underline underline-offset-2"
               >
-                📲 ショートカットで追加（ショートカットアプリに切り替わります・喋り終わるまで画面そのまま）
+                ショートカットで追加（ショートカットアプリに切り替わります・喋り終わるまで画面そのまま）
               </button>
             )}
             {speechOk && !showTextInput ? (
@@ -619,7 +644,7 @@ export default function ShiftsPage() {
                 onClick={() => setShowTextInput(true)}
                 className="mt-1 w-full text-center text-[11px] text-ink-faint underline underline-offset-2"
               >
-                ✏️ 文字で入力する
+                文字で入力する
               </button>
             ) : (
               <div className="mt-2 flex gap-2">
@@ -735,16 +760,22 @@ export default function ShiftsPage() {
                   picked
                     ? "border-2 border-vermilion bg-card text-vermilion"
                     : s
-                      ? "text-card"
+                      ? "border-2 bg-card"
                       : today
                         ? "border-2 border-ink bg-card"
-                        : "border border-rule bg-paper"
+                        : ""
                 }`}
-                style={!picked && s ? { backgroundColor: s.job_color || "var(--vermilion)" } : undefined}
+                style={
+                  !picked && s ? { borderColor: s.job_color || "var(--vermilion)" } : undefined
+                }
               >
-                <span className="dot">{picked ? "✓" : day}</span>
+                <span className={`dot ${!s && !today && !picked ? "text-ink-faint/70" : ""}`}>
+                  {picked ? "✓" : day}
+                </span>
                 {!picked && list.length === 1 && (
-                  <span className="text-[9px] leading-none">{minToHHMM(s.start_min)}</span>
+                  <span className="dot text-[9px] leading-none text-ink">
+                    {minToHHMM(s.start_min)}
+                  </span>
                 )}
                 {!picked && list.length > 1 && (
                   <span className="flex items-center gap-0.5">
@@ -770,7 +801,7 @@ export default function ShiftsPage() {
               }}
               className="dot rounded border border-rule px-2 py-1 text-[11px] text-ink-faint"
             >
-              🗓 複数日まとめて登録
+              複数日まとめて登録
             </button>
           </div>
         ) : (
@@ -860,8 +891,15 @@ export default function ShiftsPage() {
                       {s.job_name}
                     </span>
                   )}
-                  <span className="ml-1 shrink-0 text-[10px] text-ink-faint">
-                    {s.source === "calendar" ? "📅" : "✋"}
+                  <span
+                    className="ml-1 shrink-0 self-center text-ink-faint"
+                    title={s.source === "calendar" ? "カレンダー同期" : "手入力"}
+                  >
+                    {s.source === "calendar" ? (
+                      <CalendarIcon className="h-3.5 w-3.5" />
+                    ) : (
+                      <PencilIcon className="h-3.5 w-3.5" />
+                    )}
                   </span>
                   <span className="leader" />
                   <span className="dot shrink-0 tabular-nums">
@@ -885,11 +923,12 @@ export default function ShiftsPage() {
       {/* カレンダー連携 */}
       <button
         onClick={openLink}
-        className={`w-full rounded-md border py-3 text-sm ${
+        className={`flex w-full items-center justify-center gap-1.5 rounded-md border py-3 text-sm ${
           autoOn ? "border-sage text-sage" : "border-dashed border-rule text-ink-faint"
         }`}
       >
-        {autoOn ? "📅 カレンダー自動同期 ON（タップで設定）" : "📅 Googleカレンダーと連携（自動同期）"}
+        <CalendarIcon className="h-4 w-4 shrink-0" />
+        {autoOn ? "カレンダー自動同期 ON（タップで設定）" : "Googleカレンダーと連携（自動同期）"}
       </button>
 
       {/* トースト */}

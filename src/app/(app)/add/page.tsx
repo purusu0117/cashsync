@@ -3,6 +3,7 @@
 // 手入力 ＋ 自然文/音声入力（「昨日セブンで昼飯650円」→AIパース→確認→保存）
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { CategoryIcon, MicIcon, StopIcon } from "@/components/Icons";
 import { fmtYen, todayLocal } from "@/lib/format";
 
 interface Category {
@@ -140,7 +141,9 @@ export default function AddPage() {
         body: JSON.stringify({ text: t }),
       });
       const d = await res.json();
-      if (!res.ok) throw new Error(d.error ?? "解析に失敗しました。");
+      if (!res.ok) {
+        throw new Error(d.message ?? d.error ?? "解析に失敗しました。");
+      }
       setAmount(String(d.parsed.amount));
       setDate(d.parsed.date);
       setMemo(d.parsed.memo);
@@ -196,7 +199,11 @@ export default function AddPage() {
                   : "bg-vermilion text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none"
             }`}
           >
-            <span className="text-2xl">{listening ? "⏺" : "🎤"}</span>
+            {listening ? (
+              <StopIcon className="mx-auto h-7 w-7" />
+            ) : (
+              <MicIcon className="mx-auto h-7 w-7" />
+            )}
             <span className="dot block text-lg">
               {listening ? "録音中… タップで確定" : parsing ? "AIが解析中・・・" : "話して記録"}
             </span>
@@ -217,7 +224,7 @@ export default function AddPage() {
             onClick={() => setShowTextInput(true)}
             className="mt-2 w-full text-center text-[11px] text-ink-faint underline underline-offset-2"
           >
-            💬 文章で書いて変換する（例：昨日セブンで650円）
+            文章で書いて変換する（例：昨日セブンで650円）
           </button>
         ) : (
           <div className="mt-2 flex gap-2">
@@ -270,13 +277,13 @@ export default function AddPage() {
               <button
                 key={c.id}
                 onClick={() => setCategoryId(c.id)}
-                className={`rounded-full border px-3 py-1.5 text-sm ${
+                className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm ${
                   categoryId === c.id
                     ? "border-vermilion bg-vermilion text-card"
                     : "border-rule bg-paper text-ink"
                 }`}
               >
-                {c.icon} {c.name}
+                <CategoryIcon icon={c.icon} className="h-4 w-4" /> {c.name}
               </button>
             ))}
           </div>

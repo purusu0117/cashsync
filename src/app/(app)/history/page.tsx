@@ -1,7 +1,10 @@
 "use client";
 
 // 履歴：月切替＋日別グルーピング。タップで編集/削除/複製（「もう一度」）。
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CategoryIcon } from "@/components/Icons";
+import Loading from "@/components/Loading";
+import { cachedFetch } from "@/lib/cachedFetch";
 import { apiCall, apiJson } from "@/lib/clientApi";
 import { fmtDateJa, fmtMonthJa, fmtYen, todayLocal } from "@/lib/format";
 
@@ -42,24 +45,33 @@ export default function HistoryPage() {
   const [editing, setEditing] = useState<Expense | null>(null);
   const [busy, setBusy] = useState(false);
   const [editError, setEditError] = useState("");
+  const [ready, setReady] = useState(false); // 初回データ（キャッシュ含む）が来るまでスケルトン表示
 
+  // 月切替の連打時に古い月のレスポンスで上書きされないよう、最新リクエストだけ反映する
+  const reqRef = useRef(0);
   const load = useCallback(async (m: string) => {
-    const res = await fetch(`/api/expenses?month=${m}`);
-    if (res.status === 401) {
-      location.href = "/login";
-      return;
-    }
-    const d = await res.json();
-    setExpenses(d.expenses ?? []);
-    const ri = await fetch(`/api/incomes?month=${m}`).then((r) => r.json());
-    setIncomes(ri.incomes ?? []);
+    const req = ++reqRef.current;
+    // キャッシュファースト＋並列取得：前回のデータを即表示→裏で最新に差し替え
+    await Promise.all([
+      cachedFetch<{ expenses?: Expense[] }>(`/api/expenses?month=${m}`, (d) => {
+        if (reqRef.current !== req) return;
+        setExpenses(d.expenses ?? []);
+        setReady(true);
+      }),
+      cachedFetch<{ incomes?: Income[] }>(`/api/incomes?month=${m}`, (d) => {
+        if (reqRef.current !== req) return;
+        setIncomes(d.incomes ?? []);
+      }),
+    ]).catch(() => {
+      /* 初回読み込み失敗時はスケルトンのまま（復帰時の visibilitychange で再試行される） */
+    });
   }, []);
 
   useEffect(() => {
     load(month);
-    fetch("/api/categories")
-      .then((r) => r.json())
-      .then((d) => setCategories(d.categories ?? []));
+    cachedFetch<{ categories?: Category[] }>("/api/categories", (d) =>
+      setCategories(d.categories ?? []),
+    ).catch(() => {});
     // アプリに戻ってきたら最新化
     const onVisible = () => {
       if (document.visibilityState === "visible") load(month);
@@ -152,6 +164,8 @@ export default function HistoryPage() {
     }
   }
 
+  if (!ready) return <Loading />;
+
   return (
     <div className="space-y-4">
       <header className="flex items-center justify-between">
@@ -168,75 +182,95 @@ export default function HistoryPage() {
         </button>
       </header>
 
-      <div className="zig zig-t zig-b px-5 py-3 text-center shadow-sm">
-        <span className="dot text-xs text-ink-faint">支出合計 </span>
-        <span className="dot text-2xl tabular-nums">{fmtYen(total)}</span>
-        <span className="dot text-xs text-ink-faint">（{expenses.length}件）</span>
-      </div>
+      {/* 1ヶ月＝1枚の長いレシート：本物のレシート同様、切らずに続けて印字する */}
+      <div className="zig zig-t zig-b px-5 pt-4 pb-4 shadow-sm">
+        <div className="text-center">
+          <p className="dot text-xs tracking-[0.18em] text-ink-faint">＊ 支出合計 ＊</p>
+          <p className="dot mt-1 text-4xl leading-none tabular-nums">{fmtYen(total)}</p>
+          <p className="mt-1 text-[11px] text-ink-faint">{expenses.length}件の記録</p>
+        </div>
 
-      {/* 収入（シフト給与以外：スクショ収入・仕送り等） */}
-      {incomes.length > 0 && (
-        <section className="zig zig-t zig-b px-4 py-3 shadow-sm">
-          <h2 className="dot text-xs text-sage">💰 この月の収入（バイト給与を除く）</h2>
-          <ul className="mt-1">
-            {incomes.map((i) => (
-              <li key={i.id} className="flex items-baseline gap-1 py-1.5 text-sm">
-                <span className="shrink-0 text-ink-faint">{fmtDateJa(i.date)}</span>
-                <span className="ml-1 truncate">{i.memo || "収入"}</span>
-                <span className="leader" />
-                <span className="dot tabular-nums text-sage">{fmtYen(i.amount)}</span>
-                <button
-                  onClick={async () => {
-                    if (!confirm(`収入「${i.memo || ""} ${fmtYen(i.amount)}」を削除しますか？`)) return;
-                    await fetch(`/api/incomes?id=${i.id}`, { method: "DELETE" });
-                    load(month);
-                  }}
-                  className="shrink-0 px-1 text-xs text-vermilion"
-                  aria-label="削除"
-                >
-                  ✕
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {[...byDate.entries()].map(([date, list]) => (
-        <section key={date}>
-          <h2 className="dot text-xs text-ink-faint">{fmtDateJa(date)}</h2>
-          <div className="zig zig-b mt-1 px-4 py-2 shadow-sm">
-            {list.map((e) => (
-              <div key={e.id} className="flex items-baseline gap-1 py-1.5 text-sm">
-                <button
-                  onClick={() => {
-                    setEditError("");
-                    setEditing({ ...e });
-                  }}
-                  className="flex min-w-0 flex-1 items-baseline text-left"
-                >
-                  <span className="mr-1">{e.icon}</span>
-                  <span className="truncate">{e.memo || e.category || "支出"}</span>
-                  {e.source === "receipt" && <span className="ml-1 text-[10px]">📷</span>}
-                  {e.source === "recurring" && <span className="ml-1 text-[10px]">🔁</span>}
+        {/* 収入（シフト給与以外：スクショ収入・仕送り等） */}
+        {incomes.length > 0 && (
+          <section className="cutline mt-3 pt-3">
+            <h2 className="dot text-xs tracking-[0.1em] text-sage">収入（バイト給与を除く）</h2>
+            <ul className="mt-0.5">
+              {incomes.map((i) => (
+                <li key={i.id} className="flex items-baseline gap-1 py-1.5 text-sm">
+                  <span className="shrink-0 text-ink-faint">{fmtDateJa(i.date)}</span>
+                  <span className="ml-1 truncate">{i.memo || "収入"}</span>
                   <span className="leader" />
-                  <span className="dot tabular-nums">{fmtYen(e.amount)}</span>
-                </button>
-                <button
-                  onClick={() => removeRow(e)}
-                  className="shrink-0 px-1 text-xs text-vermilion"
-                  aria-label="削除"
-                >
-                  ✕
-                </button>
+                  <span className="dot tabular-nums text-sage">+{fmtYen(i.amount)}</span>
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`収入「${i.memo || ""} ${fmtYen(i.amount)}」を削除しますか？`))
+                        return;
+                      await fetch(`/api/incomes?id=${i.id}`, { method: "DELETE" });
+                      load(month);
+                    }}
+                    className="shrink-0 px-1 text-xs text-ink-faint"
+                    aria-label="削除"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {[...byDate.entries()].map(([date, list]) => {
+          const dayTotal = list.reduce((s, e) => s + e.amount, 0);
+          return (
+            <section key={date} className="cutline mt-3 pt-2.5">
+              <h2 className="flex items-baseline">
+                <span className="dot text-[13px]">{fmtDateJa(date)}</span>
+                <span className="leader" />
+                <span className="dot text-[11px] tabular-nums text-ink-faint">
+                  {list.length}件 {fmtYen(dayTotal)}
+                </span>
+              </h2>
+              <div>
+                {list.map((e) => (
+                  <div key={e.id} className="flex items-baseline gap-1 py-1.5 text-sm">
+                    <button
+                      onClick={() => {
+                        setEditError("");
+                        setEditing({ ...e });
+                      }}
+                      className="flex min-w-0 flex-1 items-baseline text-left"
+                    >
+                      <span className="truncate">{e.memo || e.category || "支出"}</span>
+                      <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">
+                        {e.category}
+                        {e.source === "receipt" && "・自動"}
+                        {e.source === "recurring" && "・定期"}
+                      </span>
+                      <span className="leader" />
+                      <span className="dot text-[15px] tabular-nums">{fmtYen(e.amount)}</span>
+                    </button>
+                    <button
+                      onClick={() => removeRow(e)}
+                      className="shrink-0 px-1 text-xs text-ink-faint"
+                      aria-label="削除"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </section>
-      ))}
-      {expenses.length === 0 && (
-        <p className="py-8 text-center text-xs text-ink-faint">この月の記録はありません。</p>
-      )}
+            </section>
+          );
+        })}
+        {expenses.length === 0 && (
+          <p className="py-8 text-center text-xs text-ink-faint">この月の記録はありません。</p>
+        )}
+
+        <div className="barcode mt-4" />
+        <p className="dot mt-1 text-center text-[10px] tracking-[0.3em] text-ink-faint">
+          {month.replace("-", "")}
+        </p>
+      </div>
 
       {/* 編集シート */}
       {editing && (
@@ -265,13 +299,13 @@ export default function HistoryPage() {
                   <button
                     key={c.id}
                     onClick={() => setEditing({ ...editing, category_id: c.id })}
-                    className={`rounded-full border px-3 py-1 text-sm ${
+                    className={`flex items-center gap-1 rounded-full border px-3 py-1 text-sm ${
                       editing.category_id === c.id
                         ? "border-vermilion bg-vermilion text-card"
                         : "border-rule bg-paper"
                     }`}
                   >
-                    {c.icon} {c.name}
+                    <CategoryIcon icon={c.icon} className="h-4 w-4" /> {c.name}
                   </button>
                 ))}
               </div>

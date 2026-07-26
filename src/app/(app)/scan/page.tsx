@@ -3,6 +3,15 @@
 // レシート撮影 → AI解析 → 確認シート → 保存（全自動保存はしない：人間が最終確定）
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import {
+  CameraIcon,
+  CategoryIcon,
+  CheckCircleIcon,
+  CoinIcon,
+  ImageIcon,
+  PinIcon,
+  TrashIcon,
+} from "@/components/Icons";
 import { fmtYen, todayLocal } from "@/lib/format";
 import { takePendingImage } from "@/lib/pendingImage";
 
@@ -66,7 +75,9 @@ export default function ScanPage() {
       form.append("image", file);
       const res = await fetch("/api/scan-receipt", { method: "POST", body: form });
       const d = await res.json();
-      if (!res.ok) throw new Error(d.error ?? "解析に失敗しました。");
+      if (!res.ok) {
+        throw new Error(d.message ?? d.error ?? "解析に失敗しました。");
+      }
       setScan({ ...d.scan, date: d.scan.date || todayLocal() });
       setCategoryId(d.categoryId);
       setSuggestedCategoryId(d.categoryId);
@@ -163,7 +174,7 @@ export default function ScanPage() {
             onClick={() => fileRef.current?.click()}
             className="zig zig-t zig-b w-full px-6 py-10 text-center shadow-sm active:translate-y-0.5"
           >
-            <span className="text-5xl">📷</span>
+            <CameraIcon className="mx-auto h-12 w-12" />
             <span className="dot mt-3 block text-lg">レシートを撮影</span>
             <span className="mt-1 block text-xs text-ink-faint">
               店名・金額・カテゴリはAIが読み取ります
@@ -173,7 +184,7 @@ export default function ScanPage() {
             onClick={() => libRef.current?.click()}
             className="zig zig-t zig-b w-full px-6 py-6 text-center shadow-sm active:translate-y-0.5"
           >
-            <span className="text-3xl">🖼️</span>
+            <ImageIcon className="mx-auto h-8 w-8" />
             <span className="dot mt-1 block text-base">スクショ・画像から読み取る</span>
             <span className="mt-1 block text-xs text-ink-faint">
               PayPayの支払い画面・ネット注文の確認画面などもOK
@@ -203,10 +214,12 @@ export default function ScanPage() {
 
       {phase === "done" && (
         <div className="zig zig-t zig-b px-5 py-6 text-center shadow-sm">
-          <p className="text-4xl">✅</p>
+          <CheckCircleIcon className="mx-auto h-10 w-10 text-sage" />
           <p className="dot mt-2 text-lg">記録しました</p>
           <div className="mx-auto mt-4 max-w-xs rounded-md border border-rule bg-paper px-4 py-3 text-left text-xs leading-relaxed">
-            <p className="dot text-ink">🗑 元のスクショはもう不要です</p>
+            <p className="dot flex items-center gap-1 text-ink">
+              <TrashIcon className="h-4 w-4 shrink-0" /> 元のスクショはもう不要です
+            </p>
             <p className="mt-1 text-ink-faint">
               読み取った内容はアプリに保存済み。アプリから端末の写真は削除できない仕組み（ブラウザの制限）のため、お手数ですが写真アプリから削除してください。
             </p>
@@ -239,11 +252,11 @@ export default function ScanPage() {
             </button>
             <button
               onClick={() => setScan({ ...scan, kind: "income" })}
-              className={`rounded-full border px-4 py-1.5 text-sm ${
+              className={`flex items-center gap-1 rounded-full border px-4 py-1.5 text-sm ${
                 scan.kind === "income" ? "border-sage bg-sage text-card" : "border-rule bg-paper"
               }`}
             >
-              💰 収入
+              <CoinIcon className="h-4 w-4" /> 収入
             </button>
           </div>
           <div className="mt-3 space-y-3">
@@ -282,10 +295,11 @@ export default function ScanPage() {
               <span className="dot text-xs text-ink-faint">カテゴリ</span>
               {learned && (
                 <span
-                  className="ml-1.5 rounded-full border border-rule bg-paper px-1.5 py-0.5 text-[10px] text-ink-faint"
+                  className="ml-1.5 inline-flex items-center gap-0.5 rounded-full border border-rule bg-paper px-1.5 py-0.5 align-middle text-[10px] text-ink-faint"
                   title="この店で以前あなたが選んだカテゴリを適用しています"
                 >
-                  📌学習済み
+                  <PinIcon className="h-3 w-3" />
+                  学習済み
                 </span>
               )}
               <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -293,13 +307,13 @@ export default function ScanPage() {
                   <button
                     key={c.id}
                     onClick={() => setCategoryId(c.id)}
-                    className={`rounded-full border px-3 py-1.5 text-sm ${
+                    className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm ${
                       categoryId === c.id
                         ? "border-vermilion bg-vermilion text-card"
                         : "border-rule bg-paper text-ink"
                     }`}
                   >
-                    {c.icon} {c.name}
+                    <CategoryIcon icon={c.icon} className="h-4 w-4" /> {c.name}
                   </button>
                 ))}
               </div>
@@ -325,7 +339,7 @@ export default function ScanPage() {
             // 重複検知：エラーで突き放さず「本当に別の支払いか」を確認してから記録できるようにする
             <div className="mt-4 rounded-md border border-vermilion bg-paper px-4 py-3">
               <p className="text-sm leading-relaxed text-ink">
-                ⚠️ 同じ内容（{scan.date}・{fmtYen(scan.total)}・{scan.store || "店名なし"}
+                同じ内容（{scan.date}・{fmtYen(scan.total)}・{scan.store || "店名なし"}
                 ）を今日すでに記録しています。本当に別の{scan.kind === "income" ? "受け取り" : "支払い"}
                 ですか？
               </p>
