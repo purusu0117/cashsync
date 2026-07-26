@@ -248,9 +248,7 @@ export default function StatsPage() {
             return (
               <li key={b.category}>
                 <div className="flex items-baseline text-sm">
-                  <span>
-                    {b.icon} {b.category}
-                  </span>
+                  <span>{b.category}</span>
                   <span className="ml-1.5 text-[10px] text-ink-faint">{share}%</span>
                   <span className="leader" />
                   <span className="dot text-[15px] tabular-nums">{fmtYen(b.amount)}</span>
@@ -283,9 +281,7 @@ export default function StatsPage() {
             return (
               <li key={p.id}>
                 <div className="flex items-baseline text-sm">
-                  <span>
-                    {p.icon} {p.name}
-                  </span>
+                  <span>{p.name}</span>
                   <span className="leader" />
                   {p.budget > 0 ? (
                     <span className={`dot tabular-nums ${over ? "text-vermilion" : ""}`}>

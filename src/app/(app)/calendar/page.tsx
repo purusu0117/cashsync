@@ -134,59 +134,6 @@ export default function CalendarPage() {
         </button>
       </header>
 
-      {/* 今日使えるお金の計算内訳 */}
-      <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
-        <button onClick={() => setShowCalc(!showCalc)} className="flex w-full items-baseline">
-          <h2 className="dot text-xs text-ink-faint">
-            {b.allowance !== null ? "＊ 今日使えるお金の計算 ＊" : "＊ この月の収支 ＊"}
-          </h2>
-          <span className="leader" />
-          {b.allowance !== null && (
-            <span className="dot text-lg tabular-nums">{fmtYen(Math.max(0, b.allowance))}</span>
-          )}
-          <span className="ml-1 text-xs text-ink-faint">{showCalc ? "▲" : "▼"}</span>
-        </button>
-        {showCalc && (
-          <div className="mt-2 space-y-1 text-sm">
-            <div className="flex items-baseline">
-              <span className="text-ink-faint">バイト給料（今月支払い分）</span>
-              <span className="leader" />
-              <span className="dot tabular-nums text-sage">+{fmtYen(b.shiftIncome)}</span>
-            </div>
-            <div className="flex items-baseline">
-              <span className="text-ink-faint">その他の収入</span>
-              <span className="leader" />
-              <span className="dot tabular-nums text-sage">+{fmtYen(b.otherIncome)}</span>
-            </div>
-            {b.savingsGoal > 0 && (
-              <div className="flex items-baseline">
-                <span className="text-ink-faint">貯金目標（先取り）</span>
-                <span className="leader" />
-                <span className="dot tabular-nums">−{fmtYen(b.savingsGoal)}</span>
-              </div>
-            )}
-            <div className="flex items-baseline">
-              <span className="text-ink-faint">今月の支出</span>
-              <span className="leader" />
-              <span className="dot tabular-nums text-vermilion">−{fmtYen(b.expenseTotal)}</span>
-            </div>
-            <div className="cutline my-1.5" />
-            <div className="flex items-baseline">
-              <span className="text-ink-faint">残り</span>
-              <span className="leader" />
-              <span className="dot tabular-nums">{fmtYen(b.remain)}</span>
-            </div>
-            {b.allowance !== null && b.daysRemaining !== null && (
-              <div className="flex items-baseline">
-                <span className="text-ink-faint">÷ 残り{b.daysRemaining}日</span>
-                <span className="leader" />
-                <span className="dot tabular-nums">= {fmtYen(Math.max(0, b.allowance))}/日</span>
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-
       {/* カレンダー：箱を並べず、印字だけで組む（データのない日は静かに、使った日は濃く） */}
       <div className="zig zig-t zig-b px-2 py-4 shadow-sm">
         <div className="grid grid-cols-7 text-center text-[11px]">
@@ -250,6 +197,60 @@ export default function CalendarPage() {
           日付をタップで詳細
         </p>
       </div>
+
+      {/* 今日使えるお金の計算内訳 */}
+      <section className="rounded-sm border border-rule bg-card px-5 py-3 shadow-sm">
+        <button onClick={() => setShowCalc(!showCalc)} className="flex w-full items-baseline">
+          <h2 className="dot text-xs text-ink-faint">
+            {b.allowance !== null ? "＊ 今日使えるお金の計算 ＊" : "＊ この月の収支 ＊"}
+          </h2>
+          <span className="leader" />
+          {b.allowance !== null && (
+            <span className="dot text-lg tabular-nums">{fmtYen(Math.max(0, b.allowance))}</span>
+          )}
+          <span className="ml-1 text-xs text-ink-faint">{showCalc ? "▲" : "▼"}</span>
+        </button>
+        {showCalc && (
+          <div className="mt-2 space-y-1 text-sm">
+            <div className="flex items-baseline">
+              <span className="text-ink-faint">バイト給料（今月支払い分）</span>
+              <span className="leader" />
+              <span className="dot tabular-nums text-sage">+{fmtYen(b.shiftIncome)}</span>
+            </div>
+            <div className="flex items-baseline">
+              <span className="text-ink-faint">その他の収入</span>
+              <span className="leader" />
+              <span className="dot tabular-nums text-sage">+{fmtYen(b.otherIncome)}</span>
+            </div>
+            {b.savingsGoal > 0 && (
+              <div className="flex items-baseline">
+                <span className="text-ink-faint">貯金目標（先取り）</span>
+                <span className="leader" />
+                <span className="dot tabular-nums">−{fmtYen(b.savingsGoal)}</span>
+              </div>
+            )}
+            <div className="flex items-baseline">
+              <span className="text-ink-faint">今月の支出</span>
+              <span className="leader" />
+              <span className="dot tabular-nums text-vermilion">−{fmtYen(b.expenseTotal)}</span>
+            </div>
+            <div className="cutline my-1.5" />
+            <div className="flex items-baseline">
+              <span className="text-ink-faint">残り</span>
+              <span className="leader" />
+              <span className="dot tabular-nums">{fmtYen(b.remain)}</span>
+            </div>
+            {b.allowance !== null && b.daysRemaining !== null && (
+              <div className="flex items-baseline">
+                <span className="text-ink-faint">÷ 残り{b.daysRemaining}日</span>
+                <span className="leader" />
+                <span className="dot tabular-nums">= {fmtYen(Math.max(0, b.allowance))}/日</span>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
 
       {/* 日別詳細シート */}
       {selected && (

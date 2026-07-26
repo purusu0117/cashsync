@@ -590,10 +590,11 @@ export default function ShiftsPage() {
         {!parsed && (
           <>
             {speechOk && (
+            <>
             <button
               onClick={toggleVoice}
               disabled={parsing}
-              className={`w-full rounded-lg py-4 text-center transition-colors ${
+              className={`flex w-full items-center justify-center gap-2.5 rounded-md py-3.5 transition-colors ${
                 listening
                   ? "animate-pulse bg-vermilion text-card"
                   : parsing
@@ -601,26 +602,25 @@ export default function ShiftsPage() {
                     : "bg-vermilion text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none"
               }`}
             >
-              <span className="inline-block">
-                {listening ? (
-                  <span className="inline-block h-6 w-6 rounded-full bg-card" />
-                ) : (
-                  <MicIcon className="h-6 w-6" />
-                )}
-              </span>
-              <span className="dot block text-lg">
+              {listening ? (
+                <span className="inline-block h-4 w-4 shrink-0 rounded-full bg-card" />
+              ) : (
+                <MicIcon className="h-5 w-5 shrink-0" />
+              )}
+              <span className="dot text-lg">
                 {listening ? "録音中… タップで確定" : parsing ? "AIが解析中・・・" : "話してシフトを追加"}
               </span>
-              <span className={`block text-[11px] ${listening || parsing ? "" : "opacity-80"}`}>
-                {listening
-                  ? "全部話し終わったら、もう一度ここをタップ"
-                  : parsing
-                    ? "そのままお待ちください"
-                    : jobs.length > 1
-                      ? "バイト先名も一緒に話すと自動で振り分けます"
-                      : "話し終わったら自分でタップして確定する方式です"}
-              </span>
             </button>
+            <p className="mt-1.5 text-center text-[11px] text-ink-faint">
+              {listening
+                ? "全部話し終わったら、もう一度上をタップ"
+                : parsing
+                  ? "そのままお待ちください"
+                  : jobs.length > 1
+                    ? "バイト先名も一緒に話すと自動で振り分けます"
+                    : "話し終わったら自分でタップして確定する方式です"}
+            </p>
+            </>
             )}
             {listening && liveText && (
               <p className="mt-2 rounded-md border border-rule bg-paper px-3 py-2 text-sm text-ink">
