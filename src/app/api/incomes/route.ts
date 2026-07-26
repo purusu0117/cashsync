@@ -30,14 +30,20 @@ export async function POST(request: Request) {
       amount?: number;
       memo?: string;
       dedupe?: boolean; // スキャン保存だけ true（手入力の意図的な同額連続入力は妨げない）
+      allowDuplicate?: boolean; // 409後にユーザーが「本当に別の受け取り」と確認した再送信のみ true
     };
     const amount = Math.round(Number(body.amount));
     if (!Number.isFinite(amount) || amount <= 0) {
       return Response.json({ error: "金額を入力してください。" }, { status: 400 });
     }
     const date = body.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : todayStr();
-    if (body.dedupe && (await duplicateIncomeExists(user.id, date, amount, (body.memo ?? "").trim()))) {
-      return Response.json({ error: DUPLICATE_MESSAGE }, { status: 409 });
+    // 完全拒否にはしない：クライアントが409を受けてユーザーに確認 → allowDuplicate: true なら保存する
+    if (
+      body.dedupe &&
+      !body.allowDuplicate &&
+      (await duplicateIncomeExists(user.id, date, amount, (body.memo ?? "").trim()))
+    ) {
+      return Response.json({ error: DUPLICATE_MESSAGE, duplicate: true }, { status: 409 });
     }
     const id = uid();
     const d = await db();

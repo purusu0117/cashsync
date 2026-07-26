@@ -11,7 +11,7 @@ import { userFromBearer } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 import { fmtYen } from "@/lib/format";
 import {
-  DUPLICATE_MESSAGE,
+  DUPLICATE_SHORTCUT_MESSAGE,
   duplicateExpenseExists,
   duplicateIncomeExists,
   learnedCategoryId,
@@ -74,10 +74,11 @@ export async function POST(request: Request) {
     // 受け取り画面（PayPay受け取り・給与振込等）は収入として記録
     if (scan.kind === "income") {
       const memo = scan.store || "スクショ収入";
-      // 同じスクショを2回読ませた等の二重登録ガード
+      // 同じスクショを2回読ませた等の二重登録ガード。
+      // ショートカットは対話できないので常にブロック（本当に2回ならアプリのスキャン画面から確認つきで記録できる）。
       if (await duplicateIncomeExists(user.id, date, scan.total, memo)) {
         return Response.json(
-          { ok: "false", message: `${DUPLICATE_MESSAGE}保存しませんでした。` },
+          { ok: "false", message: DUPLICATE_SHORTCUT_MESSAGE },
           { status: 409 },
         );
       }
@@ -112,10 +113,11 @@ export async function POST(request: Request) {
         learned = true;
       }
     }
-    // 同じスクショを2回読ませた等の二重登録ガード
+    // 同じスクショを2回読ませた等の二重登録ガード。
+    // ショートカットは対話できないので常にブロック（本当に2回ならアプリのスキャン画面から確認つきで記録できる）。
     if (await duplicateExpenseExists(user.id, date, scan.total, scan.store)) {
       return Response.json(
-        { ok: "false", message: `${DUPLICATE_MESSAGE}保存しませんでした。` },
+        { ok: "false", message: DUPLICATE_SHORTCUT_MESSAGE },
         { status: 409 },
       );
     }

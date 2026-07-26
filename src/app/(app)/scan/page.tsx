@@ -37,6 +37,9 @@ export default function ScanPage() {
   // ユーザーがここから変更していたら「この店の正しいカテゴリ」として学習される。
   const [suggestedCategoryId, setSuggestedCategoryId] = useState<string | null>(null);
   const [learned, setLearned] = useState(false); // 過去の修正から学習したカテゴリを適用中か
+  // 保存時にサーバーが409（同一日付×金額×店名の既存記録あり）を返したら true。
+  // 「本当に同じものを2回買った」ケースを救済するため、確認のうえ allowDuplicate: true で再送信できる。
+  const [dupConfirm, setDupConfirm] = useState(false);
   // 無料枠超過（429 limit）のとき、ネイティブでは「動画を見て+3回」を出す
   const [limitHit, setLimitHit] = useState(false);
   // ネイティブ判定はSSRとの不一致を避けるためマウント後に行う
@@ -69,6 +72,7 @@ export default function ScanPage() {
 
   async function scanFile(file: File, lib = false) {
     setError("");
+    setDupConfirm(false);
     setLimitHit(false);
     setFromLibrary(lib);
     setSourceTakenAt(lib ? file.lastModified : 0);
@@ -128,8 +132,9 @@ export default function ScanPage() {
     if (file) scanFile(file, lib);
   }
 
-  async function save() {
+  async function save(allowDuplicate = false) {
     if (!scan) return;
+    setError("");
     setPhase("saving");
     try {
       // 受け取り（収入）は incomes へ、支払いは receipts+expenses へ
@@ -143,6 +148,7 @@ export default function ScanPage() {
                 date: scan.date,
                 memo: scan.store || "スクショ収入",
                 dedupe: true, // 同じスクショの二重読み取り防止（手入力には影響しない）
+                allowDuplicate, // 「本当に別の支払い」と確認済みの再送信のみ true
               }),
             })
           : await fetch("/api/receipts", {
@@ -155,10 +161,18 @@ export default function ScanPage() {
                 categoryId,
                 suggestedCategoryId, // 提案から変更されていたらサーバーが店名→カテゴリを学習する
                 items: scan.items,
+                allowDuplicate, // 「本当に別の支払い」と確認済みの再送信のみ true
               }),
             });
       const d = await res.json();
+      if (res.status === 409 && !allowDuplicate) {
+        // 同じ内容の記録が既にある → エラーではなく「本当に別の支払い？」の確認に切り替える
+        setDupConfirm(true);
+        setPhase("confirm");
+        return;
+      }
       if (!res.ok) throw new Error(d.error ?? "保存に失敗しました。");
+      setDupConfirm(false);
       if (fromLibrary) {
         // スクショ由来のときは「元画像はもう不要」のリマインドを出してから帰る
         setPhase("done");
@@ -395,10 +409,37 @@ export default function ScanPage() {
             )}
           </div>
           {error && <p className="mt-2 text-sm text-vermilion">{error}</p>}
+          {dupConfirm ? (
+            // 重複検知：エラーで突き放さず「本当に別の支払いか」を確認してから記録できるようにする
+            <div className="mt-4 rounded-md border border-vermilion bg-paper px-4 py-3">
+              <p className="text-sm leading-relaxed text-ink">
+                ⚠️ 同じ内容（{scan.date}・{fmtYen(scan.total)}・{scan.store || "店名なし"}
+                ）を今日すでに記録しています。本当に別の{scan.kind === "income" ? "受け取り" : "支払い"}
+                ですか？
+              </p>
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => setDupConfirm(false)}
+                  disabled={phase === "saving"}
+                  className="flex-1 rounded-md border border-rule py-3 text-sm text-ink-faint"
+                >
+                  やめる
+                </button>
+                <button
+                  onClick={() => save(true)}
+                  disabled={phase === "saving"}
+                  className="dot flex-[2] rounded-md bg-vermilion py-3 text-sm text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none disabled:opacity-50"
+                >
+                  {phase === "saving" ? "保存中・・・" : `別の${scan.kind === "income" ? "受け取り" : "支払い"}なので記録する`}
+                </button>
+              </div>
+            </div>
+          ) : (
           <div className="mt-4 flex gap-2">
             <button
               onClick={() => {
                 setScan(null);
+                setDupConfirm(false);
                 setPhase("idle");
               }}
               className="flex-1 rounded-md border border-rule py-3 text-sm text-ink-faint"
@@ -406,7 +447,7 @@ export default function ScanPage() {
               撮り直す
             </button>
             <button
-              onClick={save}
+              onClick={() => save()}
               disabled={phase === "saving" || !scan.total}
               className={`dot flex-[2] rounded-md py-3 text-lg text-card active:translate-y-0.5 active:shadow-none disabled:opacity-50 ${
                 scan.kind === "income"
@@ -419,6 +460,7 @@ export default function ScanPage() {
                 : `${fmtYen(scan.total)} を${scan.kind === "income" ? "収入として" : ""}記録`}
             </button>
           </div>
+          )}
         </div>
       )}
     </div>

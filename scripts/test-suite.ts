@@ -384,7 +384,10 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
   check("カテゴリ削除後は学習値を適用しない", (await learnedCategoryId(userId, "閉店した店")) === null);
 
   // --- 12. 重複保存ガード（スキャン/ショートカット自動保存用） ---
-  console.log("[12] 重複保存ガード");
+  // 仕様：検出したら即拒否ではなく「確認つき許可」。
+  // アプリ内スキャンは 409 を受けてユーザー確認 → allowDuplicate: true の再送信で保存できる
+  // （＝同一内容の行がDBに複数存在できる）。ショートカット自動保存は対話不可なので常にブロック。
+  console.log("[12] 重複保存ガード（確認つき許可）");
   await d.run(
     "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'receipt', ?, ?)",
     uid(),
@@ -415,6 +418,31 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
   );
   check("収入の重複も検出", await duplicateIncomeExists(userId, today, 5000, "PayPay受け取り"));
   check("memoが違う収入は重複扱いしない", !(await duplicateIncomeExists(userId, today, 5000, "別の人から")));
+  // 「本当に同じものを2回買った」ケース：ユーザーが確認して allowDuplicate: true で再送信すると
+  // API は同一内容でも保存する。DBレベルで同一内容の2行目が保存できることを確認する。
+  await d.run(
+    "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'receipt', ?, ?)",
+    uid(),
+    userId,
+    today,
+    2113,
+    foodCat.id,
+    "ロケットナウ",
+    null,
+    Date.now(),
+  );
+  const dupRows = (await d.get<{ c: number | string }>(
+    "SELECT COUNT(*) AS c FROM expenses WHERE user_id = ? AND date = ? AND amount = ? AND memo = ?",
+    userId,
+    today,
+    2113,
+    "ロケットナウ",
+  ))!;
+  check("確認つき許可（allowDuplicate相当）で同一内容の2件目を保存できる", Number(dupRows.c) === 2, dupRows);
+  check(
+    "2件保存後も重複として検出される（3件目もまず409で確認される）",
+    await duplicateExpenseExists(userId, today, 2113, "ロケットナウ"),
+  );
 
   console.log(`\n結果: ${passed} passed / ${failed} failed`);
   return { passed, failed };
