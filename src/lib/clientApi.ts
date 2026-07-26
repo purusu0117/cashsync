@@ -1,0 +1,30 @@
+"use client";
+
+// 書き込み系 fetch の共通ラッパー：401はログインへ、エラーは throw して呼び出し元で表示する。
+// （以前は res.ok を見ずに成功扱いしてサイレント失敗していたバグの対策）
+export async function apiCall<T = Record<string, unknown>>(
+  url: string,
+  init?: RequestInit,
+): Promise<T> {
+  const res = await fetch(url, init);
+  if (res.status === 401) {
+    location.href = "/login";
+    throw new Error("ログインしてください。");
+  }
+  let data: T & { error?: string };
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error("通信に失敗しました。");
+  }
+  if (!res.ok) throw new Error(data.error ?? "保存に失敗しました。");
+  return data;
+}
+
+export function apiJson(body: unknown, method = "POST"): RequestInit {
+  return {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  };
+}
