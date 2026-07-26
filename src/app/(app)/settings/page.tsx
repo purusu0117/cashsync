@@ -578,6 +578,14 @@ export default function SettingsPage() {
       <button onClick={logout} className="w-full rounded-md border border-rule py-3 text-sm text-ink-faint">
         ログアウト
       </button>
+      <p className="flex justify-center gap-4 text-[11px] text-ink-faint">
+        <Link href="/legal/terms" className="underline underline-offset-2">
+          利用規約
+        </Link>
+        <Link href="/legal/privacy" className="underline underline-offset-2">
+          プライバシーポリシー
+        </Link>
+      </p>
       <p className="dot pb-2 text-center text-[10px] text-ink-faint">CashSync v0.1</p>
     </div>
   );

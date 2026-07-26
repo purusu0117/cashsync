@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { clearApiCache } from "@/lib/cachedFetch";
@@ -109,6 +110,14 @@ export default function LoginPage() {
           {mode === "login" ? "アカウントを作る" : "ログインに戻る"}
         </button>
       </div>
+      <p className="mt-6 flex justify-center gap-4 text-[11px] text-ink-faint">
+        <Link href="/legal/terms" className="underline underline-offset-4">
+          利用規約
+        </Link>
+        <Link href="/legal/privacy" className="underline underline-offset-4">
+          プライバシーポリシー
+        </Link>
+      </p>
     </div>
   );
 }
