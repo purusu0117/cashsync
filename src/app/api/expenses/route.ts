@@ -1,5 +1,6 @@
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
+import { learnMerchantCategory } from "@/lib/merchant";
 import { postRecurringForMonth, todayStr } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -95,11 +96,20 @@ export async function PUT(request: Request) {
       return Response.json({ error: "金額を入力してください。" }, { status: 400 });
     }
     const date = body.date && DATE_RE.test(body.date) ? body.date : todayStr();
+    const categoryId = ownCategoryId(user.id, body.categoryId);
+    const memo = (body.memo ?? "").trim();
+    const prev = db()
+      .prepare("SELECT category_id FROM expenses WHERE id = ? AND user_id = ?")
+      .get(body.id, user.id) as unknown as { category_id: string | null } | undefined;
     db()
       .prepare(
         "UPDATE expenses SET date = ?, amount = ?, category_id = ?, memo = ? WHERE id = ? AND user_id = ?",
       )
-      .run(date, amount, ownCategoryId(user.id, body.categoryId), (body.memo ?? "").trim(), body.id, user.id);
+      .run(date, amount, categoryId, memo, body.id, user.id);
+    // マーチャント学習の入口②：履歴の編集でカテゴリを変えた＝この店（memo）の正解を教えてもらった
+    if (prev && categoryId && categoryId !== prev.category_id && memo) {
+      learnMerchantCategory(user.id, memo, categoryId);
+    }
     return Response.json({ ok: true });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();

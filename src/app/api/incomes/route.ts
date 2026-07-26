@@ -1,5 +1,6 @@
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
+import { DUPLICATE_MESSAGE, duplicateIncomeExists } from "@/lib/merchant";
 import { todayStr } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -23,12 +24,20 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const user = await requireUser();
-    const body = (await request.json()) as { date?: string; amount?: number; memo?: string };
+    const body = (await request.json()) as {
+      date?: string;
+      amount?: number;
+      memo?: string;
+      dedupe?: boolean; // スキャン保存だけ true（手入力の意図的な同額連続入力は妨げない）
+    };
     const amount = Math.round(Number(body.amount));
     if (!Number.isFinite(amount) || amount <= 0) {
       return Response.json({ error: "金額を入力してください。" }, { status: 400 });
     }
     const date = body.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : todayStr();
+    if (body.dedupe && duplicateIncomeExists(user.id, date, amount, (body.memo ?? "").trim())) {
+      return Response.json({ error: DUPLICATE_MESSAGE }, { status: 409 });
+    }
     const id = uid();
     db()
       .prepare(

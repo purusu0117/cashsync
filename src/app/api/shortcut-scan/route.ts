@@ -9,6 +9,12 @@ import { askClaudeReceipt } from "@/lib/ai";
 import { userFromBearer } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 import { fmtYen } from "@/lib/format";
+import {
+  DUPLICATE_MESSAGE,
+  duplicateExpenseExists,
+  duplicateIncomeExists,
+  learnedCategoryId,
+} from "@/lib/merchant";
 import { todayStr } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -56,9 +62,17 @@ export async function POST(request: Request) {
 
     // 受け取り画面（PayPay受け取り・給与振込等）は収入として記録
     if (scan.kind === "income") {
+      const memo = scan.store || "スクショ収入";
+      // 同じスクショを2回読ませた等の二重登録ガード
+      if (duplicateIncomeExists(user.id, date, scan.total, memo)) {
+        return Response.json(
+          { ok: "false", message: `${DUPLICATE_MESSAGE}保存しませんでした。` },
+          { status: 409 },
+        );
+      }
       d.prepare(
         "INSERT INTO incomes (id, user_id, date, amount, type, memo, created_at) VALUES (?, ?, ?, ?, 'other', ?, ?)",
-      ).run(uid(), user.id, date, scan.total, scan.store || "スクショ収入", Date.now());
+      ).run(uid(), user.id, date, scan.total, memo, Date.now());
       return Response.json({
         ok: "true",
         message: `💰${fmtYen(scan.total)}（${scan.store || "受け取り"}）を収入として記録しました`,
@@ -69,7 +83,25 @@ export async function POST(request: Request) {
       });
     }
 
-    const category = categories.find((c) => c.name === scan.category);
+    // マーチャント学習：この店で過去にユーザーが確定したカテゴリがあれば、AIの提案より優先
+    let categoryId = categories.find((c) => c.name === scan.category)?.id ?? null;
+    let categoryLabel = scan.category || "カテゴリなし";
+    let learned = false;
+    if (scan.store) {
+      const l = learnedCategoryId(user.id, scan.store);
+      if (l) {
+        categoryId = l;
+        categoryLabel = categories.find((c) => c.id === l)?.name ?? categoryLabel;
+        learned = true;
+      }
+    }
+    // 同じスクショを2回読ませた等の二重登録ガード
+    if (duplicateExpenseExists(user.id, date, scan.total, scan.store)) {
+      return Response.json(
+        { ok: "false", message: `${DUPLICATE_MESSAGE}保存しませんでした。` },
+        { status: 409 },
+      );
+    }
     const receiptId = uid();
     // レシートと支出は必ずセットで保存（片方だけ残る中途半端な状態を防ぐ）
     d.exec("BEGIN");
@@ -79,7 +111,7 @@ export async function POST(request: Request) {
       ).run(receiptId, user.id, scan.store, date, scan.total, JSON.stringify(scan.items), Date.now());
       d.prepare(
         "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'receipt', ?, ?)",
-      ).run(uid(), user.id, date, scan.total, category?.id ?? null, scan.store, receiptId, Date.now());
+      ).run(uid(), user.id, date, scan.total, categoryId, scan.store, receiptId, Date.now());
       d.exec("COMMIT");
     } catch (e) {
       d.exec("ROLLBACK");
@@ -88,10 +120,10 @@ export async function POST(request: Request) {
 
     return Response.json({
       ok: "true",
-      message: `${fmtYen(scan.total)}（${scan.store || "店名不明"}／${scan.category || "カテゴリなし"}）を記録しました`,
+      message: `${fmtYen(scan.total)}（${scan.store || "店名不明"}／${categoryLabel}${learned ? "📌学習済み" : ""}）を記録しました`,
       store: scan.store,
       total: scan.total,
-      category: scan.category,
+      category: learned ? categoryLabel : scan.category,
       date,
     });
   } catch (e) {

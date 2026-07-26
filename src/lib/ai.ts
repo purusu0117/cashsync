@@ -162,8 +162,10 @@ function receiptPromptBody(categoryNames: string[], today: string): string {
     "・store: 店名・支払い先（incomeの場合は送ってきた相手やサービス名。読めなければ空文字）。",
     `・date: 支払い日付を YYYY-MM-DD で（年が無ければ ${today} に近い過去の日付と解釈。読めなければ空文字）。`,
     "・total: 合計金額（税込・数値のみ。ポイント払い等は無視して支払総額）。",
-    `・category: この買い物全体に最も合うカテゴリを、次のリストから【一字一句そのまま】1つ選ぶ: ${categoryNames.join(" / ")}`,
-    "・カテゴリ選びの目安: 食べ物/飲み物/コンビニ/スーパー/飲食店/カフェ→「食費」。日常の電車/バス/タクシー/ガソリン→「交通」。ゲーム/映画/レジャー→「娯楽」。洗剤やティッシュ等の生活用品/ドラッグストア→「日用品」。飲み会/プレゼント→「交際」。月額サービスの支払い→「サブスク」。服/靴/バッグ/アクセサリー（ユニクロ・GU・ZOZOTOWN等）→「洋服」。美容室/カット/カラー/化粧品/コスメ/スキンケア/ネイル/脱毛→「美容」。病院/歯医者/クリニック/医薬品/コンタクトレンズ→「医療」。ホテル/旅館/新幹線/飛行機/高速バス/観光施設→「旅行」。本/参考書/教材/資格/講座→「学び」。家賃/電気/ガス/水道→「住まい」。スマホ代/携帯料金/Wi-Fi/ネット回線→「通信」。「その他」はどれにも当てはまらない時の最終手段で、安易に選ばない。",
+    `・category: この買い物全体に最も合うカテゴリを、次のリストから【一字一句そのまま】1つ選ぶ（確信が持てなければ空文字 ""）: ${categoryNames.join(" / ")}`,
+    "・カテゴリ選びの目安: 食べ物/飲み物/コンビニ/スーパー/飲食店/カフェ→「食費」。フードデリバリー（ロケットナウ/Rocket Now・Uber Eats・出前館・Wolt・menu 等）も食事の注文なので→「食費」。日常の電車/バス/タクシー/ガソリン→「交通」。ゲーム/映画/レジャー、Steam・PlayStation・Nintendo/任天堂・DMM等のゲーム配信サービス→「娯楽」。洗剤やティッシュ等の生活用品/ドラッグストア→「日用品」。飲み会/プレゼント→「交際」。月額サービスの支払い→「サブスク」。服/靴/バッグ/アクセサリー（ユニクロ・GU・ZOZOTOWN等）→「洋服」。美容室/カット/カラー/化粧品/コスメ/スキンケア/ネイル/脱毛→「美容」。病院/歯医者/クリニック/医薬品/コンタクトレンズ→「医療」。ホテル/旅館/新幹線/飛行機/高速バス/観光施設→「旅行」。本/参考書/教材/資格/講座→「学び」。家賃/電気/ガス/水道→「住まい」。スマホ代/携帯料金/Wi-Fi/ネット回線→「通信」。「その他」はどれにも当てはまらない時の最終手段で、安易に選ばない。",
+    "・Amazon・楽天市場等の総合通販は店名ではなく品目から判断する（品目が読み取れず判断できなければ category は空文字）。コンビニは食べ物なら「食費」、品目が生活用品中心なら「日用品」。",
+    '・PayPay等のキャッシュレス決済の支払い画面では、支払い先の店名からその店の業種を推定して category を選ぶ。業種が分からない・判断に迷う場合は category を空文字 "" にする（誤分類より無分類の方が良い）。',
     "・items: 主な品目の配列（name と price。値引き行は無視。読み取れる範囲でよい、最大15件）。",
     '出力はJSONだけ: {"kind":"expense","store":"…","date":"YYYY-MM-DD","total":1234,"category":"…","items":[{"name":"…","price":123}]}',
   ].join("\n");
@@ -228,11 +230,13 @@ function normalizeReceipt(raw: Partial<ReceiptScan>, categoryNames: string[]): R
       : items.reduce((s, i) => s + i.price, 0);
   // カテゴリはゆるやかに照合（前後空白・部分一致）。一致しなければ空＝「カテゴリなし」
   // （以前は勝手に末尾カテゴリへ倒していたため、誤分類が「その他」等に紛れて気づけなかった）
+  // ⚠️ rawCat が空のときは部分一致（n.includes("")=常にtrue）で先頭カテゴリに化けるので必ず空のまま返す
   const rawCat = typeof raw.category === "string" ? raw.category.trim() : "";
-  const category =
-    categoryNames.find((n) => n === rawCat) ??
-    categoryNames.find((n) => rawCat.includes(n) || n.includes(rawCat)) ??
-    "";
+  const category = !rawCat
+    ? ""
+    : (categoryNames.find((n) => n === rawCat) ??
+      categoryNames.find((n) => rawCat.includes(n) || n.includes(rawCat)) ??
+      "");
   return {
     kind: raw.kind === "income" ? "income" : "expense",
     store: typeof raw.store === "string" ? raw.store.trim() : "",

@@ -163,6 +163,13 @@ function migrate(d: DatabaseSync) {
       created_at INTEGER NOT NULL,
       PRIMARY KEY (user_id, month)
     );
+    CREATE TABLE IF NOT EXISTS merchant_categories (
+      user_id TEXT NOT NULL,
+      merchant TEXT NOT NULL,           -- 正規化済み店名（trim・小文字化・全角英数→半角）
+      category_id TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (user_id, merchant)
+    );
   `);
   // 追加カラムのマイグレーション（既存DBにも効くよう ALTER を冪等に流す）
   addColumn(d, "users", "savings_goal INTEGER NOT NULL DEFAULT 0"); // 先取り貯金の月目標

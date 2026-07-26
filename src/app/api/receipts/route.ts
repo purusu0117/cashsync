@@ -1,6 +1,11 @@
 // 確認シートで確定したレシートを保存：receipts 1件 ＋ expenses 1件（レシート1枚=支出1レコード）。
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
+import {
+  DUPLICATE_MESSAGE,
+  duplicateExpenseExists,
+  learnMerchantCategory,
+} from "@/lib/merchant";
 import { todayStr } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +18,7 @@ export async function POST(request: Request) {
       date?: string;
       total?: number;
       categoryId?: string | null;
+      suggestedCategoryId?: string | null; // 確認シートに最初に表示した提案（AI or 学習値）
       items?: { name: string; price: number }[];
     };
     const total = Math.round(Number(body.total));
@@ -23,6 +29,10 @@ export async function POST(request: Request) {
       body.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : todayStr();
     const store = (body.store ?? "").trim();
     const items = Array.isArray(body.items) ? body.items.slice(0, 30) : [];
+    // スキャン保存の二重登録ガード（同じスクショを2回読ませた等）。手入力(/add)はこのAPIを通らない。
+    if (duplicateExpenseExists(user.id, date, total, store)) {
+      return Response.json({ error: DUPLICATE_MESSAGE }, { status: 409 });
+    }
     const d = db();
     const receiptId = uid();
     const expenseId = uid();
@@ -40,6 +50,15 @@ export async function POST(request: Request) {
       d.exec("ROLLBACK");
       console.error("[receipts] save failed:", e);
       throw e;
+    }
+    // マーチャント学習の入口①：確認シートで提案と違うカテゴリに変えて保存した＝この店の正解を教えてもらった
+    if (
+      "suggestedCategoryId" in body &&
+      body.categoryId &&
+      body.categoryId !== (body.suggestedCategoryId ?? null) &&
+      store
+    ) {
+      learnMerchantCategory(user.id, store, body.categoryId);
     }
     return Response.json({ ok: true, receiptId, expenseId });
   } catch (e) {

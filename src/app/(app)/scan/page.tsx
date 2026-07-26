@@ -31,6 +31,10 @@ export default function ScanPage() {
   const [scan, setScan] = useState<Scan | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  // 確認シートに最初に表示した提案（AI or 学習値）。保存時にサーバーへ渡し、
+  // ユーザーがここから変更していたら「この店の正しいカテゴリ」として学習される。
+  const [suggestedCategoryId, setSuggestedCategoryId] = useState<string | null>(null);
+  const [learned, setLearned] = useState(false); // 過去の修正から学習したカテゴリを適用中か
 
   useEffect(() => {
     fetch("/api/categories")
@@ -61,6 +65,8 @@ export default function ScanPage() {
       if (!res.ok) throw new Error(d.error ?? "解析に失敗しました。");
       setScan({ ...d.scan, date: d.scan.date || todayLocal() });
       setCategoryId(d.categoryId);
+      setSuggestedCategoryId(d.categoryId);
+      setLearned(!!d.learned);
       setPhase("confirm");
     } catch (err) {
       setError(err instanceof Error ? err.message : "解析に失敗しました。");
@@ -88,6 +94,7 @@ export default function ScanPage() {
                 amount: scan.total,
                 date: scan.date,
                 memo: scan.store || "スクショ収入",
+                dedupe: true, // 同じスクショの二重読み取り防止（手入力には影響しない）
               }),
             })
           : await fetch("/api/receipts", {
@@ -98,6 +105,7 @@ export default function ScanPage() {
                 date: scan.date,
                 total: scan.total,
                 categoryId,
+                suggestedCategoryId, // 提案から変更されていたらサーバーが店名→カテゴリを学習する
                 items: scan.items,
               }),
             });
@@ -258,6 +266,14 @@ export default function ScanPage() {
             {scan.kind === "expense" && (
             <div>
               <span className="dot text-xs text-ink-faint">カテゴリ</span>
+              {learned && (
+                <span
+                  className="ml-1.5 rounded-full border border-rule bg-paper px-1.5 py-0.5 text-[10px] text-ink-faint"
+                  title="この店で以前あなたが選んだカテゴリを適用しています"
+                >
+                  📌学習済み
+                </span>
+              )}
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {categories.map((c) => (
                   <button
