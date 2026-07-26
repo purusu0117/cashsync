@@ -24,8 +24,10 @@ interface Recurring {
   name: string;
   amount: number;
   category: string | null;
+  start_month: string;
   post_day: number;
   end_month: string | null;
+  interval: "monthly" | "yearly";
 }
 interface Category {
   id: string;
@@ -113,11 +115,14 @@ export default function SettingsPage() {
   }
 
   // --- 定期 ---
+  const thisMonth = new Date().toISOString().slice(0, 7);
   const [recKind, setRecKind] = useState<"expense" | "income">("expense");
   const [recName, setRecName] = useState("");
   const [recAmount, setRecAmount] = useState("");
   const [recCat, setRecCat] = useState("");
   const [recDay, setRecDay] = useState("1");
+  const [recInterval, setRecInterval] = useState<"monthly" | "yearly">("monthly");
+  const [recMonth, setRecMonth] = useState(thisMonth); // 年払いの「毎年◯月」＝開始月
   async function addRecurring() {
     if (!recName || !recAmount) return;
     await tryApi(async () => {
@@ -129,6 +134,8 @@ export default function SettingsPage() {
           amount: Number(recAmount),
           categoryId: recKind === "expense" ? recCat || null : null,
           postDay: Number(recDay),
+          interval: recInterval,
+          ...(recInterval === "yearly" ? { startMonth: recMonth } : {}),
         }),
       );
       setRecName("");
@@ -138,7 +145,6 @@ export default function SettingsPage() {
   }
 
   // --- 分割払い（総額と回数から月々を自動計算して定期支出化） ---
-  const thisMonth = new Date().toISOString().slice(0, 7);
   const [spName, setSpName] = useState("");
   const [spTotal, setSpTotal] = useState("");
   const [spCount, setSpCount] = useState("3");
@@ -353,8 +359,8 @@ export default function SettingsPage() {
       </section>
 
       <section id="recurring" className="zig zig-t zig-b px-4 py-4 shadow-sm">
-        <h2 className="dot text-sm">毎月の定期支出・収入</h2>
-        <p className="mt-0.5 text-[11px] text-ink-faint">家賃・サブスク・仕送りなど。毎月1日に自動で記録されます。</p>
+        <h2 className="dot text-sm">定期支出・収入</h2>
+        <p className="mt-0.5 text-[11px] text-ink-faint">家賃・サブスク・仕送りなど。指定日に自動で記録されます（月払い／年払い）。</p>
         <ul className="mt-2 space-y-1">
           {recurring.map((r) => (
             <li key={r.id}>
@@ -367,7 +373,10 @@ export default function SettingsPage() {
                 </button>
               </div>
               <p className="ml-5 text-[11px] text-ink-faint">
-                毎月{r.post_day >= 28 ? "末日" : `${r.post_day}日`}
+                {r.interval === "yearly"
+                  ? `毎年${Number(r.start_month.slice(5))}月${r.post_day >= 28 ? "末日" : `${r.post_day}日`}`
+                  : `毎月${r.post_day >= 28 ? "末日" : `${r.post_day}日`}`}
+                ・{fmtYen(r.amount)}
                 {r.end_month && `・${r.end_month.replace("-", "年")}月まで`}
               </p>
             </li>
@@ -378,8 +387,20 @@ export default function SettingsPage() {
             <option value="expense">支出</option>
             <option value="income">収入</option>
           </select>
+          <select value={recInterval} onChange={(e) => setRecInterval(e.target.value as "monthly" | "yearly")} className={input}>
+            <option value="monthly">月払い</option>
+            <option value="yearly">年払い</option>
+          </select>
           <input value={recName} onChange={(e) => setRecName(e.target.value)} placeholder="例：Netflix / 家賃" className={`${input} flex-1 min-w-0`} />
         </div>
+        {recInterval === "yearly" && (
+          <div className="mt-2">
+            <input type="month" value={recMonth} onChange={(e) => setRecMonth(e.target.value)} className={`${input} w-full`} />
+            <p className="mt-1 text-[11px] text-ink-faint">
+              年払いは毎年{Number((recMonth || thisMonth).slice(5))}月に1回計上します（選んだ月が初回で、以後その月に毎年）。
+            </p>
+          </div>
+        )}
         {recKind === "expense" && (
           <select value={recCat} onChange={(e) => setRecCat(e.target.value)} className={`${input} mt-2 w-full`}>
             <option value="">カテゴリなし</option>
