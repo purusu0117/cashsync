@@ -15,7 +15,12 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.114.0",
+    "@capacitor-community/admob": "8.0.0",
+    "@capacitor/android": "8.4.2",
+    "@capacitor/core": "8.4.2",
+    "@capacitor/ios": "8.4.2",
     "@holiday-jp/holiday_jp": "^2.5.1",
+    "cashsync-photo-cleaner": "file:plugins/photo-cleaner",
     "next": "16.2.11",
     "pg": "^8.22.0",
     "react": "19.2.4",
@@ -25,6 +30,7 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.4.2",
     "@electric-sql/pglite": "^0.5.4",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24.13.3",

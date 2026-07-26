@@ -1,0 +1,33 @@
+{
+  "name": "cashsync-photo-cleaner",
+  "version": "0.1.0",
+  "description": "CashSync custom Capacitor plugin: list & delete screenshots from the device photo library",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "license": "MIT",
+  "author": "daito",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/daito/cashsync.git"
+  },
+  "files": [
+    "android/src/main/",
+    "android/build.gradle",
+    "ios/Sources",
+    "Package.swift",
+    "CashsyncPhotoCleaner.podspec",
+    "index.js",
+    "index.d.ts"
+  ],
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    },
+    "android": {
+      "src": "android"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  }
+}
