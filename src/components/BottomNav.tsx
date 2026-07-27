@@ -1,41 +1,22 @@
 "use client";
 
-// B4: 下タブ再編 — シフトを独立タブに（ホーム/履歴/カレンダー/シフト/グラフ/設定）。
+// 下タブ：シフトはカレンダータブへ統合したので、静的な5タブ（ホーム/履歴/カレンダー/グラフ/設定）。
 // 週次振り返りはグラフ画面の「週/月」切替に統合済み（C9）なのでタブは持たない。
-// 6タブでも390pxで崩れないよう、中央持ち上げ（primary）は廃止して等幅フラットに統一。
+// 中央持ち上げ（primary）は廃止して等幅フラットに統一。
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 
 const TABS = [
   { href: "/", label: "ホーム", icon: HomeIcon },
   { href: "/history", label: "履歴", icon: ListIcon },
   { href: "/calendar", label: "カレンダー", icon: CalendarIcon },
-  { href: "/shifts", label: "シフト", icon: ShiftIcon },
   { href: "/stats", label: "グラフ", icon: ChartIcon },
   { href: "/settings", label: "設定", icon: GearIcon },
 ];
 
 export default function BottomNav() {
   const pathname = usePathname();
-  // 働き方が時給/シフト制(hourly)のときだけ「シフト」タブを出す。
-  // 月給(salary)・日給(daily)の人には不要なので隠してUIをすっきりさせる（設定でいつでも戻せる）。
-  // localStorage で前回値を即時反映し、/api/profile で最新に更新する（初回のちらつき対策）。
-  const [workStyle, setWorkStyle] = useState<string>("hourly");
-  useEffect(() => {
-    const cached = typeof localStorage !== "undefined" ? localStorage.getItem("cashsync-workstyle") : null;
-    if (cached) setWorkStyle(cached);
-    fetch("/api/profile")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.workStyle) {
-          setWorkStyle(d.workStyle);
-          localStorage.setItem("cashsync-workstyle", d.workStyle);
-        }
-      })
-      .catch(() => {});
-  }, []);
-  const tabs = workStyle === "hourly" ? TABS : TABS.filter((t) => t.href !== "/shifts");
+  const tabs = TABS;
   return (
     <nav className="fixed bottom-0 inset-x-0 z-40 bg-card cutline pb-[env(safe-area-inset-bottom)]">
       <div className="mx-auto max-w-md flex items-stretch">
@@ -83,14 +64,6 @@ function CalendarIcon({ className }: IconProps) {
       <rect x="3" y="5" width="18" height="16" rx="2" />
       <path d="M3 10h18M8 3v4M16 3v4" strokeLinecap="round" />
       <path d="M8 14h2m3 0h2m-7 4h2" strokeLinecap="round" />
-    </svg>
-  );
-}
-function ShiftIcon({ className }: IconProps) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="13" r="8" />
-      <path d="M12 9v4l2.5 2.5M9 2h6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

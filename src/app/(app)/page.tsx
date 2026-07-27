@@ -718,7 +718,7 @@ export default function HomePage() {
           <p className="mt-0.5 text-right text-[11px] text-ink-faint">
             うちバイト見込み {fmtYen(summary.shift.total)}（{summary.shift.shiftCount}回・
             {Number(data.month.slice(5))}月に振り込まれる分）
-            <Link href="/shifts" className="ml-1 underline underline-offset-2">
+            <Link href="/calendar" className="ml-1 underline underline-offset-2">
               シフトで確認
             </Link>
           </p>
