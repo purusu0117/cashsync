@@ -1,7 +1,7 @@
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 import { learnMerchantCategory } from "@/lib/merchant";
-import { monthRange, postRecurringForMonth, todayStr } from "@/lib/money";
+import { monthRange, postRecurringForMonth, searchExpenses, todayStr } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +20,20 @@ export async function GET(request: Request) {
   try {
     const user = await requireUser();
     postRecurringForMonth(user.id, todayStr().slice(0, 7)); // ホーム未訪問でも定期計上が欠けないように
-    const month = new URL(request.url).searchParams.get("month") ?? todayStr().slice(0, 7);
+    const params = new URL(request.url).searchParams;
+    // B11: 検索モード（?search=1。店名/メモの部分一致＋カテゴリ＋金額範囲。全期間・ページング）
+    if (params.get("search") === "1") {
+      const result = searchExpenses(user.id, {
+        q: params.get("q") ?? "",
+        categoryId: params.get("category") ?? undefined,
+        min: params.get("min") ? Number(params.get("min")) : null,
+        max: params.get("max") ? Number(params.get("max")) : null,
+        offset: Number(params.get("offset")) || 0,
+        limit: Number(params.get("limit")) || 50,
+      });
+      return Response.json(result);
+    }
+    const month = params.get("month") ?? todayStr().slice(0, 7);
     // B9: 「月」は締め日基準の集計期間（開始日1なら従来のカレンダー月と同一）
     const range = monthRange(user.id, month);
     const rows = db()
@@ -53,7 +66,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "金額を入力してください。" }, { status: 400 });
     }
     const date = body.date && DATE_RE.test(body.date) ? body.date : todayStr();
-    const source = ["manual", "receipt", "voice", "quick", "recurring", "text"].includes(
+    const source = ["manual", "receipt", "voice", "quick", "recurring", "text", "import"].includes(
       body.source ?? "",
     )
       ? (body.source as string)

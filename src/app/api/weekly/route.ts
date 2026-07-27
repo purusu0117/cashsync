@@ -1,7 +1,12 @@
 // 週次振り返り：先週（月〜日）の支出サマリーを返す（AI不使用・即答）。
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { postRecurringForMonth, currentMonth } from "@/lib/money";
+import {
+  FIXED_EXPENSE_COND,
+  VARIABLE_EXPENSE_COND,
+  postRecurringForMonth,
+  currentMonth,
+} from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +30,15 @@ function weekStats(userId: string, range: { start: string; end: string }) {
   const total = (
     d
       .prepare(
-        "SELECT COALESCE(SUM(amount),0) AS s FROM expenses WHERE user_id = ? AND date >= ? AND date <= ? AND source != 'recurring'",
+        `SELECT COALESCE(SUM(e.amount),0) AS s FROM expenses e WHERE e.user_id = ? AND e.date >= ? AND e.date <= ? AND ${VARIABLE_EXPENSE_COND}`,
+      )
+      .get(userId, range.start, range.end) as { s: number }
+  ).s;
+  // C12: 週内に計上された固定費（家賃・サブスク等）。変動支出とは分けて表示する
+  const fixedTotal = (
+    d
+      .prepare(
+        `SELECT COALESCE(SUM(e.amount),0) AS s FROM expenses e WHERE e.user_id = ? AND e.date >= ? AND e.date <= ? AND ${FIXED_EXPENSE_COND}`,
       )
       .get(userId, range.start, range.end) as { s: number }
   ).s;
@@ -33,7 +46,7 @@ function weekStats(userId: string, range: { start: string; end: string }) {
     .prepare(
       `SELECT COALESCE(c.name,'未分類') AS category, COALESCE(c.icon,'') AS icon, SUM(e.amount) AS amount
        FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
-       WHERE e.user_id = ? AND e.date >= ? AND e.date <= ? AND e.source != 'recurring'
+       WHERE e.user_id = ? AND e.date >= ? AND e.date <= ? AND ${VARIABLE_EXPENSE_COND}
        GROUP BY e.category_id ORDER BY amount DESC LIMIT 1`,
     )
     .get(userId, range.start, range.end) as
@@ -41,7 +54,7 @@ function weekStats(userId: string, range: { start: string; end: string }) {
     | undefined;
   const max = d
     .prepare(
-      "SELECT memo, amount, date FROM expenses WHERE user_id = ? AND date >= ? AND date <= ? AND source != 'recurring' ORDER BY amount DESC LIMIT 1",
+      `SELECT e.memo, e.amount, e.date FROM expenses e WHERE e.user_id = ? AND e.date >= ? AND e.date <= ? AND ${VARIABLE_EXPENSE_COND} ORDER BY e.amount DESC LIMIT 1`,
     )
     .get(userId, range.start, range.end) as
     | { memo: string; amount: number; date: string }
@@ -49,7 +62,7 @@ function weekStats(userId: string, range: { start: string; end: string }) {
   const spentDays = (
     d
       .prepare(
-        "SELECT COUNT(DISTINCT date) AS c FROM expenses WHERE user_id = ? AND date >= ? AND date <= ? AND source != 'recurring'",
+        `SELECT COUNT(DISTINCT e.date) AS c FROM expenses e WHERE e.user_id = ? AND e.date >= ? AND e.date <= ? AND ${VARIABLE_EXPENSE_COND}`,
       )
       .get(userId, range.start, range.end) as { c: number }
   ).c;
@@ -57,11 +70,18 @@ function weekStats(userId: string, range: { start: string; end: string }) {
   const recordCount = (
     d
       .prepare(
-        "SELECT COUNT(*) AS c FROM expenses WHERE user_id = ? AND date >= ? AND date <= ? AND source != 'recurring'",
+        `SELECT COUNT(*) AS c FROM expenses e WHERE e.user_id = ? AND e.date >= ? AND e.date <= ? AND ${VARIABLE_EXPENSE_COND}`,
       )
       .get(userId, range.start, range.end) as { c: number }
   ).c;
-  return { total, top: top ?? null, max: max ?? null, noMoneyDays: 7 - spentDays, recordCount };
+  return {
+    total,
+    fixedTotal,
+    top: top ?? null,
+    max: max ?? null,
+    noMoneyDays: 7 - spentDays,
+    recordCount,
+  };
 }
 
 export async function GET() {
@@ -75,6 +95,7 @@ export async function GET() {
     return Response.json({
       range,
       total: cur.total,
+      fixedTotal: cur.fixedTotal, // C12: 週内の固定費（変動支出とは別枠で表示）
       prevTotal: prev.total,
       top: cur.top,
       max: cur.max,

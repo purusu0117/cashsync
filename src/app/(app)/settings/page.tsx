@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { CardIcon, CategoryIcon, CoinIcon } from "@/components/Icons";
+import { ExportSection, ImportSection } from "@/components/ImportExport";
 import Loading from "@/components/Loading";
 import {
   CategoryEditSheet,
@@ -39,6 +40,7 @@ interface Recurring {
   post_day: number;
   end_month: string | null;
   interval: "monthly" | "yearly";
+  is_fixed: number; // C12: 1=固定費（既定）, 0=変動費扱い
 }
 interface Category {
   id: string;
@@ -225,6 +227,7 @@ export default function SettingsPage() {
   const [recDay, setRecDay] = useState("1");
   const [recInterval, setRecInterval] = useState<"monthly" | "yearly">("monthly");
   const [recMonth, setRecMonth] = useState(thisMonth); // 年払いの「毎年◯月」＝開始月
+  const [recFixed, setRecFixed] = useState("1"); // C12: 1=固定費（既定）, 0=変動費
   async function addRecurring() {
     if (!recName || !recAmount) return;
     await tryApi(async () => {
@@ -237,11 +240,21 @@ export default function SettingsPage() {
           categoryId: recKind === "expense" ? recCat || null : null,
           postDay: Number(recDay),
           interval: recInterval,
+          isFixed: recKind !== "expense" || recFixed === "1",
           ...(recInterval === "yearly" ? { startMonth: recMonth } : {}),
         }),
       );
       setRecName("");
       setRecAmount("");
+      load();
+    });
+  }
+
+  // C12: 一覧のタグをタップして固定費/変動費を切り替える
+  async function toggleFixed(r: Recurring) {
+    await tryApi(async () => {
+      await apiCall("/api/recurring", apiJson({ id: r.id, isFixed: !r.is_fixed }, "PUT"));
+      clearApiCache(); // 予算・グラフの固定費集計が変わるのでキャッシュを作り直す
       load();
     });
   }
@@ -686,6 +699,18 @@ export default function SettingsPage() {
                       : `毎月${r.post_day >= 28 ? "末日" : `${r.post_day}日`}`}
                     ・{fmtYen(r.amount)}
                     {r.end_month && `・${r.end_month.slice(0, 4)}年${Number(r.end_month.slice(5))}月まで`}
+                    {r.kind === "expense" && (
+                      /* C12: タップで固定費/変動費を切り替え（固定費=日次予算で先取り） */
+                      <button
+                        onClick={() => toggleFixed(r)}
+                        className={`ml-1.5 rounded-full border px-1.5 py-px text-[10px] underline-offset-2 ${
+                          r.is_fixed ? "border-rule text-ink-faint" : "border-caution text-caution"
+                        }`}
+                        title="タップで固定費/変動費を切り替え"
+                      >
+                        {r.is_fixed ? "固定費" : "変動費"}
+                      </button>
+                    )}
                   </p>
                 </li>
               ))}
@@ -715,14 +740,21 @@ export default function SettingsPage() {
           </div>
         )}
         {recKind === "expense" && (
-          <select value={recCat} onChange={(e) => setRecCat(e.target.value)} className={`${input} mt-2 w-full`}>
-            <option value="">カテゴリなし</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <select value={recCat} onChange={(e) => setRecCat(e.target.value)} className={`${input} min-w-0`}>
+              <option value="">カテゴリなし</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            {/* C12: 固定費（既定）は日次予算で先取り、変動費は日々の支出として扱う */}
+            <select value={recFixed} onChange={(e) => setRecFixed(e.target.value)} className={`${input} min-w-0`} title="固定費は月初に先取り、変動費は日々の支出として扱います">
+              <option value="1">固定費として扱う</option>
+              <option value="0">変動費として扱う</option>
+            </select>
+          </div>
         )}
         <div className="mt-2 flex gap-2">
           <input type="number" inputMode="numeric" value={recAmount} onChange={(e) => setRecAmount(e.target.value)} placeholder="金額" className={`${input} flex-1 min-w-0`} />
@@ -1114,6 +1146,10 @@ export default function SettingsPage() {
           </button>
         </div>
       </section>
+
+      {/* B10: データのエクスポート ＋ C2: 他のアプリから引っ越し */}
+      <ExportSection />
+      <ImportSection />
 
       <button onClick={logout} className="w-full rounded-md border border-rule py-3 text-sm text-ink-faint">
         ログアウト

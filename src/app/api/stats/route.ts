@@ -2,6 +2,7 @@
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
+  FIXED_EXPENSE_COND,
   accountingMonth,
   currentMonth,
   monthRange,
@@ -49,9 +50,11 @@ export async function GET(request: Request) {
       ? (params.get("month") as string)
       : end;
     const bdRange = monthRange(user.id, bdMonth);
+    // C12: カテゴリごとに「うち固定費」も集計し、内訳を固定費/変動費に分離表示できるようにする
     const breakdown = d
       .prepare(
-        `SELECT COALESCE(c.name, '未分類') AS category, COALESCE(c.icon, '') AS icon, SUM(e.amount) AS amount
+        `SELECT COALESCE(c.name, '未分類') AS category, COALESCE(c.icon, '') AS icon, SUM(e.amount) AS amount,
+                SUM(CASE WHEN ${FIXED_EXPENSE_COND} THEN e.amount ELSE 0 END) AS fixedAmount
          FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
          WHERE e.user_id = ? AND e.date >= ? AND e.date <= ?
          GROUP BY e.category_id ORDER BY amount DESC`,
