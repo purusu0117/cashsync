@@ -59,7 +59,12 @@ interface Summary {
     icon: string | null;
   }[];
   // B3: 初回セットアップカード用の登録状況（旧キャッシュには無いので optional）
-  counts?: { jobs: number; recurringExpense: number; expensesAll: number };
+  counts?: {
+    jobs: number;
+    recurringExpense: number;
+    recurringIncome: number; // 社会人向け：毎月の給料を定期収入で登録しているか
+    expensesAll: number;
+  };
 }
 
 interface Preset {
@@ -123,8 +128,10 @@ export default function HomePage() {
         //  - 4ステップ完了 or 「閉じる」→ "done" で以後表示しない
         if (d.counts) {
           const c = d.counts;
+          // 収入源はシフト(バイト)でも定期収入(社会人の月給)でもOK＝どちらかあれば「収入登録済み」
+          const incomeSet = c.jobs > 0 || (c.recurringIncome ?? 0) > 0;
           const stepsDone =
-            c.jobs > 0 && c.recurringExpense > 0 && (d.savingsGoal ?? 0) > 0 && c.expensesAll > 0;
+            incomeSet && c.recurringExpense > 0 && (d.savingsGoal ?? 0) > 0 && c.expensesAll > 0;
           const ls = localStorage.getItem("cashsync-setup");
           if (ls === "done" || stepsDone) {
             if (ls === "active") localStorage.setItem("cashsync-setup", "done");
@@ -133,7 +140,10 @@ export default function HomePage() {
             setShowSetup(true);
           } else {
             const hasData =
-              c.jobs > 0 || c.recurringExpense > 0 || c.expensesAll > 0 || (d.savingsGoal ?? 0) > 0;
+              incomeSet ||
+              c.recurringExpense > 0 ||
+              c.expensesAll > 0 ||
+              (d.savingsGoal ?? 0) > 0;
             localStorage.setItem("cashsync-setup", hasData ? "done" : "active");
             setShowSetup(!hasData);
           }
@@ -402,9 +412,14 @@ export default function HomePage() {
             {(
               [
                 {
-                  label: "バイト先と時給を登録",
-                  done: data.counts.jobs > 0,
-                  href: "/settings#jobs",
+                  // バイトはシフト、社会人は毎月の給料（手取り）。どちらか登録すれば「収入登録済み」
+                  label: "収入を登録（バイト or 給料）",
+                  done: data.counts.jobs > 0 || (data.counts.recurringIncome ?? 0) > 0,
+                  href: null,
+                  actions: [
+                    { label: "シフト", href: "/settings#jobs" },
+                    { label: "給料", href: "/settings#recurring" },
+                  ],
                 },
                 {
                   label: "家賃などの固定費を登録",
@@ -413,7 +428,12 @@ export default function HomePage() {
                 },
                 { label: "貯金目標を決める", done: savingsGoal > 0, href: "/settings#goal" },
                 { label: "最初の記録をしてみる", done: data.counts.expensesAll > 0, href: null },
-              ] as { label: string; done: boolean; href: string | null }[]
+              ] as {
+                label: string;
+                done: boolean;
+                href: string | null;
+                actions?: { label: string; href: string }[];
+              }[]
             ).map((s, i) => (
               <li key={s.label} className="flex items-center gap-2.5 text-sm">
                 <span
@@ -432,6 +452,18 @@ export default function HomePage() {
                     style={{ borderColor: "currentColor" }}
                   >
                     済
+                  </span>
+                ) : s.actions ? (
+                  <span className="flex shrink-0 gap-1.5">
+                    {s.actions.map((a) => (
+                      <Link
+                        key={a.href}
+                        href={a.href}
+                        className="dot rounded border border-ink px-2 py-1 text-xs active:translate-y-0.5"
+                      >
+                        {a.label}
+                      </Link>
+                    ))}
                   </span>
                 ) : s.href ? (
                   <Link

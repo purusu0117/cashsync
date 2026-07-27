@@ -65,10 +65,17 @@ export async function GET() {
       // B3: 初回セットアップカード用の登録状況（全期間）。expensesAll は空データ時の
       // 虚偽表示（ノーマネーデー称賛・振り返り案内・黒字判子）の抑制にも使う
       (async () => {
-        const [jobs, rec, exp] = await Promise.all([
+        const [jobs, rec, recInc, exp] = await Promise.all([
           d.get<{ c: number }>("SELECT COUNT(*) AS c FROM jobs WHERE user_id = ?", user.id),
           d.get<{ c: number }>(
             "SELECT COUNT(*) AS c FROM recurring_items WHERE user_id = ? AND kind = 'expense'",
+            user.id,
+          ),
+          // 社会人向け：毎月の給料（手取り）を定期収入として登録しているか。
+          // 収入源が「シフト(jobs)」か「定期収入」かはユーザー次第なので、初回セットアップの
+          // 「収入を登録」ステップは jobs か recurringIncome のどちらかがあれば完了とみなす。
+          d.get<{ c: number }>(
+            "SELECT COUNT(*) AS c FROM recurring_items WHERE user_id = ? AND kind = 'income'",
             user.id,
           ),
           d.get<{ c: number }>("SELECT COUNT(*) AS c FROM expenses WHERE user_id = ?", user.id),
@@ -76,6 +83,7 @@ export async function GET() {
         return {
           jobs: jobs?.c ?? 0,
           recurringExpense: rec?.c ?? 0,
+          recurringIncome: recInc?.c ?? 0,
           expensesAll: exp?.c ?? 0,
         };
       })(),
