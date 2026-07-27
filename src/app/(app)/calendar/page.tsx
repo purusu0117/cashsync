@@ -73,7 +73,11 @@ interface CalData {
     expenseTotal: number;
     remain: number;
     daysRemaining: number | null;
-    allowance: number | null;
+    // 日次予算＋繰り越し方式の内訳（今月のみ。旧キャッシュには無いので optional）
+    todayBudget?: number | null;
+    spentToday?: number | null;
+    spentBeforeToday?: number | null;
+    allowance: number | null; // 今日あと使える額（今日の予算 − 今日の支出）
   };
 }
 
@@ -272,11 +276,13 @@ export default function CalendarPage() {
       <section className="rounded-sm border border-rule bg-card px-5 py-3 shadow-sm">
         <button onClick={() => setShowCalc(!showCalc)} className="flex w-full items-baseline">
           <h2 className="dot text-xs text-ink-faint">
-            {b.allowance !== null ? "＊ 今日使えるお金の計算 ＊" : "＊ この月の収支 ＊"}
+            {b.allowance !== null ? "＊ 今日あと使えるお金の計算 ＊" : "＊ この月の収支 ＊"}
           </h2>
           <span className="leader" />
           {b.allowance !== null && (
-            <span className="dot text-lg tabular-nums">{fmtYen(Math.max(0, b.allowance))}</span>
+            <span className={`dot text-lg tabular-nums ${b.allowance < 0 ? "text-vermilion" : ""}`}>
+              {fmtYen(b.allowance).replace("¥-", "-¥")}
+            </span>
           )}
           <span className="ml-1 text-xs text-ink-faint">{showCalc ? "▲" : "▼"}</span>
         </button>
@@ -309,9 +315,13 @@ export default function CalendarPage() {
               </div>
             )}
             <div className="flex items-baseline">
-              <span className="text-ink-faint">今月の支出</span>
+              <span className="text-ink-faint">
+                {b.allowance !== null ? "昨日までの支出" : "この月の支出"}
+              </span>
               <span className="leader" />
-              <span className="dot tabular-nums text-vermilion">−{fmtYen(b.expenseTotal)}</span>
+              <span className="dot tabular-nums text-vermilion">
+                −{fmtYen(b.allowance !== null ? (b.spentBeforeToday ?? b.expenseTotal) : b.expenseTotal)}
+              </span>
             </div>
             <div className="cutline my-1.5" />
             <div className="flex items-baseline">
@@ -320,11 +330,27 @@ export default function CalendarPage() {
               <span className="dot tabular-nums">{fmtYen(b.remain)}</span>
             </div>
             {b.allowance !== null && b.daysRemaining !== null && (
-              <div className="flex items-baseline">
-                <span className="text-ink-faint">÷ 残り{b.daysRemaining}日</span>
-                <span className="leader" />
-                <span className="dot tabular-nums">= {fmtYen(Math.max(0, b.allowance))}/日</span>
-              </div>
+              <>
+                <div className="flex items-baseline">
+                  <span className="text-ink-faint">÷ 残り{b.daysRemaining}日</span>
+                  <span className="leader" />
+                  <span className="dot tabular-nums">
+                    = 今日の予算 {fmtYen(b.todayBudget ?? b.allowance)}
+                  </span>
+                </div>
+                <div className="flex items-baseline">
+                  <span className="text-ink-faint">− 今日使った分</span>
+                  <span className="leader" />
+                  <span className="dot tabular-nums text-vermilion">−{fmtYen(b.spentToday ?? 0)}</span>
+                </div>
+                <div className="flex items-baseline">
+                  <span className="text-ink-faint">= 今日あと使える</span>
+                  <span className="leader" />
+                  <span className={`dot tabular-nums ${b.allowance < 0 ? "text-vermilion" : ""}`}>
+                    {fmtYen(b.allowance).replace("¥-", "-¥")}
+                  </span>
+                </div>
+              </>
             )}
           </div>
         )}

@@ -22,9 +22,9 @@ export function daysInMonth(month: string): number {
   return new Date(y, m, 0).getDate();
 }
 
-/** 今日を含む残り日数（前作 daysRemainingInMonth の移植） */
-export function daysRemainingInMonth(): number {
-  return daysInMonth(currentMonth()) - jstToday().d + 1;
+/** 今日を含む残り日数（前作 daysRemainingInMonth の移植）。today はテスト用に差し替え可 */
+export function daysRemainingInMonth(today = todayStr()): number {
+  return daysInMonth(monthOf(today)) - Number(today.slice(8)) + 1;
 }
 
 function parseLocalDate(date: string): Date {
@@ -445,13 +445,50 @@ export async function monthSummary(userId: string, month: string): Promise<Month
   };
 }
 
+export interface DailyBudget {
+  todayBudget: number; // 今日の予算 =（今月収入 − 貯金目標 − 昨日までの支出）÷ 残り日数（今日を含む）
+  spentToday: number; // 今日の支出合計
+  remainingToday: number; // 今日あと使える額 = 今日の予算 − 今日の支出（マイナス＝超過）
+  spentBeforeToday: number; // 昨日までの支出合計
+  daysRemaining: number; // 今日を含む残り日数
+}
+
+/** 今日の支出合計（日次予算の「今日使った分」） */
+export async function todaySpent(userId: string, today = todayStr()): Promise<number> {
+  const d = await db();
+  const row = (await d.get<{ s: number }>(
+    "SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date = ?",
+    userId,
+    today,
+  )) as { s: number };
+  return Number(row.s);
+}
+
 /**
- * 今日使えるお金 =（今月収入 − 貯金目標 − 今月支出）÷ 残り日数。
+ * 今日使えるお金（日次予算＋繰り越し方式）。
  * 貯金目標を先に差し引く「先取り貯金」方式：残った分だけ使えば目標が必ず貯まる。
+ * 予算は「昨日までの支出」だけで割り、今日使った分は予算から満額引く。
+ * → 今日使いすぎれば「今日あと使える額」が即マイナスになり、翌日の予算も自動的に減る。
+ * 旧方式（今月の全支出を引いてから割る）は今日の支出が残り日数で薄まって見える楽観バイアスがあった。
  */
-export function dailyAllowance(summary: MonthSummary, savingsGoal = 0): number {
-  const remain = summary.incomeTotal - savingsGoal - summary.expenseTotal;
-  return Math.floor(remain / daysRemainingInMonth());
+export function dailyBudget(
+  summary: MonthSummary,
+  spentToday: number,
+  savingsGoal = 0,
+  today = todayStr(),
+): DailyBudget {
+  const spentBeforeToday = summary.expenseTotal - spentToday;
+  const daysRemaining = daysRemainingInMonth(today);
+  const todayBudget = Math.floor(
+    (summary.incomeTotal - savingsGoal - spentBeforeToday) / daysRemaining,
+  );
+  return {
+    todayBudget,
+    spentToday,
+    remainingToday: todayBudget - spentToday,
+    spentBeforeToday,
+    daysRemaining,
+  };
 }
 
 export interface MonthForecast {

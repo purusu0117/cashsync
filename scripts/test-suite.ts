@@ -16,12 +16,14 @@ import {
 import {
   categoryBreakdown,
   currentMonth,
+  dailyBudget,
   isWeekendOrHoliday,
   monthPlan,
   monthShiftIncome,
   monthSummary,
   monthWorkIncome,
   postRecurringForMonth,
+  todaySpent,
   todayStr,
 } from "../src/lib/money";
 
@@ -845,6 +847,91 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
     `${m1}-%`,
   ))!;
   check("monthPlan は何度呼んでも実体化しない（読み取り専用）", Number(m1Rows.c) === 0, m1Rows);
+
+  // --- 15. 今日使えるお金（日次予算＋繰り越し方式） ---
+  // 予算は「昨日までの支出」で割り、今日の支出は満額引く。使いすぎは即マイナス表示＆翌日予算が自動減。
+  // 実日付に依存しないよう、固定日（2026-07-29 = 残り3日）を today 引数で渡して日跨ぎを再現する。
+  console.log("[15] 日次予算（dailyBudget）");
+  const budgetUser = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    budgetUser,
+    "budget@example.com",
+    "予算花子",
+    hashPassword("password123"),
+    Date.now(),
+  );
+  const bMonth = "2026-07"; // 31日ある月。07-29時点で残り3日（29・30・31）
+  await d.run(
+    "INSERT INTO incomes (id, user_id, date, amount, type, memo, created_at) VALUES (?, ?, ?, ?, 'other', ?, ?)",
+    uid(),
+    budgetUser,
+    `${bMonth}-01`,
+    30000,
+    "仕送り",
+    Date.now(),
+  );
+  const bSpend = (date: string, amount: number) =>
+    d.run(
+      "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?)",
+      uid(),
+      budgetUser,
+      date,
+      amount,
+      null,
+      "",
+      null,
+      Date.now(),
+    );
+  const bCalc = async (day: string) =>
+    dailyBudget(await monthSummary(budgetUser, bMonth), await todaySpent(budgetUser, day), 0, day);
+
+  // ケースA: 昨日まで支出0 → 予算10,000。今日3,000 → あと7,000。翌日は(30,000−3,000)÷2=13,500
+  let bb = await bCalc(`${bMonth}-29`);
+  check(
+    "支出0: 予算(30,000−0)÷3=10,000・今日あと10,000",
+    bb.todayBudget === 10000 && bb.remainingToday === 10000 && bb.daysRemaining === 3,
+    bb,
+  );
+  await bSpend(`${bMonth}-29`, 3000);
+  check("todaySpent は当日分だけを合計する", (await todaySpent(budgetUser, `${bMonth}-29`)) === 3000);
+  bb = await bCalc(`${bMonth}-29`);
+  check(
+    "今日3,000使用: 予算10,000のまま・今日あと7,000",
+    bb.todayBudget === 10000 && bb.spentToday === 3000 && bb.remainingToday === 7000,
+    bb,
+  );
+  bb = await bCalc(`${bMonth}-30`);
+  check(
+    "翌日: 予算(30,000−3,000)÷2=13,500（前日の支出は昨日まで分に繰り越し）",
+    bb.todayBudget === 13500 && bb.spentBeforeToday === 3000 && bb.remainingToday === 13500,
+    bb,
+  );
+
+  // ケースB: 超過。今日15,000使用 → あと−5,000。翌日は(30,000−15,000)÷2=7,500
+  await d.run("DELETE FROM expenses WHERE user_id = ?", budgetUser);
+  await bSpend(`${bMonth}-29`, 15000);
+  bb = await bCalc(`${bMonth}-29`);
+  check(
+    "超過: 今日15,000使用で今日あと−5,000（マイナスをそのまま返す）",
+    bb.todayBudget === 10000 && bb.remainingToday === -5000,
+    bb,
+  );
+  bb = await bCalc(`${bMonth}-30`);
+  check("超過の翌日: 予算(30,000−15,000)÷2=7,500に自動減", bb.todayBudget === 7500, bb);
+
+  // ケースC: 昨日までの支出が累積18,000 → 翌日予算(30,000−18,000)÷2=6,000
+  await bSpend(`${bMonth}-29`, 3000);
+  bb = await bCalc(`${bMonth}-30`);
+  check(
+    "累積18,000の翌日: 予算(30,000−18,000)÷2=6,000",
+    bb.todayBudget === 6000 && bb.spentBeforeToday === 18000 && bb.spentToday === 0,
+    bb,
+  );
+
+  // 貯金目標は先取り（分子から差し引いてから割る）
+  bb = dailyBudget(await monthSummary(budgetUser, bMonth), 0, 6000, `${bMonth}-30`);
+  check("貯金目標6,000を先取り: 予算(30,000−6,000−18,000)÷2=3,000", bb.todayBudget === 3000, bb);
 
   console.log(`\n結果: ${passed} passed / ${failed} failed`);
   return { passed, failed };

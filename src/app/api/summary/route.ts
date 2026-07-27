@@ -4,12 +4,12 @@ import { db } from "@/lib/db";
 import { jstTodayStr } from "@/lib/jst";
 import {
   currentMonth,
-  dailyAllowance,
-  daysRemainingInMonth,
+  dailyBudget,
   monthForecast,
   monthSummary,
   noMoneyDays,
   postRecurringForMonth,
+  todaySpent,
 } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export async function GET() {
     const ydStr = jstTodayStr(-1);
     // クラウド版（Vercel⇄Supabase）はDB往復ごとにレイテンシが乗るため、独立クエリは並列で投げる。
     // forecast だけは summary に依存するので、summary の完了に連結する。
-    const [sf, goalRow, recent, ydCount, presets, noMoney] = await Promise.all([
+    const [sf, goalRow, recent, ydCount, presets, noMoney, spentToday] = await Promise.all([
       monthSummary(user.id, month).then(async (summary) => ({
         summary,
         forecast: await monthForecast(user.id, summary),
@@ -48,16 +48,20 @@ export async function GET() {
         user.id,
       ),
       noMoneyDays(user.id, month),
+      todaySpent(user.id),
     ]);
     const { summary, forecast } = sf;
     const savingsGoal = goalRow?.savings_goal ?? 0;
+    const budget = dailyBudget(summary, spentToday, savingsGoal);
     return Response.json({
       user: { name: user.name },
       month,
       summary,
       savingsGoal,
-      allowance: dailyAllowance(summary, savingsGoal),
-      daysRemaining: daysRemainingInMonth(),
+      // allowance = 「今日あと使える額」（日次予算 − 今日の支出。マイナス＝超過）
+      allowance: budget.remainingToday,
+      budget,
+      daysRemaining: budget.daysRemaining,
       noMoney,
       forecast,
       yesterday: { date: ydStr, recorded: ydCount.c > 0 },
