@@ -135,9 +135,19 @@ struct BudgetProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<BudgetEntry>) -> Void) {
         Task {
+            // アプリが直近（90秒以内）に最新の残額を書き込んでいれば、それを即表示する。
+            // 記録直後はアプリが setWidgetBudget→reloadAllTimelines を呼ぶので、ここに入り
+            // /api/widget の通信を待たずに新しい数字が出る（体感の遅延をほぼ無くす）。
+            if let cached = BudgetStore.cached(),
+               Date().timeIntervalSince1970 - cached.updatedAt.timeIntervalSince1970 < 90 {
+                let entry = BudgetEntry(date: Date(), snapshot: cached, needsSetup: false)
+                let next = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date().addingTimeInterval(900)
+                completion(Timeline(entries: [entry], policy: .after(next)))
+                return
+            }
+            // アプリを開いていない間の定期更新は、従来どおりウィジェット自身がサーバーから取得する
             let s = await BudgetStore.fetch()
             let entry = BudgetEntry(date: Date(), snapshot: s ?? .placeholder, needsSetup: s == nil)
-            // 30分ごとに更新（記録直後はアプリ側から reloadAllTimelines で即時更新される）
             let next = Calendar.current.date(byAdding: .minute, value: 30, to: Date()) ?? Date().addingTimeInterval(1800)
             completion(Timeline(entries: [entry], policy: .after(next)))
         }

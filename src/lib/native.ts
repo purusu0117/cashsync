@@ -225,6 +225,24 @@ export async function clearWidgetAuth(): Promise<void> {
 }
 
 /**
+ * 記録直後などに、アプリが計算した最新の「今日あと使える額」をウィジェットへ即反映する。
+ * ウィジェットはこの値を App Group から読めるので、自分で /api/widget を叩き直すのを待たずに
+ * 新しい残額を表示できる（従来は最大30分＋通信待ちだった遅延をほぼ解消）。
+ * ネイティブ以外・プラグイン未取得のときは何もしない。
+ */
+export async function updateWidgetBudget(budget: {
+  remainingToday: number;
+  todayBudget: number;
+  spentToday: number;
+  nextPaydayDate?: string | null;
+  nextPaydayAmount?: number;
+}): Promise<void> {
+  const plugin = await photoCleaner();
+  if (!plugin || typeof plugin.setWidgetBudget !== "function") return;
+  await plugin.setWidgetBudget(budget).catch(() => {});
+}
+
+/**
  * APNs（サーバーからのプッシュ）の端末登録。
  * 「読み取りが終わりました」などアプリを閉じている間に起きたことを届けるために必要。
  * 権限が拒否されている場合は何もしない（アプリの他の機能には影響しない）。

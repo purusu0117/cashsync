@@ -22,6 +22,17 @@ export interface PhotoCleanerPlugin {
   setWidgetAuth(options: { token: string; baseUrl?: string }): Promise<{ ok: boolean }>;
   /** ログアウト時にウィジェットの保存データを消す */
   clearWidgetAuth(): Promise<{ ok: boolean }>;
+  /**
+   * アプリが計算した最新の「今日あと使える額」をウィジェットへ即反映する（App Group保存＋即リロード）。
+   * これにより、記録直後にウィジェットが /api/widget を叩き直すのを待たずに新しい残額が出る。
+   */
+  setWidgetBudget(options: {
+    remainingToday: number;
+    todayBudget: number;
+    spentToday: number;
+    nextPaydayDate?: string | null;
+    nextPaydayAmount?: number;
+  }): Promise<{ ok: boolean }>;
   /** 記録リマインドのローカル通知を毎日 hour:00 に設定（hour<0 で解除） */
   scheduleReminder(options: { hour: number }): Promise<{ scheduled: boolean; denied?: boolean }>;
 }

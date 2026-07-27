@@ -17,6 +17,7 @@ public class PhotoCleanerPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "deletePhotos", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setWidgetAuth", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearWidgetAuth", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setWidgetBudget", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "scheduleReminder", returnType: CAPPluginReturnPromise)
     ]
 
@@ -48,6 +49,29 @@ public class PhotoCleanerPlugin: CAPPlugin, CAPBridgedPlugin {
                 defaults.removeObject(forKey: key)
             }
         }
+        WidgetCenter.shared.reloadAllTimelines()
+        call.resolve(["ok": true])
+    }
+
+    /// アプリが計算した最新の「今日あと使える額」を、ウィジェットへ即座に反映する。
+    /// アプリはホームで /api/summary を取得するたびにこれを呼ぶ。ウィジェットは App Group から
+    /// この値を読めるので、記録直後にネットワーク往復を待たずに新しい残額を表示できる
+    /// （従来はウィジェット自身が /api/widget を叩き直すまで最大30分＋通信待ちだった）。
+    @objc func setWidgetBudget(_ call: CAPPluginCall) {
+        guard let defaults = UserDefaults(suiteName: appGroupId) else {
+            call.reject("app group unavailable")
+            return
+        }
+        defaults.set(call.getInt("remainingToday") ?? 0, forKey: "remainingToday")
+        defaults.set(call.getInt("todayBudget") ?? 0, forKey: "todayBudget")
+        defaults.set(call.getInt("spentToday") ?? 0, forKey: "spentToday")
+        if let payday = call.getString("nextPaydayDate"), !payday.isEmpty {
+            defaults.set(payday, forKey: "nextPaydayDate")
+        } else {
+            defaults.removeObject(forKey: "nextPaydayDate")
+        }
+        defaults.set(call.getInt("nextPaydayAmount") ?? 0, forKey: "nextPaydayAmount")
+        defaults.set(Date().timeIntervalSince1970, forKey: "updatedAt")
         WidgetCenter.shared.reloadAllTimelines()
         call.resolve(["ok": true])
     }

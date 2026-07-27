@@ -17,7 +17,7 @@ import {
   syncMonth,
 } from "@/lib/calendarImport";
 import { fmtDateJa, fmtYen, todayLocal } from "@/lib/format";
-import { isNativePlatform } from "@/lib/native";
+import { isNativePlatform, updateWidgetBudget } from "@/lib/native";
 import { setPendingImage } from "@/lib/pendingImage";
 
 interface Summary {
@@ -104,6 +104,8 @@ export default function HomePage() {
   // B3: 初回セットアップカード（新規登録直後のデータ0件ユーザーだけに表示）
   const [showSetup, setShowSetup] = useState(false);
   const syncedRef = useRef(false);
+  // ネイティブ：ウィジェットへ送った残額の signature（変化時だけ再送＝iOSのリロード budget を節約）
+  const widgetSigRef = useRef("");
   const camRef = useRef<HTMLInputElement>(null);
   const libRef = useRef<HTMLInputElement>(null);
 
@@ -112,6 +114,22 @@ export default function HomePage() {
       // キャッシュファースト：前回のデータを即表示→裏で最新に差し替え（タブ切替のフラッシュ対策）
       await cachedFetch<Summary>("/api/summary", (d) => {
         setData(d);
+        // ネイティブ：最新の「今日あと使える額」をウィジェットへ即反映する。
+        // 記録するとホームが再取得→ここで新しい数字をウィジェットへ渡すので、体感の反映が速くなる。
+        // 変化したときだけ送る（iOSのウィジェット更新は1日の回数に上限があるため無駄打ちしない）。
+        if (isNativePlatform()) {
+          const sig = `${d.allowance}|${d.budget?.todayBudget ?? ""}|${d.budget?.spentToday ?? ""}|${d.nextPayday?.date ?? ""}|${d.nextPayday?.amount ?? ""}`;
+          if (sig !== widgetSigRef.current) {
+            widgetSigRef.current = sig;
+            updateWidgetBudget({
+              remainingToday: d.allowance,
+              todayBudget: d.budget?.todayBudget ?? d.allowance,
+              spentToday: d.budget?.spentToday ?? 0,
+              nextPaydayDate: d.nextPayday?.date ?? null,
+              nextPaydayAmount: d.nextPayday?.amount ?? 0,
+            });
+          }
+        }
         // つけ忘れ赦免：昨日の記録が1件も無ければ、細いカードで確認（完璧主義による離脱対策）
         // B3: まだ1件も記録していない新規ユーザーには「昨日の記録がありません」を出さない
         const yd = d.yesterday?.date ?? yesterdayLocal();
