@@ -3,15 +3,19 @@ import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { jstTodayStr } from "@/lib/jst";
 import {
+  accountingMonthFor,
   currentMonth,
   dailyBudget,
+  getMonthStartDay,
   monthFixedCost,
   monthForecast,
+  monthRangeFor,
   monthSummary,
   nextPayday,
   noMoneyDays,
   postRecurringForMonth,
   todaySpent,
+  todayStr,
 } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +23,12 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const user = await requireUser();
-    const month = currentMonth();
-    await postRecurringForMonth(user.id, month);
+    // 定期計上はカレンダー月キーで冪等管理（支払日ベース）なので従来どおり実カレンダー月まで
+    await postRecurringForMonth(user.id, currentMonth());
+    // B9: 「今月」は締め日基準の集計月（デフォルト開始日1なら実カレンダー月と同一）
+    const monthStartDay = await getMonthStartDay(user.id);
+    const month = accountingMonthFor(todayStr(), monthStartDay);
+    const range = monthRangeFor(month, monthStartDay);
     const d = await db();
     // つけ忘れ判定は recent(5件) ではなく昨日を直接数える（今日多く記録すると誤判定するため）
     const ydStr = jstTodayStr(-1);
@@ -75,10 +83,13 @@ export async function GET() {
     const { summary, forecast } = sf;
     const savingsGoal = goalRow?.savings_goal ?? 0;
     // 固定費（定期計上・分割）は今月分を満額先取りし、日々の数字は変動支出だけで動かす
-    const budget = dailyBudget(summary, spentToday, savingsGoal, undefined, fixedTotal);
+    const budget = dailyBudget(summary, spentToday, savingsGoal, undefined, fixedTotal, monthStartDay);
     return Response.json({
       user: { name: user.name },
       month,
+      // B9: 集計期間（開始日1なら実カレンダー月と同じ）。ホームの「7/25〜8/24の集計」表示用
+      range,
+      monthStartDay,
       summary,
       savingsGoal,
       // allowance = 「今日あと使える額」（日次予算 − 今日の変動支出。マイナス＝超過）

@@ -22,6 +22,8 @@ import { setPendingImage } from "@/lib/pendingImage";
 interface Summary {
   user: { name: string };
   month: string;
+  // B9: 集計期間（締め日基準。開始日1なら実カレンダー月と同じ。旧キャッシュには無いので optional）
+  range?: { start: string; end: string };
   summary: {
     incomeTotal: number;
     expenseTotal: number;
@@ -107,9 +109,11 @@ export default function HomePage() {
         const yd = d.yesterday?.date ?? yesterdayLocal();
         const dismissed = localStorage.getItem(`cashsync-amnesty-${yd}`);
         const hasExp = (d.counts?.expensesAll ?? 1) > 0;
-        setAmnesty(
-          hasExp && !d.yesterday?.recorded && !dismissed && yd.startsWith(d.month) ? yd : null,
-        );
+        // B9: 「今月内か」は集計期間（range）で判定。range の無い旧キャッシュは従来判定
+        const ydInMonth = d.range
+          ? yd >= d.range.start && yd <= d.range.end
+          : yd.startsWith(d.month);
+        setAmnesty(hasExp && !d.yesterday?.recorded && !dismissed && ydInMonth ? yd : null);
         // B3: 初回セットアップカードの表示判定。
         //  - localStorage 未設定＋データ0件 → カード開始（"active"）
         //  - localStorage 未設定＋データあり → 既存ユーザーなので出さない（"done"）
@@ -341,6 +345,9 @@ export default function HomePage() {
     signal === "red" ? "text-vermilion" : signal === "yellow" ? "text-caution" : "text-sage";
   const recoverPerDay =
     forecast.forecast < 0 ? Math.ceil(-forecast.forecast / data.daysRemaining) : 0;
+  // B9: 締め日を変えている場合だけ「7/25〜8/24の集計」を小さく表示（開始日1なら出さない）
+  const customRange = data.range && !data.range.start.endsWith("-01") ? data.range : null;
+  const fmtMD = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   const goalPct =
     savingsGoal > 0 ? Math.max(0, Math.min(100, Math.round((forecast.forecast / savingsGoal) * 100))) : 0;
 
@@ -515,6 +522,11 @@ export default function HomePage() {
         <p className="mt-1 text-center text-[11px] text-ink-faint">
           {fmtDateJa(todayLocal())} ・ {data.user.name} さん
         </p>
+        {customRange && (
+          <p className="mt-0.5 text-center text-[10px] text-ink-faint">
+            {fmtMD(customRange.start)}〜{fmtMD(customRange.end)}の集計（{Number(data.month.slice(5))}月）
+          </p>
+        )}
 
         <div className="cutline my-3.5" />
 

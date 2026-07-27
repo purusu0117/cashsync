@@ -2,14 +2,18 @@
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
+  accountingMonthFor,
+  calendarPaydays,
   currentMonth,
   dailyBudget,
+  getMonthStartDay,
   monthFixedCost,
   monthPlan,
+  monthRangeFor,
   monthSummary,
-  paydays,
   postRecurringForMonth,
   todaySpent,
+  todayStr,
 } from "@/lib/money";
 import type { Payday } from "@/lib/money";
 
@@ -26,7 +30,11 @@ export async function GET(request: Request) {
     const d = await db();
     // 未来月：定期・分割・給料日を「予定」として計算（実体化しない読み取り専用）。
     // 給料日はシフト確定分も予定側にまとめ、実記録と混ざらないようにする。
+    // グリッド（見た目）は実カレンダー月のまま（B9でも変えない。変えると混乱するため）。
     const isFuture = month > currentMonth();
+    // B9: 集計（収支・予算）は締め日基準の期間で行う。「今月」判定も集計月で比較する。
+    const monthStartDay = await getMonthStartDay(user.id);
+    const range = monthRangeFor(month, monthStartDay);
     // クラウド版（Vercel⇄Supabase）はDB往復ごとにレイテンシが乗るため、独立クエリは並列で投げる。
     // シフト収入は monthSummary が内包する値を使い、重複計算（monthShiftIncome の二重実行）も削除。
     const [expenses, incomes, pd, plan, summary, goalRow, spentToday, fixedTotal] =
@@ -43,7 +51,7 @@ export async function GET(request: Request) {
         user.id,
         `${month}-%`,
       ),
-      isFuture ? Promise.resolve<Payday[]>([]) : paydays(user.id, month),
+      isFuture ? Promise.resolve<Payday[]>([]) : calendarPaydays(user.id, month),
       monthPlan(user.id, month),
       // 今日使えるお金の計算内訳（今月のみ意味を持つ）
       monthSummary(user.id, month),
@@ -56,8 +64,8 @@ export async function GET(request: Request) {
     const otherIncome = summary.incomeTotal - shift.total;
     // 今月のみ：日次予算＋繰り越し方式（固定費は満額先取りし、予算は昨日までの変動支出で割り、今日の分は満額引く）
     const budget =
-      month === currentMonth()
-        ? dailyBudget(summary, spentToday, savingsGoal, undefined, fixedTotal)
+      month === accountingMonthFor(todayStr(), monthStartDay)
+        ? dailyBudget(summary, spentToday, savingsGoal, undefined, fixedTotal, monthStartDay)
         : null;
     // 未来月は「予定込みの1系統」に統一：収入＝予定収入（定期＋入力済みシフトの給料）＋実収入レコード、
     // 支出＝予定支出（定期・分割）＋実支出レコード。「予定合計」と「残り」が別系統の値にならないようにする。
@@ -72,6 +80,7 @@ export async function GET(request: Request) {
       plan,
       breakdown: {
         planned: isFuture, // true=予定ベースの未来月（実績行は出さない）
+        range, // B9: 集計期間（開始日1なら実カレンダー月と同じ）。「7/25〜8/24の集計」表示用
         shiftIncome: shift.total,
         otherIncome,
         incomeTotal: planIncomeTotal,

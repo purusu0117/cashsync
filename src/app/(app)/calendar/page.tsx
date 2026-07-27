@@ -76,6 +76,8 @@ interface CalData {
   plan?: MonthPlan; // 未来月のみ中身が入る（旧キャッシュには無いので optional）
   breakdown: {
     planned?: boolean; // true=未来月（予定込みの1系統で表示。実績行は出さない）
+    // B9: 集計期間（締め日基準。開始日1なら実カレンダー月と同じ。旧キャッシュには無いので optional）
+    range?: { start: string; end: string };
     shiftIncome: number;
     otherIncome: number;
     incomeTotal: number; // 未来月は予定収入込み
@@ -305,6 +307,12 @@ export default function CalendarPage() {
           )}
           <span className="ml-1 text-xs text-ink-faint">{showCalc ? "▲" : "▼"}</span>
         </button>
+        {/* B9: 締め日を変えている場合だけ、この収支の集計期間を明示する */}
+        {b.range && !b.range.start.endsWith("-01") && (
+          <p className="mt-0.5 text-[10px] text-ink-faint">
+            {fmtDateJa(b.range.start)}〜{fmtDateJa(b.range.end)}の集計
+          </p>
+        )}
         {b.planned && (b.expenseTotal > 0 || b.incomeTotal > 0) && (
           <div className="mt-1.5 flex items-baseline text-xs">
             <span className="text-ink-faint">予定合計</span>

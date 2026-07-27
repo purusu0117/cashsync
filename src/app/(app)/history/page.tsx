@@ -46,6 +46,8 @@ export default function HistoryPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [editing, setEditing] = useState<Expense | null>(null);
   const [editingIncome, setEditingIncome] = useState<Income | null>(null); // C8: 収入の編集
+  // B9: 集計期間（締め日基準。開始日1なら実カレンダー月と同じ）
+  const [range, setRange] = useState<{ start: string; end: string } | null>(null);
   const [ready, setReady] = useState(false); // 初回データ（キャッシュ含む）が来るまでスケルトン表示
   const { toast, show, hide } = useToast(); // A6: 保存・削除・複製の完了フィードバック
 
@@ -55,11 +57,15 @@ export default function HistoryPage() {
     const req = ++reqRef.current;
     // キャッシュファースト＋並列取得：前回のデータを即表示→裏で最新に差し替え
     await Promise.all([
-      cachedFetch<{ expenses?: Expense[] }>(`/api/expenses?month=${m}`, (d) => {
-        if (reqRef.current !== req) return;
-        setExpenses(d.expenses ?? []);
-        setReady(true);
-      }),
+      cachedFetch<{ expenses?: Expense[]; range?: { start: string; end: string } }>(
+        `/api/expenses?month=${m}`,
+        (d) => {
+          if (reqRef.current !== req) return;
+          setExpenses(d.expenses ?? []);
+          setRange(d.range ?? null);
+          setReady(true);
+        },
+      ),
       cachedFetch<{ incomes?: Income[] }>(`/api/incomes?month=${m}`, (d) => {
         if (reqRef.current !== req) return;
         setIncomes(d.incomes ?? []);
@@ -120,6 +126,12 @@ export default function HistoryPage() {
           ▶
         </button>
       </header>
+      {/* B9: 締め日を変えている場合だけ集計期間を明示（開始日1なら出さない） */}
+      {range && !range.start.endsWith("-01") && (
+        <p className="-mt-2 text-center text-[10px] text-ink-faint">
+          {fmtDateJa(range.start)}〜{fmtDateJa(range.end)}の集計
+        </p>
+      )}
 
       {/* 1ヶ月＝1枚の長いレシート：本物のレシート同様、切らずに続けて印字する */}
       <div className="zig zig-t zig-b px-5 pt-4 pb-4 shadow-sm">

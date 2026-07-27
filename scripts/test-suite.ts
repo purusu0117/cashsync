@@ -20,20 +20,36 @@ import {
   normalizeMerchant,
 } from "../src/lib/merchant";
 import {
+  accountingMonthFor,
+  calendarPaydays,
   categoryBreakdown,
   currentMonth,
   dailyBudget,
+  daysRemainingInMonth,
+  getMonthStartDay,
   isWeekendOrHoliday,
   monthFixedCost,
   monthPlan,
+  monthRange,
+  monthRangeFor,
   monthShiftIncome,
   monthSummary,
   monthWorkIncome,
   nextPayday,
+  noMoneyDays,
+  paydays,
   postRecurringForMonth,
   todaySpent,
   todayStr,
 } from "../src/lib/money";
+import {
+  changePassword,
+  consumePasswordReset,
+  createPasswordReset,
+  deleteAccountWithPassword,
+  isResetTokenValid,
+} from "../src/lib/account";
+import { verifyPassword } from "../src/lib/password";
 
 /** 'YYYY-MM' に delta ヶ月足す（テスト用） */
 function addMonths(month: string, delta: number): string {
@@ -1469,6 +1485,340 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
     Date.now(),
   );
   check("手入力1件で recordCount=1（振り返り表示に切替）", (await recordCountOf(newbie)) === 1);
+
+  // --- 18. Batch4 (B9): 月の開始日（締め日）の期間解決 ---
+  console.log("[18] Batch4 月の開始日（B9）純粋関数");
+  check(
+    "monthRangeFor(2026-08, 25) = 7/25〜8/24",
+    JSON.stringify(monthRangeFor("2026-08", 25)) ===
+      JSON.stringify({ start: "2026-07-25", end: "2026-08-24" }),
+    monthRangeFor("2026-08", 25),
+  );
+  check(
+    "monthRangeFor(2026-07, 1) = 従来のカレンダー月",
+    JSON.stringify(monthRangeFor("2026-07", 1)) ===
+      JSON.stringify({ start: "2026-07-01", end: "2026-07-31" }),
+    monthRangeFor("2026-07", 1),
+  );
+  check(
+    "monthRangeFor(2026-03, 28) = 2/28〜3/27（2月クランプ）",
+    JSON.stringify(monthRangeFor("2026-03", 28)) ===
+      JSON.stringify({ start: "2026-02-28", end: "2026-03-27" }),
+    monthRangeFor("2026-03", 28),
+  );
+  check("accountingMonthFor(7/24, 25) = 7月", accountingMonthFor("2026-07-24", 25) === "2026-07");
+  check("accountingMonthFor(7/25, 25) = 8月", accountingMonthFor("2026-07-25", 25) === "2026-08");
+  check("accountingMonthFor(12/25, 25) = 翌年1月", accountingMonthFor("2026-12-25", 25) === "2027-01");
+  check("accountingMonthFor(7/26, 1) = 従来", accountingMonthFor("2026-07-26", 1) === "2026-07");
+  check("残り日数 7/26 開始日25 = 30（7/26〜8/24）", daysRemainingInMonth("2026-07-26", 25) === 30);
+  check("残り日数 7/26 開始日1 = 6（従来と同値）", daysRemainingInMonth("2026-07-26", 1) === 6);
+  check("残り日数 引数省略 = 従来挙動", daysRemainingInMonth("2026-07-26") === 6);
+
+  console.log("[18b] Batch4 開始日25の集計（境界・給料日・固定費・冪等）");
+  const u25 = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at, month_start_day) VALUES (?, ?, ?, ?, ?, 25)",
+    u25,
+    "day25@example.com",
+    "締め日25",
+    hashPassword("password123"),
+    Date.now(),
+  );
+  check("getMonthStartDay = 25", (await getMonthStartDay(u25)) === 25);
+  check(
+    "monthRange(u25, 2001-08) = 7/25〜8/24",
+    JSON.stringify(await monthRange(u25, "2001-08")) ===
+      JSON.stringify({ start: "2001-07-25", end: "2001-08-24" }),
+  );
+  const insExp = async (uid2: string, date: string, amount: number, source = "manual") =>
+    d.run(
+      "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, created_at) VALUES (?, ?, ?, ?, NULL, '', ?, ?)",
+      uid(),
+      uid2,
+      date,
+      amount,
+      source,
+      Date.now(),
+    );
+  const insInc = async (uid2: string, date: string, amount: number) =>
+    d.run(
+      "INSERT INTO incomes (id, user_id, date, amount, type, memo, created_at) VALUES (?, ?, ?, ?, 'other', '', ?)",
+      uid(),
+      uid2,
+      date,
+      amount,
+      Date.now(),
+    );
+  await insExp(u25, "2001-07-24", 1000); // 7月分
+  await insExp(u25, "2001-07-25", 2000); // 8月分
+  await insExp(u25, "2001-07-26", 700); // 8月分
+  await insExp(u25, "2001-08-24", 3000); // 8月分
+  await insExp(u25, "2001-08-25", 400); // 9月分
+  await insInc(u25, "2001-07-24", 500); // 7月分
+  await insInc(u25, "2001-07-25", 90000); // 8月分（給料日）
+  const s7 = await monthSummary(u25, "2001-07");
+  const s9 = await monthSummary(u25, "2001-09");
+  check("7月（6/25〜7/24）支出 = 1000", s7.expenseTotal === 1000, s7.expenseTotal);
+  check("9月（8/25〜9/24）支出 = 400", s9.expenseTotal === 400, s9.expenseTotal);
+  check("7月収入 = 500", s7.incomeTotal === 500, s7.incomeTotal);
+
+  // 給料日: 15日締め・翌月25日払い → 7/25支払い（5/16〜6/15勤務分）は集計上の「8月」に入る
+  const j25 = uid();
+  await d.run(
+    "INSERT INTO jobs (id, user_id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, calendar_keywords, closing_day, pay_month_offset, pay_day) VALUES (?, ?, 'job25', 1000, 1000, 0, '', 15, 1, 25)",
+    j25,
+    u25,
+  );
+  // 2001-06-13(水・平日) 5h → 5000円 → 7/25支払い（集計8月）
+  await d.run(
+    "INSERT INTO shifts (id, user_id, job_id, date, start_min, end_min, break_min) VALUES (?, ?, ?, '2001-06-13', 600, 900, 0)",
+    uid(),
+    u25,
+    j25,
+  );
+  // 2001-07-11(水・平日) 3h → 3000円 → 8/25支払い（集計9月）
+  await d.run(
+    "INSERT INTO shifts (id, user_id, job_id, date, start_min, end_min, break_min) VALUES (?, ?, ?, '2001-07-11', 600, 780, 0)",
+    uid(),
+    u25,
+    j25,
+  );
+  const si8 = await monthShiftIncome(u25, "2001-08");
+  const si9 = await monthShiftIncome(u25, "2001-09");
+  check("シフト収入: 7/25支払い分（6/13勤務5h）が「8月」= 5000", si8.total === 5000, si8.total);
+  check("シフト収入: 8/25支払い分（7/11勤務3h）が「9月」= 3000", si9.total === 3000, si9.total);
+  const pd8 = await paydays(u25, "2001-08");
+  check(
+    "paydays(8月) = 7/25 の給料日1件・5000円",
+    pd8.length === 1 && pd8[0].date === "2001-07-25" && pd8[0].amount === 5000,
+    pd8,
+  );
+
+  // 定期計上: カレンダー月キーのまま（支払日ベース）＝締め日変更でも二重計上しない
+  const r25 = uid();
+  await d.run(
+    "INSERT INTO recurring_items (id, user_id, kind, name, amount, category_id, start_month, end_month, post_day) VALUES (?, ?, 'expense', '家賃', 500, NULL, '2001-06', '2001-07', 27)",
+    r25,
+    u25,
+  );
+  await postRecurringForMonth(u25, "2001-07");
+  await postRecurringForMonth(u25, "2001-07"); // 2回目（冪等）
+  await postRecurringForMonth(u25, "2001-07"); // 3回目（冪等）
+  const recRows = await d.all<{ date: string }>(
+    "SELECT date FROM expenses WHERE user_id = ? AND source = 'recurring' ORDER BY date",
+    u25,
+  );
+  check(
+    "定期計上はカレンダー月キーで2件のみ（6/27・7/27。二重計上なし）",
+    recRows.length === 2 && recRows[0].date === "2001-06-27" && recRows[1].date === "2001-07-27",
+    recRows,
+  );
+  check("固定費: 6/27計上分は集計「7月」（6/25〜7/24）", (await monthFixedCost(u25, "2001-07")) === 500);
+  check("固定費: 7/27計上分は集計「8月」（7/25〜8/24）", (await monthFixedCost(u25, "2001-08")) === 500);
+
+  // 8月の合計（定期含む）と日次予算（today固定・startDay=25）
+  const s8 = await monthSummary(u25, "2001-08");
+  check("8月（7/25〜8/24）支出 = 2000+700+3000+定期500 = 6200", s8.expenseTotal === 6200, s8.expenseTotal);
+  check("8月収入 = 90000 + シフト5000 = 95000", s8.incomeTotal === 95000, s8.incomeTotal);
+  const b25 = dailyBudget(s8, 700, 10000, "2001-07-26", 500, 25);
+  check("日次予算: 残り30日（7/26〜8/24）", b25.daysRemaining === 30, b25);
+  check(
+    "日次予算: 土台 = 95000−10000−500−5000 = 79500",
+    b25.monthRemaining === 79500 && b25.spentBeforeToday === 5000,
+    b25,
+  );
+  check("日次予算: 今日の予算 79500/30 = 2650・あと1950", b25.todayBudget === 2650 && b25.remainingToday === 1950, b25);
+  const cb8 = await categoryBreakdown(u25, "2001-08");
+  check(
+    "カテゴリ内訳も期間ベース（未分類 6200円・4件）",
+    cb8.length === 1 && Number(cb8[0].amount) === 6200 && Number(cb8[0].count) === 4,
+    cb8,
+  );
+  const nmd8 = await noMoneyDays(u25, "2001-08");
+  check(
+    "NMD: 過去の集計月は期間全体（31日中、支出3日→28日・末日に支出→連続0）",
+    nmd8.count === 28 && nmd8.streak === 0,
+    nmd8,
+  );
+
+  console.log("[18c] Batch4 回帰: 開始日1（デフォルト）は従来のカレンダー月集計と完全一致");
+  const uDef = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    uDef,
+    "default-msd@example.com",
+    "デフォルト",
+    hashPassword("password123"),
+    Date.now(),
+  );
+  check("month_start_day 未指定は 1", (await getMonthStartDay(uDef)) === 1);
+  await insExp(uDef, "2001-06-30", 999); // 月外
+  await insExp(uDef, "2001-07-01", 1000);
+  await insExp(uDef, "2001-07-15", 2000);
+  await insExp(uDef, "2001-07-31", 3000);
+  await insExp(uDef, "2001-08-01", 888); // 月外
+  await insInc(uDef, "2001-07-01", 100000);
+  const jDef = uid();
+  await d.run(
+    "INSERT INTO jobs (id, user_id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, calendar_keywords, closing_day, pay_month_offset, pay_day) VALUES (?, ?, 'jobDef', 1000, 1200, 0, '', 31, 0, 25)",
+    jDef,
+    uDef,
+  );
+  // 2001-07-04(水・平日) 4h → 4000円
+  await d.run(
+    "INSERT INTO shifts (id, user_id, job_id, date, start_min, end_min, break_min) VALUES (?, ?, ?, '2001-07-04', 600, 900, 60)",
+    uid(),
+    uDef,
+    jDef,
+  );
+  const sDef = await monthSummary(uDef, "2001-07");
+  const likeExp = Number(
+    (await d.get<{ s: number }>(
+      "SELECT COALESCE(SUM(amount),0) AS s FROM expenses WHERE user_id = ? AND date LIKE '2001-07-%'",
+      uDef,
+    ))!.s,
+  );
+  const likeInc = Number(
+    (await d.get<{ s: number }>(
+      "SELECT COALESCE(SUM(amount),0) AS s FROM incomes WHERE user_id = ? AND date LIKE '2001-07-%'",
+      uDef,
+    ))!.s,
+  );
+  check("monthSummary.expenseTotal == 従来LIKE集計（6000）", sDef.expenseTotal === likeExp && likeExp === 6000, sDef.expenseTotal);
+  check("シフト収入は従来どおり当月払い扱い（4000）", sDef.shift.total === 4000, sDef.shift.total);
+  check(
+    "monthSummary.incomeTotal == 従来LIKE集計＋シフト",
+    sDef.incomeTotal === likeInc + 4000,
+    sDef.incomeTotal,
+  );
+  const pdDef = await paydays(uDef, "2001-07");
+  const cpdDef = await calendarPaydays(uDef, "2001-07");
+  check(
+    "paydays == calendarPaydays（開始日1・給料日7/25）",
+    JSON.stringify(pdDef) === JSON.stringify(cpdDef) && pdDef[0]?.date === "2001-07-25",
+    pdDef,
+  );
+  const bDef = dailyBudget(sDef, 0, 0, "2001-07-26", 0);
+  const bDef1 = dailyBudget(sDef, 0, 0, "2001-07-26", 0, 1);
+  check(
+    "dailyBudget: 引数省略と開始日1が同値（回帰）",
+    JSON.stringify(bDef) === JSON.stringify(bDef1) && bDef.daysRemaining === 6,
+    bDef,
+  );
+
+  // --- 19. Batch4 (B5): パスワード再設定・変更・アカウント削除 ---
+  console.log("[19] Batch4 パスワード再設定（B5）");
+  const uAcc = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    uAcc,
+    "b5@example.com",
+    "削除太郎",
+    (await import("../src/lib/password")).hashPassword("oldpass123"),
+    Date.now(),
+  );
+  check("未登録メールは null（応答は同一文言）", (await createPasswordReset("nobody@example.com")) === null);
+  const reset1 = await createPasswordReset("b5@example.com");
+  check("トークン発行", !!reset1 && reset1.userId === uAcc);
+  check("トークン有効", await isResetTokenValid(reset1!.token));
+  check("8文字未満は拒否（トークン未消費）", (await consumePasswordReset(reset1!.token, "short")) === "weak_password");
+  check("リセット成功", (await consumePasswordReset(reset1!.token, "newpass456")) === "ok");
+  const hashAfterReset = (await d.get<{ password_hash: string }>(
+    "SELECT password_hash FROM users WHERE id = ?",
+    uAcc,
+  ))!.password_hash;
+  check("新PWでログイン可能（ハッシュ照合）", verifyPassword("newpass456", hashAfterReset));
+  check("旧PWは無効", !verifyPassword("oldpass123", hashAfterReset));
+  check("トークン再利用は拒否", (await consumePasswordReset(reset1!.token, "another123")) === "invalid_token");
+  const reset2 = await createPasswordReset("b5@example.com");
+  await d.run("UPDATE password_resets SET expires_at = ? WHERE user_id = ?", Date.now() - 1000, uAcc);
+  check("期限切れは無効", !(await isResetTokenValid(reset2!.token)));
+  check("期限切れリセットは拒否", (await consumePasswordReset(reset2!.token, "whatever123")) === "invalid_token");
+  check("現PW違いの変更は拒否", (await changePassword(uAcc, "wrongwrong", "nextpass789")) === "wrong_password");
+  check("8文字未満の変更は拒否", (await changePassword(uAcc, "newpass456", "short")) === "weak_password");
+  check("パスワード変更成功", (await changePassword(uAcc, "newpass456", "nextpass789")) === "ok");
+
+  console.log("[19b] Batch4 アカウント削除（B5・全テーブルからユーザー消滅）");
+  await d.run("INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)", uid(), uAcc, Date.now());
+  await d.run("INSERT INTO categories (id, user_id, name, icon, sort) VALUES (?, ?, '食費', 'food', 0)", uid(), uAcc);
+  await insExp(uAcc, "2001-07-01", 100);
+  await insInc(uAcc, "2001-07-01", 200);
+  await d.run(
+    "INSERT INTO receipts (id, user_id, store, taken_date, total, items_json, created_at) VALUES (?, ?, 'store', '2001-07-01', 100, '[]', ?)",
+    uid(),
+    uAcc,
+    Date.now(),
+  );
+  const jAcc = uid();
+  await d.run(
+    "INSERT INTO jobs (id, user_id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, calendar_keywords) VALUES (?, ?, 'job', 1000, 1000, 0, '')",
+    jAcc,
+    uAcc,
+  );
+  await d.run(
+    "INSERT INTO shifts (id, user_id, job_id, date, start_min, end_min, break_min) VALUES (?, ?, ?, '2001-07-02', 600, 900, 0)",
+    uid(),
+    uAcc,
+    jAcc,
+  );
+  const rAcc = uid();
+  await d.run(
+    "INSERT INTO recurring_items (id, user_id, kind, name, amount, category_id, start_month, end_month, post_day) VALUES (?, ?, 'expense', 'サブスク', 100, NULL, '2001-07', '2001-07', 1)",
+    rAcc,
+    uAcc,
+  );
+  await postRecurringForMonth(uAcc, "2001-07"); // recurring_posts も作る
+  await d.run("INSERT INTO quick_presets (id, user_id, label, amount, category_id, sort) VALUES (?, ?, 'コーヒー', 300, NULL, 0)", uid(), uAcc);
+  await d.run("INSERT INTO category_budgets (user_id, category_id, amount) VALUES (?, ?, 5000)", uAcc, uid());
+  await d.run("INSERT INTO push_subscriptions (endpoint, user_id, subscription, created_at) VALUES (?, ?, '{}', ?)", uid(), uAcc, Date.now());
+  await d.run("INSERT INTO monthly_reviews (user_id, month, report, created_at) VALUES (?, '2001-06', '{}', ?)", uAcc, Date.now());
+  await d.run("INSERT INTO merchant_categories (user_id, merchant, category_id, updated_at) VALUES (?, 'seven', ?, ?)", uAcc, uid(), Date.now());
+  await d.run("INSERT INTO ai_usage (user_id, ym, scans, parses) VALUES (?, '2001-07', 1, 1)", uAcc);
+  await d.run("INSERT INTO ai_reward_days (user_id, ymd, count) VALUES (?, '2001-07-01', 1)", uAcc);
+  await createPasswordReset("b5@example.com"); // password_resets も作る
+
+  check("PW違いでは削除しない", (await deleteAccountWithPassword(uAcc, "wrong-password")) === "wrong_password");
+  check(
+    "誤PW後もユーザー残存",
+    Number((await d.get<{ c: number }>("SELECT COUNT(*) AS c FROM users WHERE id = ?", uAcc))!.c) === 1,
+  );
+  check("正PWで削除成功", (await deleteAccountWithPassword(uAcc, "nextpass789")) === "ok");
+  const tableCols: [string, string][] = [
+    ["users", "id"],
+    ["sessions", "user_id"],
+    ["categories", "user_id"],
+    ["expenses", "user_id"],
+    ["incomes", "user_id"],
+    ["receipts", "user_id"],
+    ["jobs", "user_id"],
+    ["shifts", "user_id"],
+    ["recurring_items", "user_id"],
+    ["quick_presets", "user_id"],
+    ["category_budgets", "user_id"],
+    ["push_subscriptions", "user_id"],
+    ["monthly_reviews", "user_id"],
+    ["merchant_categories", "user_id"],
+    ["ai_usage", "user_id"],
+    ["ai_reward_days", "user_id"],
+    ["password_resets", "user_id"],
+  ];
+  for (const [t, col] of tableCols) {
+    const c = Number(
+      (await d.get<{ c: number }>(`SELECT COUNT(*) AS c FROM ${t} WHERE ${col} = ?`, uAcc))!.c,
+    );
+    check(`${t} から消滅`, c === 0, c);
+  }
+  check(
+    "recurring_posts から消滅（recurring_id 経由）",
+    Number(
+      (await d.get<{ c: number }>("SELECT COUNT(*) AS c FROM recurring_posts WHERE recurring_id = ?", rAcc))!.c,
+    ) === 0,
+  );
+  check(
+    "他ユーザーのデータは無傷",
+    Number((await d.get<{ c: number }>("SELECT COUNT(*) AS c FROM expenses WHERE user_id = ?", u25))!.c) > 0 &&
+      Number((await d.get<{ c: number }>("SELECT COUNT(*) AS c FROM users WHERE id = ?", u25))!.c) === 1,
+  );
 
   console.log(`\n結果: ${passed} passed / ${failed} failed`);
   return { passed, failed };

@@ -16,8 +16,11 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     savings_goal INTEGER NOT NULL DEFAULT 0,
     api_token TEXT,
     last_overspend_push TEXT,
-    plan TEXT NOT NULL DEFAULT 'free'
+    plan TEXT NOT NULL DEFAULT 'free',
+    month_start_day INTEGER NOT NULL DEFAULT 1
   )`,
+  // B9: 既存DBへの追加カラム（冪等）：家計簿の月の開始日（1〜28。25なら7/25〜8/24が「8月」）
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS month_start_day INTEGER NOT NULL DEFAULT 1`,
   `CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -161,6 +164,13 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     updated_at BIGINT NOT NULL,
     PRIMARY KEY (user_id, merchant)
   )`,
+  // B5: パスワード再設定トークン（sha256のみ保存・有効1時間・使い捨て）。expires/used はエポックms → BIGINT
+  `CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    expires_at BIGINT NOT NULL,
+    used_at BIGINT
+  )`,
 ];
 
 /** 移行スクリプト用：sqlite→postgresでコピーするテーブル一覧（依存の無い順） */
@@ -182,4 +192,5 @@ export const MIGRATION_TABLES: string[] = [
   "ai_usage",
   "ai_reward_days",
   "merchant_categories",
+  "password_resets",
 ];

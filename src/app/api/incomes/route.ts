@@ -1,7 +1,7 @@
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 import { DUPLICATE_MESSAGE, duplicateIncomeExists } from "@/lib/merchant";
-import { todayStr } from "@/lib/money";
+import { monthRange, todayStr } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -9,13 +9,16 @@ export async function GET(request: Request) {
   try {
     const user = await requireUser();
     const month = new URL(request.url).searchParams.get("month") ?? todayStr().slice(0, 7);
+    // B9: 「月」は締め日基準の集計期間（開始日1なら従来のカレンダー月と同一）
+    const range = await monthRange(user.id, month);
     const d = await db();
     const incomes = await d.all(
-      "SELECT id, date, amount, type, memo FROM incomes WHERE user_id = ? AND date LIKE ? ORDER BY date DESC",
+      "SELECT id, date, amount, type, memo FROM incomes WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date DESC",
       user.id,
-      `${month}-%`,
+      range.start,
+      range.end,
     );
-    return Response.json({ incomes });
+    return Response.json({ incomes, range });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
     return Response.json({ error: String(e) }, { status: 500 });

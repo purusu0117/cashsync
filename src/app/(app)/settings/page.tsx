@@ -10,6 +10,7 @@ import {
   JobEditSheet,
   PresetEditSheet,
 } from "@/components/SettingsEditSheets";
+import { disableLock, isLockEnabled, setPasscode, verifyPasscode } from "@/lib/appLock";
 import { CATEGORY_ICON_KEYS, DEFAULT_CATEGORY_ICON } from "@/lib/categoryIcons";
 import { cachedFetch, clearApiCache } from "@/lib/cachedFetch";
 import { apiCall, apiJson } from "@/lib/clientApi";
@@ -106,6 +107,12 @@ export default function SettingsPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [goal, setGoal] = useState("");
   const [goalSaved, setGoalSaved] = useState(false);
+  // B9: 家計簿の月の開始日（締め日。1〜28、デフォルト1）
+  const [monthStart, setMonthStart] = useState("1");
+  const [monthStartSaved, setMonthStartSaved] = useState(false);
+  // B8: アプリロックのON/OFF（端末ローカル。初期値はlocalStorageから直接読む。
+  // 初回表示は ready=false のスケルトンなのでSSRとのhydration差異は出ない）
+  const [lockOn, setLockOn] = useState(() => typeof window !== "undefined" && isLockEnabled());
   const [pageError, setPageError] = useState("");
   const [apiToken, setApiToken] = useState("");
   const [tokenCopied, setTokenCopied] = useState(false);
@@ -168,6 +175,7 @@ export default function SettingsPage() {
     load();
     cachedFetch<{
       savingsGoal?: number;
+      monthStartDay?: number;
       apiToken?: string;
       plan?: string;
       aiUsage?: {
@@ -176,11 +184,23 @@ export default function SettingsPage() {
       };
     }>("/api/profile", (d) => {
       setGoal(d.savingsGoal ? String(d.savingsGoal) : "");
+      setMonthStart(String(d.monthStartDay ?? 1));
       setApiToken(d.apiToken ?? "");
       setPlan(planOf(d.plan));
       setAiUsage(d.aiUsage ?? null);
     }).catch(() => {});
   }, [load]);
+
+  // B9: 月の開始日の保存。変更後は全集計が新しい期間になるので、キャッシュも消して作り直す
+  async function saveMonthStart(v: string) {
+    setMonthStart(v);
+    await tryApi(async () => {
+      await apiCall("/api/profile", apiJson({ monthStartDay: Number(v) || 1 }));
+      clearApiCache();
+      setMonthStartSaved(true);
+      setTimeout(() => setMonthStartSaved(false), 2500);
+    });
+  }
 
   async function syncPlan(active: boolean): Promise<PlanName> {
     const res = await apiCall<{ plan?: string }>("/api/purchases/sync", apiJson({ active }));
@@ -416,6 +436,93 @@ export default function SettingsPage() {
     }
   }
 
+  // --- B8: アプリロック（4桁パスコード。端末ローカル保存・覗き見防止） ---
+  const [lockSetup, setLockSetup] = useState<null | "new" | "confirm" | "off">(null);
+  const [lockPin, setLockPin] = useState("");
+  const [lockPin2, setLockPin2] = useState("");
+  const [lockError, setLockError] = useState("");
+
+  async function submitLockSetup() {
+    setLockError("");
+    if (lockSetup === "off") {
+      if (!(await verifyPasscode(lockPin))) {
+        setLockError("パスコードが違います。");
+        setLockPin("");
+        return;
+      }
+      disableLock();
+      setLockOn(false);
+      setLockSetup(null);
+      setLockPin("");
+      return;
+    }
+    if (!/^\d{4}$/.test(lockPin)) {
+      setLockError("4桁の数字で入力してください。");
+      return;
+    }
+    if (lockPin !== lockPin2) {
+      setLockError("確認用のパスコードが一致しません。");
+      setLockPin2("");
+      return;
+    }
+    await setPasscode(lockPin);
+    setLockOn(true);
+    setLockSetup(null);
+    setLockPin("");
+    setLockPin2("");
+  }
+
+  // --- B5: パスワード変更（ログイン中。現PW＋新PW） ---
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pwBusy, setPwBusy] = useState(false);
+  async function submitChangePassword() {
+    if (pwNew.length < 8) {
+      setPwMsg({ ok: false, text: "新しいパスワードは8文字以上にしてください。" });
+      return;
+    }
+    setPwBusy(true);
+    setPwMsg(null);
+    try {
+      await apiCall(
+        "/api/auth",
+        apiJson({ action: "changePassword", currentPassword: pwCurrent, newPassword: pwNew }),
+      );
+      setPwCurrent("");
+      setPwNew("");
+      setPwMsg({ ok: true, text: "パスワードを変更しました。" });
+    } catch (e) {
+      setPwMsg({ ok: false, text: e instanceof Error ? e.message : "変更に失敗しました。" });
+    } finally {
+      setPwBusy(false);
+    }
+  }
+
+  // --- B5: アカウント削除（App Store審査要件。パスワード確認つき・取り消し不可） ---
+  const [delOpen, setDelOpen] = useState(false);
+  const [delPassword, setDelPassword] = useState("");
+  const [delError, setDelError] = useState("");
+  const [delBusy, setDelBusy] = useState(false);
+  async function submitDeleteAccount() {
+    if (!delPassword) {
+      setDelError("パスワードを入力してください。");
+      return;
+    }
+    setDelBusy(true);
+    setDelError("");
+    try {
+      await apiCall("/api/account/delete", apiJson({ password: delPassword }));
+      // 全データ削除済み。端末側の痕跡（キャッシュ・アプリロック）も消してログイン画面へ
+      disableLock();
+      clearApiCache();
+      location.href = "/login";
+    } catch (e) {
+      setDelError(e instanceof Error ? e.message : "削除に失敗しました。");
+      setDelBusy(false);
+    }
+  }
+
   async function logout() {
     await fetch("/api/auth", {
       method: "POST",
@@ -424,6 +531,8 @@ export default function SettingsPage() {
     });
     // 別ユーザーでログインし直しても前のデータが見えないよう、キャッシュを必ず全消し
     clearApiCache();
+    // B8: アプリロックはログアウトで解除（パスコードを忘れた場合の逃げ道）
+    disableLock();
     location.href = "/login";
   }
 
@@ -574,6 +683,28 @@ export default function SettingsPage() {
             {goalSaved ? "保存済✓" : "保存"}
           </button>
         </div>
+      </section>
+
+      {/* B9: 家計簿の月の開始日（締め日）。25なら 7/25〜8/24 が「8月」として集計される */}
+      <section id="month-start" className="zig zig-t zig-b px-4 py-4 shadow-sm">
+        <div className="flex items-baseline justify-between">
+          <h2 className="dot text-sm">家計簿の月の開始日</h2>
+          {monthStartSaved && <span className="dot text-xs text-sage">保存済✓</span>}
+        </div>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
+          給料日に合わせると管理しやすい設定です。例えば25日開始なら、7/25〜8/24が「8月」として集計されます（カレンダーの見た目は変わりません）。
+        </p>
+        <select
+          value={monthStart}
+          onChange={(e) => saveMonthStart(e.target.value)}
+          className={`${input} mt-2 w-full`}
+        >
+          {["1", "5", "10", "15", "20", "25", "27", ...(["1", "5", "10", "15", "20", "25", "27"].includes(monthStart) ? [] : [monthStart])].map((d) => (
+            <option key={d} value={d}>
+              {d === "1" ? "1日（カレンダー通り・標準）" : `${d}日はじまり`}
+            </option>
+          ))}
+        </select>
       </section>
 
       <section id="jobs" className="zig zig-t zig-b px-4 py-4 shadow-sm">
@@ -963,6 +1094,109 @@ export default function SettingsPage() {
         </button>
       </section>
 
+      {/* B8: アプリロック（4桁パスコード。この端末だけのロック・覗き見防止） */}
+      <section id="applock" className="zig zig-t zig-b px-4 py-4 shadow-sm">
+        <h2 className="dot text-sm">アプリロック</h2>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
+          アプリを開くときに4桁のパスコードを求めます（対応端末のアプリではFace ID等でも解除できます）。この端末だけの設定です。パスコードを忘れた場合は、ログアウトして再ログインすると解除されます。
+        </p>
+        {lockSetup === null ? (
+          <button
+            onClick={() => {
+              setLockError("");
+              setLockPin("");
+              setLockPin2("");
+              setLockSetup(lockOn ? "off" : "new");
+            }}
+            className={`mt-2 w-full rounded-md py-2.5 text-sm ${
+              lockOn ? "border border-sage text-sage" : "dot border border-ink"
+            }`}
+          >
+            {lockOn ? "ロックON（タップでOFF）" : "ロックをONにする"}
+          </button>
+        ) : (
+          <div className="mt-2 space-y-2">
+            {lockSetup === "off" ? (
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                value={lockPin}
+                onChange={(e) => setLockPin(e.target.value.replace(/\D/g, ""))}
+                placeholder="現在のパスコード（4桁）"
+                className={`${input} w-full tabular-nums`}
+              />
+            ) : (
+              <>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={lockPin}
+                  onChange={(e) => setLockPin(e.target.value.replace(/\D/g, ""))}
+                  placeholder="新しいパスコード（4桁）"
+                  className={`${input} w-full tabular-nums`}
+                />
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={lockPin2}
+                  onChange={(e) => setLockPin2(e.target.value.replace(/\D/g, ""))}
+                  placeholder="もう一度入力"
+                  className={`${input} w-full tabular-nums`}
+                />
+              </>
+            )}
+            {lockError && <p className="text-xs text-vermilion">{lockError}</p>}
+            <div className="flex gap-2">
+              <button onClick={submitLockSetup} className={`${addBtn} flex-1`}>
+                {lockSetup === "off" ? "ロックを解除する" : "設定する"}
+              </button>
+              <button
+                onClick={() => setLockSetup(null)}
+                className="flex-1 rounded-md border border-rule py-2 text-sm text-ink-faint"
+              >
+                やめる
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* B5: パスワード変更（ログイン中） */}
+      <section id="password" className="zig zig-t zig-b px-4 py-4 shadow-sm">
+        <h2 className="dot text-sm">パスワード変更</h2>
+        <div className="mt-2 space-y-2">
+          <input
+            type="password"
+            value={pwCurrent}
+            onChange={(e) => setPwCurrent(e.target.value)}
+            placeholder="現在のパスワード"
+            autoComplete="current-password"
+            className={`${input} w-full`}
+          />
+          <input
+            type="password"
+            value={pwNew}
+            onChange={(e) => setPwNew(e.target.value)}
+            placeholder="新しいパスワード（8文字以上）"
+            autoComplete="new-password"
+            className={`${input} w-full`}
+          />
+          {pwMsg && (
+            <p className={`text-xs ${pwMsg.ok ? "text-sage" : "text-vermilion"}`}>{pwMsg.text}</p>
+          )}
+          <button
+            onClick={submitChangePassword}
+            disabled={pwBusy || !pwCurrent || !pwNew}
+            className={`${addBtn} w-full`}
+          >
+            {pwBusy ? "・・・" : "変更する"}
+          </button>
+        </div>
+      </section>
+
       <section id="shortcut" className="zig zig-t zig-b px-4 py-4 shadow-sm">
         <h2 className="dot text-sm">iPhoneショートカット連携</h2>
         <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
@@ -999,6 +1233,18 @@ export default function SettingsPage() {
       <button onClick={logout} className="w-full rounded-md border border-rule py-3 text-sm text-ink-faint">
         ログアウト
       </button>
+
+      {/* B5: アカウント削除（設定の最下部・App Store審査要件） */}
+      <button
+        onClick={() => {
+          setDelPassword("");
+          setDelError("");
+          setDelOpen(true);
+        }}
+        className="w-full rounded-md border border-rule py-3 text-sm text-vermilion"
+      >
+        アカウントを削除
+      </button>
       <p className="flex justify-center gap-4 text-[11px] text-ink-faint">
         <Link href="/legal/terms" className="underline underline-offset-2">
           利用規約
@@ -1008,6 +1254,53 @@ export default function SettingsPage() {
         </Link>
       </p>
       <p className="dot pb-2 text-center text-[10px] text-ink-faint">CashSync v0.1</p>
+
+      {/* B5: アカウント削除の確認シート（パスワードで本人確認） */}
+      {delOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-ink/40"
+          onClick={() => !delBusy && setDelOpen(false)}
+        >
+          <div
+            className="zig zig-t mx-auto w-full max-w-md px-5 pb-8 pt-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="dot text-center text-sm text-vermilion">＊ アカウントを削除 ＊</p>
+            <p className="mt-3 text-xs leading-relaxed">
+              すべての記録（支出・収入・シフト・レシート・設定）が完全に削除されます。
+              <span className="text-vermilion">この操作は取り消せません。</span>
+            </p>
+            <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+              本人確認のため、パスワードを入力してください。
+            </p>
+            <input
+              type="password"
+              value={delPassword}
+              onChange={(e) => setDelPassword(e.target.value)}
+              placeholder="パスワード"
+              autoComplete="current-password"
+              className="mt-2 w-full rounded-md border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
+            />
+            {delError && <p className="mt-2 text-xs text-vermilion">{delError}</p>}
+            <div className="mt-3 space-y-2">
+              <button
+                onClick={submitDeleteAccount}
+                disabled={delBusy || !delPassword}
+                className="dot w-full rounded-md border border-vermilion py-3 text-sm text-vermilion active:translate-y-0.5 disabled:opacity-40"
+              >
+                {delBusy ? "削除しています・・・" : "すべてのデータを完全に削除する"}
+              </button>
+              <button
+                onClick={() => setDelOpen(false)}
+                disabled={delBusy}
+                className="w-full rounded-md border border-rule bg-paper py-3 text-sm"
+              >
+                やめる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* B7: 編集シート（バイト先・カテゴリ・かんたん入力ボタン） */}
       {editJob && (

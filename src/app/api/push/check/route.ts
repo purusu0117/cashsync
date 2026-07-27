@@ -2,8 +2,10 @@
 // 月末予測が赤字ペースのユーザーに、1日1回だけ通知を送る。
 import { db } from "@/lib/db";
 import {
+  accountingMonth,
   currentMonth,
   daysRemainingInMonth,
+  getMonthStartDay,
   monthForecast,
   monthSummary,
   postRecurringForMonth,
@@ -28,11 +30,14 @@ export async function GET(request: Request) {
   for (const u of users) {
     if (u.last_overspend_push === today) continue; // 1日1回
     await postRecurringForMonth(u.id, currentMonth());
-    const summary = await monthSummary(u.id, currentMonth());
+    // B9: 「今月」は締め日基準の集計月（開始日1なら従来と同じ）
+    const summary = await monthSummary(u.id, await accountingMonth(u.id));
     const fc = await monthForecast(u.id, summary);
     let body = "";
     if (fc.forecast < 0) {
-      const recover = Math.ceil(-fc.forecast / daysRemainingInMonth());
+      const recover = Math.ceil(
+        -fc.forecast / daysRemainingInMonth(today, await getMonthStartDay(u.id)),
+      );
       body = `⚠ このままだと月末 ${fmtYen(fc.forecast)}。1日あと${fmtYen(recover)}おさえれば黒字に戻せます`;
     } else if (u.savings_goal > 0 && fc.forecast < u.savings_goal) {
       body = `🟡 黒字ペースですが、貯金目標まであと${fmtYen(u.savings_goal - fc.forecast)}足りない見込みです`;

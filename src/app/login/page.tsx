@@ -7,12 +7,14 @@ import { NETWORK_ERROR_MESSAGE, clearApiCache, netFetch } from "@/lib/cachedFetc
 
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // B5: リセットメール受付後の案内（存在しないメールでも同じ表示＝列挙攻撃対策）
+  const [forgotSent, setForgotSent] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -24,6 +26,27 @@ export default function LoginPage() {
     }
     setBusy(true);
     setError("");
+    // B5: パスワード再設定メールの受付（成否にかかわらず同じ完了画面を出す）
+    if (mode === "forgot") {
+      try {
+        const res = await netFetch("/api/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "forgot", email }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error ?? "失敗しました。");
+          return;
+        }
+        setForgotSent(true);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : NETWORK_ERROR_MESSAGE);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     try {
       const res = await netFetch("/api/auth", {
         method: "POST",
@@ -57,6 +80,32 @@ export default function LoginPage() {
           レシートを撮るだけ、入力3秒の家計簿
         </p>
         <div className="cutline my-5" />
+        {mode === "forgot" && forgotSent ? (
+          /* B5: 受付完了。メールの有無にかかわらず常にこの画面（アカウント列挙をさせない） */
+          <div className="text-center">
+            <p className="dot text-sm">メールを送信しました</p>
+            <p className="mt-2 text-xs leading-relaxed text-ink-faint">
+              {email} 宛にパスワード再設定のリンクを送りました（有効期限：1時間）。
+              届かない場合は、メールアドレスの間違いや迷惑メールフォルダをご確認ください。
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setMode("login");
+                setForgotSent(false);
+              }}
+              className="mt-5 w-full text-center text-xs text-ink-faint underline underline-offset-4"
+            >
+              ログインに戻る
+            </button>
+          </div>
+        ) : (
+        <>
+        {mode === "forgot" && (
+          <p className="mb-3 text-xs leading-relaxed text-ink-faint">
+            登録済みのメールアドレスを入力してください。パスワード再設定のリンクをお送りします。
+          </p>
+        )}
         <form onSubmit={submit} className="space-y-3">
           {mode === "register" && (
             <label className="block">
@@ -81,19 +130,21 @@ export default function LoginPage() {
               autoComplete="email"
             />
           </label>
-          <label className="block">
-            <span className="dot text-xs text-ink-faint">パスワード</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-            />
-            {mode === "register" && (
-              <span className="mt-1 block text-[11px] text-ink-faint">8文字以上で設定してください</span>
-            )}
-          </label>
+          {mode !== "forgot" && (
+            <label className="block">
+              <span className="dot text-xs text-ink-faint">パスワード</span>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+              />
+              {mode === "register" && (
+                <span className="mt-1 block text-[11px] text-ink-faint">8文字以上で設定してください</span>
+              )}
+            </label>
+          )}
           {error && <p className="text-sm text-vermilion">{error}</p>}
           <button
             type="submit"
@@ -103,20 +154,42 @@ export default function LoginPage() {
             {busy
               ? mode === "login"
                 ? "ログイン中・・・"
-                : "アカウント作成中・・・"
+                : mode === "register"
+                  ? "アカウント作成中・・・"
+                  : "・・・"
               : mode === "login"
                 ? "ログイン"
-                : "はじめる"}
+                : mode === "register"
+                  ? "はじめる"
+                  : "再設定メールを送る"}
           </button>
         </form>
+        {mode === "login" && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setMode("forgot");
+              setError("");
+            }}
+            className="mt-3 w-full text-center text-xs text-ink-faint underline underline-offset-4 disabled:opacity-40"
+          >
+            パスワードをお忘れですか？
+          </button>
+        )}
         <button
           type="button"
           disabled={busy}
-          onClick={() => setMode(mode === "login" ? "register" : "login")}
+          onClick={() => {
+            setMode(mode === "login" ? "register" : "login");
+            setError("");
+          }}
           className="mt-4 w-full text-center text-xs text-ink-faint underline underline-offset-4 disabled:opacity-40"
         >
           {mode === "login" ? "アカウントを作る" : "ログインに戻る"}
         </button>
+        </>
+        )}
       </div>
       <p className="mt-6 flex justify-center gap-4 text-[11px] text-ink-faint">
         <Link href="/legal/terms" className="underline underline-offset-4">

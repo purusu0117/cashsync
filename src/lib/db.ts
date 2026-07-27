@@ -329,6 +329,12 @@ function migrateSqlite(d: DatabaseSync) {
       updated_at INTEGER NOT NULL,
       PRIMARY KEY (user_id, merchant)
     );
+    CREATE TABLE IF NOT EXISTS password_resets (
+      token_hash TEXT PRIMARY KEY,      -- リセットトークンの sha256（平文トークンは保存しない）
+      user_id TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,      -- 有効期限（発行から1時間）
+      used_at INTEGER                   -- 使用済み時刻（NULL=未使用）
+    );
   `);
   // 追加カラムのマイグレーション（既存DBにも効くよう ALTER を冪等に流す）
   addColumn(d, "categories", "icon TEXT NOT NULL DEFAULT ''"); // 旧DB（icon列なし）向け
@@ -349,6 +355,7 @@ function migrateSqlite(d: DatabaseSync) {
   if (addColumn(d, "users", "plan TEXT NOT NULL DEFAULT 'free'")) {
     d.exec("UPDATE users SET plan = 'founder'");
   }
+  addColumn(d, "users", "month_start_day INTEGER NOT NULL DEFAULT 1"); // B9: 家計簿の月の開始日（1〜28。25なら7/25〜8/24が「8月」）
 }
 
 // 掛け持ちバイトの色パレット（紙背景で判別しやすい順）

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import AppLock from "@/components/AppLock";
 import BottomNav from "@/components/BottomNav";
 import NativeAds from "@/components/NativeAds";
 import NativePurchases from "@/components/NativePurchases";
@@ -19,6 +20,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <NativePurchases userId={user.id} />
       {children}
       <BottomNav />
+      {/* B8: アプリロック（設定でONにした端末のみ。起動時・復帰時に全画面で覆う） */}
+      <AppLock />
     </div>
   );
 }

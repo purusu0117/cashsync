@@ -9,8 +9,8 @@ export async function GET() {
   try {
     const user = await requireUser();
     const d = await db();
-    const row = await d.get<{ savings_goal: number; plan: string | null }>(
-      "SELECT savings_goal, plan FROM users WHERE id = ?",
+    const row = await d.get<{ savings_goal: number; plan: string | null; month_start_day: number }>(
+      "SELECT savings_goal, plan, month_start_day FROM users WHERE id = ?",
       user.id,
     );
     const plan = normalizePlan(row?.plan);
@@ -18,6 +18,8 @@ export async function GET() {
     const usage = await getAiUsageDisplay(user.id, plan);
     return Response.json({
       savingsGoal: row?.savings_goal ?? 0,
+      // B9: 家計簿の月の開始日（1〜28。デフォルト1＝カレンダー月）
+      monthStartDay: row?.month_start_day ?? 1,
       plan,
       apiToken: await ensureApiToken(user.id),
       aiUsage: { scans: usage.scans, parses: usage.parses },
@@ -31,11 +33,24 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const user = await requireUser();
-    const body = (await request.json()) as { savingsGoal?: number };
-    const goal = Math.max(0, Math.round(Number(body.savingsGoal) || 0));
+    const body = (await request.json()) as { savingsGoal?: number; monthStartDay?: number };
     const d = await db();
-    await d.run("UPDATE users SET savings_goal = ? WHERE id = ?", goal, user.id);
-    return Response.json({ ok: true, savingsGoal: goal });
+    if (body.savingsGoal !== undefined) {
+      const goal = Math.max(0, Math.round(Number(body.savingsGoal) || 0));
+      await d.run("UPDATE users SET savings_goal = ? WHERE id = ?", goal, user.id);
+    }
+    // B9: 月の開始日（1〜28のみ許可。29〜31は月によって存在しないため不可）
+    if (body.monthStartDay !== undefined) {
+      const day = Math.round(Number(body.monthStartDay) || 1);
+      if (day < 1 || day > 28) {
+        return Response.json(
+          { error: "月の開始日は1〜28日の間で設定してください。" },
+          { status: 400 },
+        );
+      }
+      await d.run("UPDATE users SET month_start_day = ? WHERE id = ?", day, user.id);
+    }
+    return Response.json({ ok: true });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
     return Response.json({ error: String(e) }, { status: 500 });
