@@ -917,7 +917,35 @@ export default function SettingsPage() {
             </ul>
           )}
         </Fold>
-        <div className="mt-3 grid grid-cols-2 gap-2">
+        {/* B3: 収入プリセット（社会人向け）。UIは増やさず1タップで給料/ボーナスの登録欄を整える。 */}
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <span className="dot text-[11px] text-ink-faint">かんたん設定</span>
+          <button
+            type="button"
+            onClick={() => {
+              setRecKind("income");
+              setRecInterval("monthly");
+              setRecName("給料");
+              setRecDay("25");
+            }}
+            className="dot rounded-full border border-sage px-2.5 py-1 text-xs text-sage active:translate-y-0.5"
+          >
+            💰 毎月の給料
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setRecKind("income");
+              setRecInterval("yearly");
+              setRecName("ボーナス");
+              setRecMonth(thisMonth);
+            }}
+            className="dot rounded-full border border-sage px-2.5 py-1 text-xs text-sage active:translate-y-0.5"
+          >
+            🎁 ボーナス
+          </button>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
           <select value={recKind} onChange={(e) => setRecKind(e.target.value as "expense" | "income")} className={`${input} min-w-0`}>
             <option value="expense">支出</option>
             <option value="income">収入</option>
@@ -926,7 +954,7 @@ export default function SettingsPage() {
             <option value="monthly">月払い</option>
             <option value="yearly">年払い</option>
           </select>
-          <input value={recName} onChange={(e) => setRecName(e.target.value)} placeholder="例：Netflix / 家賃" className={`${input} col-span-2 min-w-0`} />
+          <input value={recName} onChange={(e) => setRecName(e.target.value)} placeholder="例：家賃 / Netflix / 給料" className={`${input} col-span-2 min-w-0`} />
         </div>
         {recInterval === "yearly" && (
           <div className="mt-2">
@@ -969,6 +997,11 @@ export default function SettingsPage() {
             ＋ 追加
           </button>
         </div>
+        {recKind === "income" && (
+          <p className="mt-1.5 text-[11px] text-ink-faint">
+            会社員の方は手取りの月給と給料日を追加すればOK。「今日あと使えるお金」に自動反映されます。ボーナスは夏・冬で2回登録できます。日給・歩合など月で変わる収入は、その都度「収入を記録」から入れてください。
+          </p>
+        )}
 
         <div className="cutline mt-4 pt-3">
           <h3 className="dot flex items-center gap-1 text-xs">
