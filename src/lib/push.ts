@@ -1,5 +1,9 @@
-// サーバー専用：Web Push送信（使いすぎ予兆通知など）。VAPIDキーは .env.local。
+// サーバー専用：通知送信。
+//  - ブラウザ／PWA には Web Push（VAPID）
+//  - iOSネイティブアプリには APNs（WebViewはWeb Pushを受け取れないため）
+// 呼び出し側は pushToUser / pushRecordResult を使えば、両方へ自動で配られる。
 import webpush from "web-push";
+import { sendApns } from "./apns";
 import { db } from "./db";
 
 let configured = false;
@@ -34,13 +38,14 @@ export async function pushRecordResult(userId: string, title: string, body: stri
 
 /** ユーザーの全端末に通知を送る。無効になった購読は掃除する */
 export async function pushToUser(userId: string, title: string, body: string): Promise<number> {
-  if (!setup()) return 0;
+  // iOSネイティブアプリへはAPNsで送る（設定が無ければ0件で素通り）
+  let sent = await sendApns(userId, title, body).catch(() => 0);
+  if (!setup()) return sent;
   const d = await db();
   const subs = await d.all<{ endpoint: string; subscription: string }>(
     "SELECT endpoint, subscription FROM push_subscriptions WHERE user_id = ?",
     userId,
   );
-  let sent = 0;
   for (const s of subs) {
     try {
       await webpush.sendNotification(JSON.parse(s.subscription), JSON.stringify({ title, body }));

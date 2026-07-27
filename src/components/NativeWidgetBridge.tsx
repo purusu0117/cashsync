@@ -5,7 +5,12 @@
 // ウィジェットが「アプリでログインするとここに残額が出ます」のままになる。
 // あわせて、記録リマインドをローカル通知として端末に仕込む（サーバープッシュはWebViewでは動かないため）。
 import { useEffect } from "react";
-import { isNativePlatform, scheduleLocalReminder, syncWidgetAuth } from "@/lib/native";
+import {
+  isNativePlatform,
+  registerPushDevice,
+  scheduleLocalReminder,
+  syncWidgetAuth,
+} from "@/lib/native";
 
 export default function NativeWidgetBridge() {
   useEffect(() => {
@@ -18,6 +23,8 @@ export default function NativeWidgetBridge() {
         if (d.apiToken) await syncWidgetAuth(d.apiToken);
         // 設定済みのリマインド時刻を、この端末のローカル通知として登録し直す（冪等）
         if (typeof d.reminderHour === "number") await scheduleLocalReminder(d.reminderHour);
+        // APNs端末登録（「読み取りが終わりました」等をアプリを閉じていても受け取るため）
+        await registerPushDevice();
       } catch {
         /* 取得できなければ次回起動時に再試行 */
       }

@@ -36,6 +36,14 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     updated_at BIGINT NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS idx_scan_jobs_user ON scan_jobs(user_id, created_at)`,
+  // ネイティブアプリのプッシュ通知（APNs）用の端末トークン
+  `CREATE TABLE IF NOT EXISTS push_devices (
+    token TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT 'ios',
+    created_at BIGINT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_push_devices_user ON push_devices(user_id)`,
   // B9: 既存DBへの追加カラム（冪等）：家計簿の月の開始日（1〜28。25なら7/25〜8/24が「8月」）
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS month_start_day INTEGER NOT NULL DEFAULT 1`,
   // C3: 記録リマインダー（0〜23時。-1=OFF）と最終送信日（1日1回制限）

@@ -28,7 +28,10 @@ export async function GET(request: Request) {
   }
   const d = await db();
   const users = await d.all<{ id: string; savings_goal: number; last_overspend_push: string | null }>(
-    "SELECT DISTINCT u.id, u.savings_goal, u.last_overspend_push FROM users u JOIN push_subscriptions p ON p.user_id = u.id",
+    // Web Push購読者（ブラウザ/PWA）と APNs端末（ネイティブアプリ）の両方を対象にする
+    `SELECT DISTINCT u.id, u.savings_goal, u.last_overspend_push FROM users u
+     WHERE EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id)
+        OR EXISTS (SELECT 1 FROM push_devices dv WHERE dv.user_id = u.id)`,
   );
   const today = todayStr();
   let notified = 0;

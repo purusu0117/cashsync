@@ -348,6 +348,15 @@ function migrateSqlite(d: DatabaseSync) {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_scan_jobs_user ON scan_jobs(user_id, created_at);
+    -- ネイティブアプリのプッシュ通知（APNs）用の端末トークン。
+    -- Web Push（push_subscriptions）はWebView内では使えないため別管理にする。
+    CREATE TABLE IF NOT EXISTS push_devices (
+      token TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      platform TEXT NOT NULL DEFAULT 'ios',
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_push_devices_user ON push_devices(user_id);
   `);
   // 追加カラムのマイグレーション（既存DBにも効くよう ALTER を冪等に流す）
   addColumn(d, "categories", "icon TEXT NOT NULL DEFAULT ''"); // 旧DB（icon列なし）向け

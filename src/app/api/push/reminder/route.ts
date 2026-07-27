@@ -45,6 +45,8 @@ export async function GET(request: Request) {
     reminder_hour: number;
     last_reminder_push: string | null;
   }>(
+    // 対象は Web Push購読者（ブラウザ/PWA）のみ。
+    // ネイティブアプリは端末側のローカル通知で鳴るので、ここから送ると二重になる。
     `SELECT DISTINCT u.id, u.savings_goal, u.reminder_hour, u.last_reminder_push
      FROM users u JOIN push_subscriptions p ON p.user_id = u.id
      WHERE u.reminder_hour = ?`,

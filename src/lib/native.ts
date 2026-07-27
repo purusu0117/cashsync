@@ -203,6 +203,36 @@ export async function clearWidgetAuth(): Promise<void> {
 }
 
 /**
+ * APNs（サーバーからのプッシュ）の端末登録。
+ * 「読み取りが終わりました」などアプリを閉じている間に起きたことを届けるために必要。
+ * 権限が拒否されている場合は何もしない（アプリの他の機能には影響しない）。
+ */
+export async function registerPushDevice(): Promise<void> {
+  if (!isNativePlatform()) return;
+  try {
+    const { PushNotifications } = await import("@capacitor/push-notifications");
+    const perm = await PushNotifications.checkPermissions();
+    let granted = perm.receive === "granted";
+    if (!granted) {
+      const asked = await PushNotifications.requestPermissions();
+      granted = asked.receive === "granted";
+    }
+    if (!granted) return;
+    // 端末トークンはイベントで返ってくる（登録は毎回呼んでよい・冪等）
+    await PushNotifications.addListener("registration", (token) => {
+      fetch("/api/push/device", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: token.value, platform: "ios" }),
+      }).catch(() => {});
+    });
+    await PushNotifications.register();
+  } catch {
+    /* プラグイン未対応環境では何もしない */
+  }
+}
+
+/**
  * 記録リマインドのローカル通知を設定（hour<0 で解除）。
  * サーバーからのプッシュと違い証明書不要で、機内モードでも端末内で発火する。
  */

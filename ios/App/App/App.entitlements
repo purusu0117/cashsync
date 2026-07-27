@@ -7,5 +7,8 @@
 	<array>
 		<string>group.com.daito.cashsync</string>
 	</array>
+	<!-- APNs（サーバーからのプッシュ通知）。TestFlight/App Store配布は production -->
+	<key>aps-environment</key>
+	<string>production</string>
 </dict>
 </plist>
