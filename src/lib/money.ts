@@ -390,14 +390,16 @@ export async function postRecurringForMonth(userId: string, upToMonth: string) {
         const day = String(Math.min(Math.max(1, it.post_day), daysInMonth(month))).padStart(2, "0");
         const date = `${month}-${day}`;
         if (it.kind === "expense") {
+          // C12: recurring_id で元の定期にリンクする（固定費/変動費の判定に使う）
           await d.run(
-            "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, created_at) VALUES (?, ?, ?, ?, ?, ?, 'recurring', ?)",
+            "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, recurring_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'recurring', ?, ?)",
             uid(),
             userId,
             date,
             it.amount,
             it.category_id,
             it.name,
+            it.id,
             Date.now(),
           );
         } else {
@@ -571,23 +573,37 @@ export interface DailyBudget {
   monthRemaining: number; // 日割り前の土台（今月収入 − 貯金目標 − 固定費 − 昨日までの変動支出）。マイナス＝今月使える残りなし
 }
 
-/** 今日の変動支出合計（日次予算の「今日使った分」。定期計上は固定費として先取り済みなので含めない） */
+// ---------------------------------------------------------------------------
+// C12: 固定費/変動費の区別。
+// 固定費 = 定期計上（source='recurring'）のうち、元の定期の is_fixed が 1 のもの。
+// recurring_id が無い旧レコード・元の定期が削除済みのものは従来どおり固定扱い（COALESCE(...,1)）。
+// 変動費 = それ以外すべて（is_fixed=0 の定期計上は「変動費」として日々の支出側に数える）。
+// デフォルトは全定期 is_fixed=1 なので、旧来の source != 'recurring' 判定と完全に同じ結果になる。
+// ---------------------------------------------------------------------------
+
+/** 「固定費として扱う支出」のSQL条件（expenses の別名は e 固定・sqlite/postgres共通） */
+export const FIXED_EXPENSE_COND =
+  "(e.source = 'recurring' AND COALESCE((SELECT r.is_fixed FROM recurring_items r WHERE r.id = e.recurring_id), 1) = 1)";
+/** 「変動費として扱う支出」のSQL条件（expenses の別名は e 固定） */
+export const VARIABLE_EXPENSE_COND = `NOT ${FIXED_EXPENSE_COND}`;
+
+/** 今日の変動支出合計（日次予算の「今日使った分」。固定費は先取り済みなので含めない） */
 export async function todaySpent(userId: string, today = todayStr()): Promise<number> {
   const d = await db();
   const row = (await d.get<{ s: number }>(
-    "SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date = ? AND source != 'recurring'",
+    `SELECT COALESCE(SUM(e.amount), 0) AS s FROM expenses e WHERE e.user_id = ? AND e.date = ? AND ${VARIABLE_EXPENSE_COND}`,
     userId,
     today,
   )) as { s: number };
   return Number(row.s);
 }
 
-/** 今月の固定費合計（定期計上・分割で expenses に計上された支出。月初に一括計上済み） */
+/** 今月の固定費合計（is_fixed=1 の定期・分割で expenses に計上された支出。月初に一括計上済み） */
 export async function monthFixedCost(userId: string, month: string): Promise<number> {
   const d = await db();
   const range = await monthRange(userId, month); // B9: 期間内に計上された定期支出を先取り扱い
   const row = (await d.get<{ s: number }>(
-    "SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date >= ? AND date <= ? AND source = 'recurring'",
+    `SELECT COALESCE(SUM(e.amount), 0) AS s FROM expenses e WHERE e.user_id = ? AND e.date >= ? AND e.date <= ? AND ${FIXED_EXPENSE_COND}`,
     userId,
     range.start,
     range.end,
@@ -684,7 +700,7 @@ export async function monthForecast(userId: string, summary: MonthSummary): Prom
   const d = await db();
   const range = await monthRange(userId, summary.month); // B9: 経過日数・残り日数も締め日基準
   const row = (await d.get<{ s: number }>(
-    "SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date >= ? AND date <= ? AND source != 'recurring'",
+    `SELECT COALESCE(SUM(e.amount), 0) AS s FROM expenses e WHERE e.user_id = ? AND e.date >= ? AND e.date <= ? AND ${VARIABLE_EXPENSE_COND}`,
     userId,
     range.start,
     range.end,
@@ -705,12 +721,12 @@ export interface NoMoneyDays {
   streak: number; // 今日までの連続日数（今日未消費なら今日も含む）
 }
 
-/** ノーマネーデー：変動支出（定期計上を除く）が1件も無かった日。過去月は月全体、当月は今日まで */
+/** ノーマネーデー：変動支出（固定費の定期計上を除く）が1件も無かった日。過去月は月全体、当月は今日まで */
 export async function noMoneyDays(userId: string, month: string): Promise<NoMoneyDays> {
   const d = await db();
   const range = await monthRange(userId, month); // B9: 期間は締め日基準
   const rows = await d.all<{ date: string }>(
-    "SELECT DISTINCT date FROM expenses WHERE user_id = ? AND date >= ? AND date <= ? AND source != 'recurring'",
+    `SELECT DISTINCT e.date FROM expenses e WHERE e.user_id = ? AND e.date >= ? AND e.date <= ? AND ${VARIABLE_EXPENSE_COND}`,
     userId,
     range.start,
     range.end,
@@ -735,6 +751,133 @@ export interface CategorySpend {
   category: string;
   amount: number;
   count: number;
+}
+
+// ---------------------------------------------------------------------------
+// B11: 支出の検索（店名/メモの部分一致＋カテゴリ＋金額範囲。全期間・ページング）
+// ---------------------------------------------------------------------------
+
+export interface ExpenseSearchQuery {
+  q?: string; // 店名/メモの部分一致
+  categoryId?: string;
+  min?: number | null; // 金額下限（円）
+  max?: number | null; // 金額上限（円）
+  offset?: number;
+  limit?: number;
+}
+
+export interface ExpenseSearchResult {
+  expenses: {
+    id: string;
+    date: string;
+    amount: number;
+    memo: string;
+    source: string;
+    category_id: string | null;
+    receipt_id: string | null;
+    category: string | null;
+    icon: string | null;
+  }[];
+  total: number; // 条件に合う全件数（ページング用）
+  offset: number;
+  limit: number;
+}
+
+/** LIKE 用エスケープ（% _ \ をリテラル扱いに） */
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (m) => `\\${m}`);
+}
+
+export async function searchExpenses(
+  userId: string,
+  query: ExpenseSearchQuery,
+): Promise<ExpenseSearchResult> {
+  const d = await db();
+  const conds = ["e.user_id = ?"];
+  const params: (string | number)[] = [userId];
+  const q = (query.q ?? "").trim();
+  if (q) {
+    conds.push("e.memo LIKE ? ESCAPE '\\'");
+    params.push(`%${escapeLike(q)}%`);
+  }
+  if (query.categoryId) {
+    conds.push("e.category_id = ?");
+    params.push(query.categoryId);
+  }
+  if (query.min != null && Number.isFinite(query.min)) {
+    conds.push("e.amount >= ?");
+    params.push(Math.round(query.min));
+  }
+  if (query.max != null && Number.isFinite(query.max) && query.max > 0) {
+    conds.push("e.amount <= ?");
+    params.push(Math.round(query.max));
+  }
+  const where = conds.join(" AND ");
+  const limit = Math.min(Math.max(1, Math.round(query.limit ?? 50)), 100);
+  const offset = Math.max(0, Math.round(query.offset ?? 0));
+  const totalRow = (await d.get<{ c: number }>(
+    `SELECT COUNT(*) AS c FROM expenses e WHERE ${where}`,
+    ...params,
+  )) as { c: number };
+  const expenses = await d.all<ExpenseSearchResult["expenses"][number]>(
+    `SELECT e.id, e.date, e.amount, e.memo, e.source, e.category_id, e.receipt_id, c.name AS category, c.icon
+     FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
+     WHERE ${where} ORDER BY e.date DESC, e.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+    ...params,
+  );
+  return {
+    expenses: expenses.map((e) => ({ ...e, amount: Number(e.amount) })),
+    total: Number(totalRow.c),
+    offset,
+    limit,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// C13: 袋分けポケット（カテゴリ別月予算）と繰り越し。
+// carryover=1 のカテゴリは「前月の余り（予算−前月支出）」を当月予算に加算表示する。
+// マイナス繰り越しはしない（前月オーバーしても当月予算は減らさない・0下限）。
+// ---------------------------------------------------------------------------
+
+export interface PocketBudget {
+  id: string;
+  name: string;
+  icon: string;
+  budget: number; // 設定した月予算（土台）
+  spent: number; // 今月の支出
+  carryover: number; // 1=繰り越しON
+  carryoverAmount: number; // 前月の余り（0下限。carryover=0なら常に0）
+}
+
+export async function pocketBudgets(
+  userId: string,
+  month = currentMonth(),
+): Promise<PocketBudget[]> {
+  const prev = shiftMonthBy(month, -1);
+  const d = await db();
+  const rows = await d.all<Omit<PocketBudget, "carryoverAmount"> & { prev_spent: number }>(
+    `SELECT c.id, c.name, c.icon, COALESCE(b.amount, 0) AS budget, COALESCE(b.carryover, 0) AS carryover,
+            COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE e.user_id = c.user_id AND e.category_id = c.id AND e.date LIKE ?), 0) AS spent,
+            COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE e.user_id = c.user_id AND e.category_id = c.id AND e.date LIKE ?), 0) AS prev_spent
+     FROM categories c
+     LEFT JOIN category_budgets b ON b.category_id = c.id AND b.user_id = c.user_id
+     WHERE c.user_id = ? ORDER BY c.sort`,
+    `${month}-%`,
+    `${prev}-%`,
+    userId,
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    icon: r.icon,
+    budget: Number(r.budget),
+    spent: Number(r.spent),
+    carryover: Number(r.carryover),
+    carryoverAmount:
+      Number(r.carryover) && Number(r.budget) > 0
+        ? Math.max(0, Number(r.budget) - Number(r.prev_spent))
+        : 0,
+  }));
 }
 
 /** 月のカテゴリ別支出（レビュー用） */

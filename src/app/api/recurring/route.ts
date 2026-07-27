@@ -12,7 +12,7 @@ export async function GET() {
     const user = await requireUser();
     const d = await db();
     const items = await d.all(
-      `SELECT r.id, r.kind, r.name, r.amount, r.category_id, r.start_month, r.end_month, r.post_day, r.interval, c.name AS category
+      `SELECT r.id, r.kind, r.name, r.amount, r.category_id, r.start_month, r.end_month, r.post_day, r.interval, r.is_fixed, c.name AS category
        FROM recurring_items r LEFT JOIN categories c ON c.id = r.category_id
        WHERE r.user_id = ? ORDER BY r.kind, r.name`,
       user.id,
@@ -36,6 +36,7 @@ export async function POST(request: Request) {
       endMonth?: string | null;
       postDay?: number;
       interval?: string;
+      isFixed?: boolean; // C12: false=変動費扱い（既定は固定費）
     };
     const name = (body.name ?? "").trim();
     const amount = Math.round(Number(body.amount));
@@ -48,10 +49,11 @@ export async function POST(request: Request) {
     const endMonth = body.endMonth && MONTH_RE.test(body.endMonth) ? body.endMonth : null;
     const postDay = Math.min(Math.max(1, Math.round(Number(body.postDay) || 1)), 31);
     const interval = body.interval === "yearly" ? "yearly" : "monthly";
+    const isFixed = body.isFixed === false ? 0 : 1; // C12: 既定は固定費
     const id = uid();
     const d = await db();
     await d.run(
-      "INSERT INTO recurring_items (id, user_id, kind, name, amount, category_id, start_month, end_month, post_day, interval) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO recurring_items (id, user_id, kind, name, amount, category_id, start_month, end_month, post_day, interval, is_fixed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       id,
       user.id,
       kind,
@@ -62,8 +64,31 @@ export async function POST(request: Request) {
       endMonth,
       postDay,
       interval,
+      isFixed,
     );
     return Response.json({ ok: true, id });
+  } catch (e) {
+    if (e instanceof AuthError) return unauthorized();
+    return Response.json({ error: String(e) }, { status: 500 });
+  }
+}
+
+// C12: 固定費/変動費フラグの切り替え（一覧のタグをタップで反転）
+export async function PUT(request: Request) {
+  try {
+    const user = await requireUser();
+    const body = (await request.json()) as { id?: string; isFixed?: boolean };
+    if (!body.id || typeof body.isFixed !== "boolean") {
+      return Response.json({ error: "id と isFixed は必須です。" }, { status: 400 });
+    }
+    const d = await db();
+    await d.run(
+      "UPDATE recurring_items SET is_fixed = ? WHERE id = ? AND user_id = ?",
+      body.isFixed ? 1 : 0,
+      body.id,
+      user.id,
+    );
+    return Response.json({ ok: true });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
     return Response.json({ error: String(e) }, { status: 500 });

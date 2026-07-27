@@ -282,6 +282,85 @@ function normalizeReceipt(raw: Partial<ReceiptScan>, categoryNames: string[]): R
   };
 }
 
+// ---------------------------------------------------------------------------
+// C2: 他アプリ画面のスクショ → 明細リスト（乗り換えインポート用・複数明細）
+// ---------------------------------------------------------------------------
+
+export interface ImportScanEntry {
+  date: string; // YYYY-MM-DD
+  kind: "expense" | "income";
+  amount: number;
+  category: string; // 候補リストから（判断できなければ ""）
+  memo: string; // 店名・内容
+}
+
+function importListPromptBody(categoryNames: string[], today: string): string {
+  return [
+    "画面には家計簿アプリ・銀行アプリ・決済アプリ等の【明細リスト】（複数の支出・収入の行）が写っています。読み取れる明細をすべて配列で返してください。",
+    `・date: 各明細の日付を YYYY-MM-DD で。年が写っていなければ ${today} に近い過去の日付と解釈。「今日」「昨日」等も今日基準で解決。日付がどうしても読めない行は含めない。`,
+    "・kind: 支出（支払い・引き落とし）なら expense、収入（入金・給与・受け取り）なら income。",
+    "・amount: 金額（正の数値のみ。マイナス表示でも絶対値で）。",
+    `・category: その明細に最も合うカテゴリを次のリストから【一字一句そのまま】1つ選ぶ（確信が持てなければ空文字 ""）: ${categoryNames.join(" / ")}`,
+    "・memo: 店名や内容の短い要約（金額と日付は含めない）。",
+    "・合計行・残高行・振替（口座間の移動）は含めない。最大50件。",
+    '出力はJSONだけ: {"entries":[{"date":"YYYY-MM-DD","kind":"expense","amount":650,"category":"…","memo":"…"}]}',
+  ].join("\n");
+}
+
+/** 他アプリ画面のスクショ → 明細リスト（複数明細対応の乗り換えインポート） */
+export async function askClaudeImportList(
+  imagePath: string,
+  categoryNames: string[],
+  plan: Plan = "founder",
+): Promise<ImportScanEntry[]> {
+  const today = localToday().str;
+  let text: string;
+  if (USE_API) {
+    const { data, media } = await resizeForApi(imagePath); // 長辺1280pxへ縮小（コスト削減）
+    const msg = await api().messages.create({
+      model: apiModelFor(plan, "standard"), // free は Haiku、それ以外は Sonnet
+      max_tokens: 4096,
+      system: SYSTEM_RECEIPT_VISION_API,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: media, data },
+            },
+            { type: "text", text: importListPromptBody(categoryNames, today) },
+          ],
+        },
+      ],
+    });
+    text = textOf(msg);
+  } else {
+    const prompt = [
+      "次の画像ファイルを Read ツールで開いてください。",
+      `ファイル: ${imagePath}`,
+      importListPromptBody(categoryNames, today),
+    ].join("\n");
+    text = await runClaude(prompt, SYSTEM_RECEIPT_VISION, ["Read"], "sonnet");
+  }
+  const raw = extractJson<{ entries?: Partial<ImportScanEntry>[] }>(text);
+  return (raw.entries ?? [])
+    .map((e) => ({
+      date: typeof e.date === "string" ? e.date : "",
+      kind: e.kind === "income" ? ("income" as const) : ("expense" as const),
+      amount: Math.round(Number(e.amount)),
+      category:
+        typeof e.category === "string" && categoryNames.includes(e.category.trim())
+          ? e.category.trim()
+          : "",
+      memo: typeof e.memo === "string" ? e.memo.trim().slice(0, 100) : "",
+    }))
+    .filter(
+      (e) => /^\d{4}-\d{2}-\d{2}$/.test(e.date) && Number.isFinite(e.amount) && e.amount > 0,
+    )
+    .slice(0, 50);
+}
+
 export interface ParsedShiftItem {
   date: string;
   startMin: number;

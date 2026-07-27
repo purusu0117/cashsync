@@ -27,6 +27,7 @@ interface Breakdown {
   category: string;
   icon: string;
   amount: number;
+  fixedAmount?: number; // C12: うち固定費（旧キャッシュには無いので optional）
 }
 interface Pocket {
   id: string;
@@ -34,6 +35,8 @@ interface Pocket {
   icon: string;
   budget: number;
   spent: number;
+  carryover?: number; // C13: 1=繰り越しON（旧キャッシュには無いので optional）
+  carryoverAmount?: number; // C13: 前月の余り（0下限）
 }
 interface Review {
   headline: string;
@@ -53,8 +56,8 @@ function shiftMonth(month: string, delta: number): string {
 }
 
 export default function StatsPage() {
-  // C9: 週次振り返りをグラフ画面に常設（「週/月」切替。既定は月）
-  const [view, setView] = useState<"month" | "week">("month");
+  // C9: 週次振り返りをグラフ画面に常設（「週/月/年」切替。既定は月。C14: 年間ビュー追加）
+  const [view, setView] = useState<"month" | "week" | "year">("month");
   const [before, setBefore] = useState(todayLocal().slice(0, 7));
   const [selected, setSelected] = useState(todayLocal().slice(0, 7));
   const [series, setSeries] = useState<Point[]>([]);
@@ -65,6 +68,10 @@ export default function StatsPage() {
   const [pockets, setPockets] = useState<Pocket[]>([]);
   const [editPocket, setEditPocket] = useState<string | null>(null);
   const [pocketAmount, setPocketAmount] = useState("");
+  const [pocketCarry, setPocketCarry] = useState(false); // C13: 繰り越しトグル
+  // C14: 年間ビュー（1〜12月の収支バー＋年合計。過去は全期間さかのぼり可能）
+  const [year, setYear] = useState(Number(todayLocal().slice(0, 4)));
+  const [yearSeries, setYearSeries] = useState<Point[]>([]);
 
   const [ready, setReady] = useState(false); // 初回データ（キャッシュ含む）が来るまでスケルトン表示
 
@@ -82,7 +89,11 @@ export default function StatsPage() {
     await fetch("/api/budgets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ categoryId, amount: Number(pocketAmount) || 0 }),
+      body: JSON.stringify({
+        categoryId,
+        amount: Number(pocketAmount) || 0,
+        carryover: pocketCarry, // C13: 前月の余りを当月予算に繰り越す
+      }),
     });
     setEditPocket(null);
     setPocketAmount("");
@@ -128,6 +139,16 @@ export default function StatsPage() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [before, selected, load]);
 
+  // C14: 年間ビューのデータ（1〜12月）。before=YYYY-12 & months=12 でその年が丸ごと返る
+  const yearReq = useRef(0);
+  useEffect(() => {
+    if (view !== "year") return;
+    const req = ++yearReq.current;
+    cachedFetch<{ series?: Point[] }>(`/api/stats?months=12&before=${year}-12`, (d) => {
+      if (yearReq.current === req) setYearSeries(d.series ?? []);
+    }).catch(() => {});
+  }, [view, year]);
+
   async function loadReview() {
     setReviewLoading(true);
     setReviewError("");
@@ -148,7 +169,7 @@ export default function StatsPage() {
 
   if (!ready) return <Loading label="集計中・・・" />;
 
-  const segBtn = (v: "month" | "week", label: string) => (
+  const segBtn = (v: "month" | "week" | "year", label: string) => (
     <button
       onClick={() => setView(v)}
       aria-pressed={view === v}
@@ -163,15 +184,127 @@ export default function StatsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="dot text-lg">{view === "week" ? "週の振り返り" : "収支グラフ"}</h1>
-        {/* C9: 週/月切替（週＝先週の振り返り・月＝従来のグラフと内訳） */}
-        <div className="flex w-32 shrink-0 rounded-md border border-rule bg-paper p-0.5">
+        <h1 className="dot text-lg">
+          {view === "week" ? "週の振り返り" : view === "year" ? "年間の収支" : "収支グラフ"}
+        </h1>
+        {/* C9: 週/月/年切替（週＝先週の振り返り・月＝従来のグラフと内訳・年＝C14年間ビュー） */}
+        <div className="flex w-44 shrink-0 rounded-md border border-rule bg-paper p-0.5">
           {segBtn("week", "週")}
           {segBtn("month", "月")}
+          {segBtn("year", "年")}
         </div>
       </div>
 
       {view === "week" && <WeeklyReview />}
+
+      {/* C14: 年間ビュー（月ごとの収支バー12ヶ月＋年合計。過去年へは無制限にさかのぼれる） */}
+      {view === "year" && (
+        <>
+          <section className="zig zig-t zig-b px-3 py-4 shadow-sm">
+            <div className="flex items-center justify-between px-1">
+              <button onClick={() => setYear(year - 1)} className="dot px-2 text-lg">
+                ◀
+              </button>
+              <p className="dot text-sm">{year}年</p>
+              <button
+                onClick={() => setYear(year + 1)}
+                disabled={year >= Number(todayLocal().slice(0, 4))}
+                className="dot px-2 text-lg disabled:opacity-30"
+              >
+                ▶
+              </button>
+            </div>
+            <div className="mt-2 flex justify-center gap-4 text-[11px]">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: INCOME }} />
+                収入
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: EXPENSE }} />
+                支出
+              </span>
+            </div>
+            <div className="mt-1 h-52">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={yearSeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={1}>
+                  <CartesianGrid vertical={false} stroke="var(--rule)" strokeDasharray="2 4" />
+                  <XAxis
+                    dataKey="month"
+                    tickFormatter={(m: string) => `${Number(m.slice(5))}`}
+                    tick={{ fontSize: 10, fill: "var(--ink-faint)" }}
+                    axisLine={{ stroke: "var(--rule)" }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tickFormatter={(v: number) => (v >= 10000 ? `${v / 10000}万` : String(v))}
+                    tick={{ fontSize: 10, fill: "var(--ink-faint)" }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={34}
+                  />
+                  <Tooltip
+                    cursor={{ fill: "rgba(33,29,24,0.05)" }}
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null;
+                      const p = payload[0].payload as Point;
+                      return (
+                        <div className="zig zig-b rounded-t-sm px-3 py-2 text-xs shadow-md">
+                          <p className="dot">{fmtMonthJa(String(label))}</p>
+                          <p style={{ color: INCOME }}>収入 {fmtYen(p.income)}</p>
+                          <p style={{ color: EXPENSE }}>支出 {fmtYen(p.expense)}</p>
+                          <p className="text-ink-faint">実績（収入−支出） {fmtYen(p.savings)}</p>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar dataKey="income" fill={INCOME} radius={[1, 1, 0, 0]} maxBarSize={10} />
+                  <Bar dataKey="expense" fill={EXPENSE} radius={[1, 1, 0, 0]} maxBarSize={10} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
+            <h2 className="dot text-sm tracking-[0.1em]">{year}年の合計</h2>
+            {(() => {
+              const inc = yearSeries.reduce((s, p) => s + p.income, 0);
+              const exp = yearSeries.reduce((s, p) => s + p.expense, 0);
+              const sav = inc - exp;
+              return (
+                <div className="mt-2 space-y-1 text-sm">
+                  <div className="flex items-baseline">
+                    <span className="text-ink-faint">収入</span>
+                    <span className="leader" />
+                    <span className="dot tabular-nums" style={{ color: INCOME }}>
+                      +{fmtYen(inc)}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline">
+                    <span className="text-ink-faint">支出</span>
+                    <span className="leader" />
+                    <span className="dot tabular-nums" style={{ color: EXPENSE }}>
+                      −{fmtYen(exp)}
+                    </span>
+                  </div>
+                  <div className="cutline my-1.5" />
+                  <div className="flex items-baseline">
+                    <span className="text-ink-faint">年間の実績（収入−支出）</span>
+                    <span className="leader" />
+                    <span
+                      className="dot text-xl tabular-nums"
+                      style={{ color: sav >= 0 ? INCOME : EXPENSE }}
+                    >
+                      {sav >= 0 ? "+" : ""}
+                      {fmtYen(sav)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+            <div className="barcode mt-5" />
+          </section>
+        </>
+      )}
 
       {view === "month" && (
         <>
@@ -267,33 +400,67 @@ export default function StatsPage() {
             </span>
           </div>
         )}
-        <ul className="cutline mt-3 space-y-2.5 pt-3">
-          {breakdown.length === 0 && (
-            <li className="py-4 text-center text-xs text-ink-faint">この月の支出はありません。</li>
-          )}
-          {breakdown.map((b) => {
-            const share = sel && sel.expense > 0 ? Math.round((b.amount / sel.expense) * 100) : 0;
+        {/* C12: 内訳を固定費（定期の家賃・サブスク等）と変動費に分けて印字する */}
+        {(() => {
+          const fixedRows = breakdown
+            .map((b) => ({ ...b, amount: b.fixedAmount ?? 0 }))
+            .filter((b) => b.amount > 0);
+          const varRows = breakdown
+            .map((b) => ({ ...b, amount: b.amount - (b.fixedAmount ?? 0) }))
+            .filter((b) => b.amount > 0);
+          const fixedTotal = fixedRows.reduce((s, b) => s + b.amount, 0);
+          const varTotal = varRows.reduce((s, b) => s + b.amount, 0);
+          const renderRows = (rows: typeof fixedRows) =>
+            rows.map((b) => {
+              const share = sel && sel.expense > 0 ? Math.round((b.amount / sel.expense) * 100) : 0;
+              return (
+                <li key={b.category}>
+                  <div className="flex items-baseline text-sm">
+                    {b.category !== "未分類" && (
+                      <CategoryIcon icon={b.icon} className="mr-1 h-4 w-4 shrink-0 self-center text-ink-faint" />
+                    )}
+                    <span>{b.category}</span>
+                    <span className="ml-1.5 text-[10px] text-ink-faint">{share}%</span>
+                    <span className="leader" />
+                    <span className="dot text-[15px] tabular-nums">{fmtYen(b.amount)}</span>
+                  </div>
+                  <div className="mt-1 h-1 rounded-full bg-paper">
+                    <div
+                      className="h-full rounded-full bg-ink/50"
+                      style={{ width: `${(b.amount / maxBd) * 100}%` }}
+                    />
+                  </div>
+                </li>
+              );
+            });
+          if (breakdown.length === 0) {
             return (
-              <li key={b.category}>
-                <div className="flex items-baseline text-sm">
-                  {b.category !== "未分類" && (
-                    <CategoryIcon icon={b.icon} className="mr-1 h-4 w-4 shrink-0 self-center text-ink-faint" />
-                  )}
-                  <span>{b.category}</span>
-                  <span className="ml-1.5 text-[10px] text-ink-faint">{share}%</span>
-                  <span className="leader" />
-                  <span className="dot text-[15px] tabular-nums">{fmtYen(b.amount)}</span>
-                </div>
-                <div className="mt-1 h-1 rounded-full bg-paper">
-                  <div
-                    className="h-full rounded-full bg-ink/50"
-                    style={{ width: `${(b.amount / maxBd) * 100}%` }}
-                  />
-                </div>
-              </li>
+              <p className="cutline mt-3 py-4 pt-3 text-center text-xs text-ink-faint">
+                この月の支出はありません。
+              </p>
             );
-          })}
-        </ul>
+          }
+          // 固定費が無い月は従来どおり1本のリスト（見出しを増やさない）
+          if (fixedTotal === 0) {
+            return <ul className="cutline mt-3 space-y-2.5 pt-3">{renderRows(varRows)}</ul>;
+          }
+          return (
+            <div className="cutline mt-3 pt-3">
+              <h3 className="flex items-baseline text-xs">
+                <span className="dot text-ink-faint">固定費（定期・分割）</span>
+                <span className="leader" />
+                <span className="dot tabular-nums">{fmtYen(fixedTotal)}</span>
+              </h3>
+              <ul className="mt-2 space-y-2.5">{renderRows(fixedRows)}</ul>
+              <h3 className="mt-3 flex items-baseline text-xs">
+                <span className="dot text-ink-faint">変動費（日々の支出）</span>
+                <span className="leader" />
+                <span className="dot tabular-nums">{fmtYen(varTotal)}</span>
+              </h3>
+              <ul className="mt-2 space-y-2.5">{renderRows(varRows)}</ul>
+            </div>
+          );
+        })()}
         <div className="barcode mt-5" />
       </section>
 

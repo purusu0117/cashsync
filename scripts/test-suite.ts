@@ -38,10 +38,14 @@ import {
   nextPayday,
   noMoneyDays,
   paydays,
+  pocketBudgets,
   postRecurringForMonth,
+  searchExpenses,
   todaySpent,
   todayStr,
 } from "../src/lib/money";
+import { collectExportRows, toCsv } from "../src/lib/exportCsv";
+import { decodeCsvBuffer, mapCsv, normalizeDate, parseCsv, resolveCategoryId } from "../src/lib/importCsv";
 import {
   changePassword,
   consumePasswordReset,
@@ -1819,6 +1823,222 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
     Number((await d.get<{ c: number }>("SELECT COUNT(*) AS c FROM expenses WHERE user_id = ?", u25))!.c) > 0 &&
       Number((await d.get<{ c: number }>("SELECT COUNT(*) AS c FROM users WHERE id = ?", u25))!.c) === 1,
   );
+
+  // --- Batch5: データ系（C12 固定費/変動費・C13 繰り越し・B11 検索・B10 CSV出力・C2 インポート） ---
+  console.log("[Batch5] データ系");
+  const u5 = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    u5,
+    "batch5@example.com",
+    "バッチ5",
+    hashPassword("password123"),
+    Date.now(),
+  );
+  await seedCategories(u5);
+  const cats5 = await d.all<{ id: string; name: string }>(
+    "SELECT id, name FROM categories WHERE user_id = ? ORDER BY sort",
+    u5,
+  );
+  const cat5 = (name: string) => cats5.find((c) => c.name === name)!.id;
+
+  // C12: is_fixed=1（既定）＝固定費、is_fixed=0＝変動費として日々の支出側に数える
+  const recFixed = uid();
+  const recVar = uid();
+  await d.run(
+    "INSERT INTO recurring_items (id, user_id, kind, name, amount, category_id, start_month, end_month, post_day, interval, is_fixed) VALUES (?, ?, 'expense', '家賃', 60000, ?, '2005-07', '2005-07', 1, 'monthly', 1)",
+    recFixed,
+    u5,
+    cat5("住まい"),
+  );
+  await d.run(
+    "INSERT INTO recurring_items (id, user_id, kind, name, amount, category_id, start_month, end_month, post_day, interval, is_fixed) VALUES (?, ?, 'expense', 'ジム', 8000, ?, '2005-07', '2005-07', 1, 'monthly', 0)",
+    recVar,
+    u5,
+    cat5("娯楽"),
+  );
+  await postRecurringForMonth(u5, "2005-07");
+  await d.run(
+    "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, created_at) VALUES (?, ?, '2005-07-05', 1200, ?, 'コンビニ', 'manual', ?)",
+    uid(),
+    u5,
+    cat5("食費"),
+    Date.now(),
+  );
+  // 旧レコード（recurring_id が NULL の定期計上）は従来どおり固定費扱い
+  await d.run(
+    "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, created_at) VALUES (?, ?, '2005-07-03', 5000, NULL, '旧定期', 'recurring', ?)",
+    uid(),
+    u5,
+    Date.now(),
+  );
+  check(
+    "C12: monthFixedCost は is_fixed=1 の定期＋旧レコードのみ（60000+5000）",
+    (await monthFixedCost(u5, "2005-07")) === 65000,
+    await monthFixedCost(u5, "2005-07"),
+  );
+  check(
+    "C12: is_fixed=0 の定期計上は変動費（todaySpent に入る）",
+    (await todaySpent(u5, "2005-07-01")) === 8000,
+    await todaySpent(u5, "2005-07-01"),
+  );
+  check(
+    "C12: 手入力は従来どおり変動費",
+    (await todaySpent(u5, "2005-07-05")) === 1200,
+    await todaySpent(u5, "2005-07-05"),
+  );
+  {
+    const sum5 = await monthSummary(u5, "2005-07");
+    check(
+      "C12: 固定費＋変動費＝支出総額（取りこぼしなし）",
+      Number(sum5.expenseTotal) === 65000 + 8000 + 1200,
+      sum5.expenseTotal,
+    );
+    const bd = await categoryBreakdown(u5, "2005-07");
+    check(
+      "C12: カテゴリ内訳は従来どおり全支出",
+      bd.reduce((a, c) => a + Number(c.amount), 0) === 74200,
+      bd,
+    );
+  }
+
+  // C13: 袋分けポケットの繰り越し（前月の余りを当月に加算・マイナス繰り越しなし）
+  await d.run(
+    "INSERT INTO category_budgets (user_id, category_id, amount, carryover) VALUES (?, ?, 30000, 1)",
+    u5,
+    cat5("交際"),
+  );
+  await d.run(
+    "INSERT INTO category_budgets (user_id, category_id, amount, carryover) VALUES (?, ?, 10000, 1)",
+    u5,
+    cat5("洋服"),
+  );
+  await d.run(
+    "INSERT INTO category_budgets (user_id, category_id, amount, carryover) VALUES (?, ?, 5000, 0)",
+    u5,
+    cat5("美容"),
+  );
+  const spend5 = async (date: string, amount: number, catId: string | null, memo: string) =>
+    d.run(
+      "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, created_at) VALUES (?, ?, ?, ?, ?, ?, 'manual', ?)",
+      uid(),
+      u5,
+      date,
+      amount,
+      catId,
+      memo,
+      Date.now(),
+    );
+  await spend5("2005-06-10", 22000, cat5("交際"), "先月の交際費"); // 余り8000
+  await spend5("2005-06-12", 13000, cat5("洋服"), "先月オーバー"); // -3000
+  await spend5("2005-06-15", 1000, cat5("美容"), "先月の美容"); // 繰り越しOFF
+  await spend5("2005-07-02", 4000, cat5("交際"), "今月の交際費");
+  {
+    const pockets = await pocketBudgets(u5, "2005-07");
+    const p = (name: string) => pockets.find((x) => x.id === cat5(name))!;
+    check("C13: 前月の余り8000が繰り越される", p("交際").carryoverAmount === 8000, p("交際"));
+    check("C13: 土台の予算は据え置き", p("交際").budget === 30000, p("交際"));
+    check("C13: 今月の支出が入る", p("交際").spent === 4000, p("交際"));
+    check("C13: 前月オーバーでもマイナス繰り越ししない", p("洋服").carryoverAmount === 0, p("洋服"));
+    check("C13: 繰り越しOFFは常に0", p("美容").carryoverAmount === 0, p("美容"));
+    check("C13: 予算未設定カテゴリは budget=0・繰り越し0", p("旅行").budget === 0 && p("旅行").carryoverAmount === 0, p("旅行"));
+    check("C13: 全カテゴリ分のポケットが返る", pockets.length === 14, pockets.length);
+  }
+
+  // B11: 支出の検索（部分一致・カテゴリ・金額範囲・ページング・LIKEメタ文字）
+  await spend5("2005-05-01", 500, cat5("食費"), "セブンイレブン 矢部店");
+  await spend5("2005-05-02", 1500, cat5("食費"), "セブンイレブン 淵野辺店");
+  await spend5("2005-05-03", 12000, null, "セブン銀行 引き出し");
+  await spend5("2005-05-04", 800, cat5("娯楽"), "50%OFFセール");
+  {
+    const r = await searchExpenses(u5, { q: "セブン" });
+    check("B11: 部分一致で3件", r.total === 3, r.total);
+    check("B11: 日付降順で返る", r.expenses[0].memo === "セブン銀行 引き出し", r.expenses[0]);
+    check("B11: 金額は number", typeof r.expenses[0].amount === "number", r.expenses[0].amount);
+    check("B11: LIKEメタ文字%はリテラル扱い", (await searchExpenses(u5, { q: "%" })).total === 1);
+    check("B11: LIKEメタ文字_もリテラル扱い", (await searchExpenses(u5, { q: "_" })).total === 0);
+    check(
+      "B11: カテゴリ絞り込み",
+      (await searchExpenses(u5, { q: "セブン", categoryId: cat5("食費") })).total === 2,
+    );
+    check("B11: 金額範囲", (await searchExpenses(u5, { q: "セブン", min: 1000, max: 5000 })).total === 1);
+    const page1 = await searchExpenses(u5, { q: "セブン", limit: 2, offset: 0 });
+    const page2 = await searchExpenses(u5, { q: "セブン", limit: 2, offset: 2 });
+    check("B11: ページング（1ページ目2件・totalは全件）", page1.expenses.length === 2 && page1.total === 3);
+    check("B11: ページング（2ページ目1件・重複なし）", page2.expenses.length === 1 && page2.expenses[0].id !== page1.expenses[0].id);
+    check("B11: 他ユーザーの支出は混ざらない", (await searchExpenses(u25, { q: "セブン" })).total === 0);
+  }
+
+  // B10: CSVエクスポート（支出・収入・シフト給与・期間・エスケープ）
+  await spend5("2005-08-10", 1000, cat5("食費"), "ラーメン,大盛り");
+  await spend5("2005-08-12", 2000, cat5("娯楽"), 'クオート"付き');
+  await d.run(
+    "INSERT INTO incomes (id, user_id, date, amount, type, memo, created_at) VALUES (?, ?, '2005-08-11', 30000, 'other', 'メルカリ売上', ?)",
+    uid(),
+    u5,
+    Date.now(),
+  );
+  {
+    const job5 = uid();
+    await d.run(
+      "INSERT INTO jobs (id, user_id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, calendar_keywords, closing_day, pay_month_offset, pay_day) VALUES (?, ?, 'キミハン', 1300, 1400, 0, '', 31, 0, 25)",
+      job5,
+      u5,
+    );
+    // 2005-08-08(月) 18:00-22:30 休憩0 → 4.5h × 1300 = 5850
+    await d.run(
+      "INSERT INTO shifts (id, user_id, job_id, date, start_min, end_min, break_min, source) VALUES (?, ?, ?, '2005-08-08', 1080, 1350, 0, 'manual')",
+      uid(),
+      u5,
+      job5,
+    );
+    const aug = await collectExportRows(u5, "2005-08-01", "2005-08-31");
+    check("B10: 期間内の行だけ（支出2＋収入1＋シフト1）", aug.length === 4, aug.length);
+    check("B10: 日付昇順", aug.map((r) => r.date).join(",") === "2005-08-08,2005-08-10,2005-08-11,2005-08-12", aug.map((r) => r.date));
+    check("B10: シフト給与の金額（4.5h×1300）", aug.find((r) => r.kind === "シフト給与")?.amount === 5850, aug);
+    check("B10: 収入行", aug.find((r) => r.kind === "収入")?.amount === 30000, aug);
+    const csv = toCsv(aug);
+    check("B10: BOM＋ヘッダ", csv.startsWith("﻿日付,種別,金額,カテゴリ,メモ,入力方法\r\n"), csv.slice(0, 40));
+    check("B10: カンマ入りメモはクォート", csv.includes('"ラーメン,大盛り"'));
+    check("B10: 引用符は二重化", csv.includes('"クオート""付き"'));
+    check("B10: 行数＝ヘッダ1＋4件", csv.trimEnd().split("\r\n").length === 5, csv.trimEnd().split("\r\n").length);
+    let threw = false;
+    try {
+      await collectExportRows(u5, "2005-08-01'; DROP TABLE expenses;--");
+    } catch {
+      threw = true;
+    }
+    check("B10: 不正な期間文字列は例外（SQL連結の防御）", threw);
+  }
+
+  // C2: インポート（純粋関数：形式自動判定・カテゴリ解決）
+  {
+    const zaim = [
+      "日付,方法,カテゴリ,カテゴリの内訳,支払元,入金先,品目,メモ,お店,通貨,収入,支出,振替",
+      "2005-07-01,payment,食費,食料品,現金,,,ランチ,セブンイレブン,JPY,0,650,0",
+      "2005-07-02,income,給与,,,銀行,,,,JPY,50000,0,0",
+      "2005-07-03,振替,-,,現金,銀行,,,,JPY,0,10000,0",
+    ].join("\n");
+    const rz = mapCsv(zaim);
+    check("C2: Zaim形式を自動判定", rz.format === "zaim", rz.format);
+    check("C2: 振替をスキップして2件", rz.rows.length === 2 && rz.skipped === 1, rz);
+    const mf = [
+      "計算対象,日付,内容,金額（円）,保有金融機関,大項目,中項目,メモ,振替,ID",
+      "1,2005/07/01,ローソン,-540,現金,食費,食料品,,0,a1",
+      "1,2005/07/05,給与,250000,銀行,収入,給与,,0,a2",
+      "0,2005/07/06,対象外,-100,現金,食費,,,0,a3",
+    ].join("\n");
+    const rm = mapCsv(mf);
+    check("C2: マネーフォワード形式を自動判定", rm.format === "moneyforward", rm.format);
+    check("C2: 計算対象0をスキップ・マイナス=支出", rm.rows.length === 2 && rm.rows[0].kind === "expense" && rm.rows[0].amount === 540, rm.rows);
+    check("C2: 日付正規化（3形式）", normalizeDate("2005/7/5") === "2005-07-05" && normalizeDate("2005年7月5日") === "2005-07-05" && normalizeDate("だめ") === null);
+    check("C2: クォート内カンマのCSVパース", parseCsv('a,b\n"x,y",2\n')[1][0] === "x,y");
+    check("C2: カテゴリ完全一致", resolveCategoryId("食費", cats5) === cat5("食費"));
+    check("C2: エイリアス（食料品→食費）", resolveCategoryId("食料品", cats5) === cat5("食費"));
+    check("C2: エイリアス（光熱費→住まい）", resolveCategoryId("水道・光熱費", cats5) === cat5("住まい"));
+    check("C2: 未知カテゴリは null", resolveCategoryId("宇宙開発", cats5) === null);
+    check("C2: UTF-8で壊れる場合はShift_JISで読み直す", decodeCsvBuffer(new Uint8Array([0x93, 0xfa, 0x95, 0x74])) === "日付");
+  }
 
   console.log(`\n結果: ${passed} passed / ${failed} failed`);
   return { passed, failed };

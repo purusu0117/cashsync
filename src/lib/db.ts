@@ -356,6 +356,9 @@ function migrateSqlite(d: DatabaseSync) {
     d.exec("UPDATE users SET plan = 'founder'");
   }
   addColumn(d, "users", "month_start_day INTEGER NOT NULL DEFAULT 1"); // B9: 家計簿の月の開始日（1〜28。25なら7/25〜8/24が「8月」）
+  addColumn(d, "recurring_items", "is_fixed INTEGER NOT NULL DEFAULT 1"); // C12: 1=固定費（先取り対象）, 0=変動費扱い
+  addColumn(d, "expenses", "recurring_id TEXT"); // C12: どの定期から計上されたか（固定/変動の判定用。旧レコードはNULL=固定扱い）
+  addColumn(d, "category_budgets", "carryover INTEGER NOT NULL DEFAULT 0"); // C13: 1=前月の余りを当月予算に繰り越す
 }
 
 // 掛け持ちバイトの色パレット（紙背景で判別しやすい順）

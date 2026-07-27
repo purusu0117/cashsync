@@ -1,7 +1,8 @@
 // 袋分けポケット：カテゴリ別の月予算と今月の消化状況。
+// C13: carryover=1 のカテゴリは前月の余り（予算−支出・0下限）を当月予算に加算表示する。
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { currentMonth } from "@/lib/money";
+import { currentMonth, pocketBudgets } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -9,17 +10,7 @@ export async function GET() {
   try {
     const user = await requireUser();
     const month = currentMonth();
-    const d = await db();
-    const rows = await d.all(
-      `SELECT c.id, c.name, c.icon, COALESCE(b.amount, 0) AS budget,
-              COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE e.user_id = c.user_id AND e.category_id = c.id AND e.date LIKE ?), 0) AS spent
-       FROM categories c
-       LEFT JOIN category_budgets b ON b.category_id = c.id AND b.user_id = c.user_id
-       WHERE c.user_id = ? ORDER BY c.sort`,
-      `${month}-%`,
-      user.id,
-    );
-    return Response.json({ month, pockets: rows });
+    return Response.json({ month, pockets: await pocketBudgets(user.id, month) });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
     return Response.json({ error: String(e) }, { status: 500 });
@@ -29,7 +20,11 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const user = await requireUser();
-    const body = (await request.json()) as { categoryId?: string; amount?: number };
+    const body = (await request.json()) as {
+      categoryId?: string;
+      amount?: number;
+      carryover?: boolean; // C13: 前月の余りを繰り越すか
+    };
     if (!body.categoryId) return Response.json({ error: "categoryId required" }, { status: 400 });
     const d = await db();
     const cat = await d.get(
@@ -46,11 +41,13 @@ export async function POST(request: Request) {
         body.categoryId,
       );
     } else {
+      const carryover = body.carryover ? 1 : 0; // C13: 前月の余りを繰り越すか
       await d.run(
-        "INSERT INTO category_budgets (user_id, category_id, amount) VALUES (?, ?, ?) ON CONFLICT (user_id, category_id) DO UPDATE SET amount = excluded.amount",
+        "INSERT INTO category_budgets (user_id, category_id, amount, carryover) VALUES (?, ?, ?, ?) ON CONFLICT (user_id, category_id) DO UPDATE SET amount = excluded.amount, carryover = excluded.carryover",
         user.id,
         body.categoryId,
         amount,
+        carryover,
       );
     }
     return Response.json({ ok: true });
