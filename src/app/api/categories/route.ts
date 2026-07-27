@@ -8,8 +8,15 @@ export async function GET() {
   try {
     const user = await requireUser();
     const d = await db();
+    // used: 手入力フォームの「よく使うカテゴリ上位6個」用の使用回数（C6）
+    // CAST: PostgresのCOUNTはbigint（pgでは文字列になる）ため、数値で返す
     const categories = await d.all(
-      "SELECT id, name, icon, sort FROM categories WHERE user_id = ? ORDER BY sort",
+      `SELECT c.id, c.name, c.icon, c.sort, CAST(COUNT(e.id) AS INTEGER) AS used
+       FROM categories c
+       LEFT JOIN expenses e ON e.category_id = c.id AND e.user_id = c.user_id
+       WHERE c.user_id = ?
+       GROUP BY c.id, c.name, c.icon, c.sort
+       ORDER BY c.sort`,
       user.id,
     );
     return Response.json({ categories });

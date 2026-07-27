@@ -54,6 +54,13 @@ export async function POST(request: Request) {
       if (!name || !name.trim()) {
         return Response.json({ error: "名前を入力してください。" }, { status: 400 });
       }
+      // A7: 新規登録のみ8文字以上を必須にする（既存ユーザーのログインには影響させない）
+      if (password.length < 8) {
+        return Response.json(
+          { error: "パスワードは8文字以上にしてください。" },
+          { status: 400 },
+        );
+      }
       const existing = await d.get("SELECT id FROM users WHERE email = ?", em);
       if (existing) {
         return Response.json(

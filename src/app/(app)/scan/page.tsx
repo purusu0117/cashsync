@@ -13,6 +13,7 @@ import {
   TrashIcon,
 } from "@/components/Icons";
 import RewardCredit from "@/components/RewardCredit";
+import { netFetch } from "@/lib/clientApi";
 import { fmtYen, todayLocal } from "@/lib/format";
 import { deletePhotos, isNativePlatform, listRecentScreenshots } from "@/lib/native";
 import { takePendingImage } from "@/lib/pendingImage";
@@ -35,7 +36,10 @@ export default function ScanPage() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const libRef = useRef<HTMLInputElement>(null);
-  const [phase, setPhase] = useState<"idle" | "scanning" | "confirm" | "saving" | "done">("idle");
+  const [phase, setPhase] = useState<
+    "idle" | "scanning" | "failed" | "confirm" | "saving" | "done"
+  >("idle");
+  const [elapsed, setElapsed] = useState(0); // C5: 解析中の経過秒数
   const [fromLibrary, setFromLibrary] = useState(false);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState("");
@@ -79,6 +83,14 @@ export default function ScanPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // C5: 解析中は経過秒数を出す（待たされている感の軽減＋固まっていない安心感）
+  // ※リセット（0に戻す）は scanFile 側で行い、ここではカウントだけする
+  useEffect(() => {
+    if (phase !== "scanning") return;
+    const t = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [phase]);
+
   async function scanFile(file: File, lib = false) {
     setError("");
     setDupConfirm(false);
@@ -87,16 +99,23 @@ export default function ScanPage() {
     setSourceTakenAt(lib ? file.lastModified : 0);
     setCleanState("idle");
     setPreview(URL.createObjectURL(file));
+    setElapsed(0);
     setPhase("scanning");
     try {
       const form = new FormData();
       form.append("image", file);
-      const res = await fetch("/api/scan-receipt", { method: "POST", body: form });
+      const res = await netFetch("/api/scan-receipt", { method: "POST", body: form });
       const d = await res.json();
       // error:'limit'（無料枠超過）のときは message に日本語の案内が入る
       if (!res.ok) {
         if (d.error === "limit") setLimitHit(true);
         throw new Error(d.message ?? d.error ?? "解析に失敗しました。");
+      }
+      // A4: 金額も店名も読み取れなかった＝レシートとして認識できていない。
+      // 空フォームを出して手で埋めさせるのではなく、撮り直しを案内する。
+      if (!d.scan?.total && !(d.scan?.store ?? "").trim()) {
+        setPhase("failed");
+        return;
       }
       setScan({ ...d.scan, date: d.scan.date || todayLocal() });
       setCategoryId(d.categoryId);
@@ -149,7 +168,7 @@ export default function ScanPage() {
       // 受け取り（収入）は incomes へ、支払いは receipts+expenses へ
       const res =
         scan.kind === "income"
-          ? await fetch("/api/incomes", {
+          ? await netFetch("/api/incomes", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -160,7 +179,7 @@ export default function ScanPage() {
                 allowDuplicate, // 「本当に別の支払い」と確認済みの再送信のみ true
               }),
             })
-          : await fetch("/api/receipts", {
+          : await netFetch("/api/receipts", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -260,10 +279,32 @@ export default function ScanPage() {
           )}
           <div className="zig zig-t zig-b px-5 py-6 text-center shadow-sm">
             <p className="dot printing text-lg">＊＊＊ 解析中 ＊＊＊</p>
-            <p className="mt-2 text-xs text-ink-faint">
-              AIがレシートを読み取っています（数十秒かかることがあります）
-            </p>
+            <p className="mt-2 text-xs text-ink-faint">AIが読み取り中です（10〜30秒）</p>
+            <p className="mt-1 text-xs text-ink-faint">画面を閉じないでください</p>
+            <p className="dot mt-3 text-sm tabular-nums text-ink-faint">{elapsed}秒経過</p>
           </div>
+        </div>
+      )}
+
+      {/* A4: 金額も店名も読み取れなかった（空フォームを出さず撮り直しを案内） */}
+      {phase === "failed" && (
+        <div className="zig zig-t zig-b px-5 py-6 text-center shadow-sm">
+          <p className="dot text-lg text-vermilion">レシートを認識できませんでした</p>
+          <p className="mt-2 text-xs leading-relaxed text-ink-faint">
+            明るい場所で全体が写るように撮り直してください
+          </p>
+          <button
+            onClick={() => (fromLibrary ? libRef : fileRef).current?.click()}
+            className="dot mt-4 w-full rounded-md bg-vermilion py-3 text-base text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none"
+          >
+            {fromLibrary ? "画像を選び直す" : "撮り直す"}
+          </button>
+          <button
+            onClick={() => setPhase("idle")}
+            className="mt-3 w-full text-center text-xs text-ink-faint underline underline-offset-2"
+          >
+            別の方法で読み取る
+          </button>
         </div>
       )}
 

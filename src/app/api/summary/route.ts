@@ -34,7 +34,7 @@ export async function GET() {
       })),
       d.get<{ savings_goal: number }>("SELECT savings_goal FROM users WHERE id = ?", user.id),
       d.all(
-        `SELECT e.id, e.date, e.amount, e.memo, e.source, c.name AS category, c.icon
+        `SELECT e.id, e.date, e.amount, e.memo, e.source, e.category_id, e.receipt_id, c.name AS category, c.icon
          FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
          WHERE e.user_id = ? ORDER BY e.date DESC, e.created_at DESC LIMIT 5`,
         user.id,

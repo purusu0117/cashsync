@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CameraIcon, CategoryIcon, PencilIcon, ScreenshotIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
+import { Toast, useToast } from "@/components/Toast";
 import { cachedFetch } from "@/lib/cachedFetch";
 import { apiCall, apiJson } from "@/lib/clientApi";
 import {
@@ -48,6 +49,9 @@ interface Summary {
     date: string;
     amount: number;
     memo: string;
+    source?: string;
+    category_id?: string | null;
+    receipt_id?: string | null;
     category: string | null;
     icon: string | null;
   }[];
@@ -77,10 +81,14 @@ export default function HomePage() {
   const [weeklyKey, setWeeklyKey] = useState<string | null>(null); // 週次振り返り案内（週の前半だけ）
   const [isIOS, setIsIOS] = useState(false);
   const [presets, setPresets] = useState<Preset[]>([]);
-  // かんたん入力のトースト：記録直後は「元に戻す」つき、エラー時はメッセージのみ
-  const [toast, setToast] = useState<{ msg: string; undoId?: string } | null>(null);
+  // 完了フィードバック（A6）：記録・削除の直後は「元に戻す」つき、エラー時はメッセージのみ
+  const { toast, show, hide } = useToast();
   const [presetBusy, setPresetBusy] = useState(false);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // C7: 最近の支出の✕は即削除せず、行内で「削除しますか？」を確認してから消す
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  // B6: iOSスクショボタンの初回タップ時の選択ダイアログ（ショートカット未設定ユーザー対策）
+  const [shortcutDialog, setShortcutDialog] = useState(false);
+  const [shortcutDefault, setShortcutDefault] = useState(false);
   const syncedRef = useRef(false);
   const camRef = useRef<HTMLInputElement>(null);
   const libRef = useRef<HTMLInputElement>(null);
@@ -104,13 +112,6 @@ export default function HomePage() {
     );
   }, []);
 
-  function showToast(msg: string, undoId?: string) {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast({ msg, undoId });
-    // Undoつきは考える時間を長めに（8秒）、通常メッセージは4秒
-    toastTimer.current = setTimeout(() => setToast(null), undoId ? 8000 : 4000);
-  }
-
   // かんたん入力：確認なしで即記録（date=今日）。間違えたらトーストの「元に戻す」で削除。
   // 同じボタンを1日に2回押すのは正当（例：Suicaチャージ2回）なので重複ガードはかけない。
   async function recordPreset(p: Preset) {
@@ -126,10 +127,10 @@ export default function HomePage() {
           source: "quick",
         }),
       );
-      showToast(`記録しました ${fmtYen(p.amount)}`, d.id);
+      show(`記録しました ${fmtYen(p.amount)}`, () => undoPreset(d.id));
       load();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : "記録に失敗しました。");
+      show(e instanceof Error ? e.message : "記録に失敗しました。");
     } finally {
       setPresetBusy(false);
     }
@@ -137,14 +138,12 @@ export default function HomePage() {
 
   // 「元に戻す」：直前のかんたん入力を削除
   async function undoPreset(expenseId: string) {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast(null);
     try {
       await apiCall(`/api/expenses?id=${expenseId}`, { method: "DELETE" });
-      showToast("記録を取り消しました");
+      show("記録を取り消しました");
       load();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : "取り消しに失敗しました。");
+      show(e instanceof Error ? e.message : "取り消しに失敗しました。");
     }
   }
 
@@ -236,11 +235,48 @@ export default function HomePage() {
     setAmnesty(null);
   }
 
-  // 間違えて記録した支出をその場で削除（確認つき）
+  // C7: 行内確認→削除。削除後は8秒間「元に戻す」で復元できる
   async function removeExpense(e: Summary["recent"][number]) {
-    if (!confirm(`「${e.memo || e.category || "支出"} ${fmtYen(e.amount)}」を削除しますか？`)) return;
-    await fetch(`/api/expenses?id=${e.id}`, { method: "DELETE" });
-    load();
+    setConfirmId(null);
+    try {
+      await apiCall(`/api/expenses?id=${e.id}`, { method: "DELETE" });
+      load();
+      show("支出を削除しました", async () => {
+        try {
+          await apiCall(
+            "/api/expenses",
+            apiJson({
+              amount: e.amount,
+              date: e.date,
+              memo: e.memo,
+              categoryId: e.category_id ?? null,
+              source: e.source ?? "manual",
+              receiptId: e.receipt_id ?? null,
+            }),
+          );
+          load();
+          show("元に戻しました");
+        } catch (err) {
+          show(err instanceof Error ? err.message : "元に戻せませんでした。");
+        }
+      });
+    } catch (err) {
+      show(err instanceof Error ? err.message : "削除に失敗しました。");
+    }
+  }
+
+  // B6: スクショボタン。iOSはショートカット連携が本命だが、未設定ユーザーは
+  // 初回タップで「ショートカットで開く／写真から選ぶ」を選べるようにする。
+  function onScreenshotTap() {
+    if (!isIOS) {
+      libRef.current?.click();
+      return;
+    }
+    if (localStorage.getItem("cashsync-ios-shortcut") === "1") {
+      runShortcut();
+      return;
+    }
+    setShortcutDialog(true);
   }
 
   // iOSショートカット「CashSync」を、自分のトークンを持たせて起動する。
@@ -528,7 +564,7 @@ export default function HomePage() {
             <span className="dot mt-1 block text-[13px]">撮る</span>
           </button>
           <button
-            onClick={() => (isIOS ? runShortcut() : libRef.current?.click())}
+            onClick={onScreenshotTap}
             className="rounded-sm border border-rule bg-card px-2 py-3 text-center shadow-sm active:translate-y-0.5"
           >
             <ScreenshotIcon className="mx-auto h-6 w-6" />
@@ -579,41 +615,105 @@ export default function HomePage() {
               まだ記録がありません。上の「撮る」から始めましょう。
             </li>
           )}
-          {data.recent.map((e) => (
-            <li key={e.id} className="flex items-baseline gap-1 border-b border-rule/70 py-2 text-sm">
-              {e.category && (
-                <CategoryIcon icon={e.icon} className="h-4 w-4 shrink-0 self-center text-ink-faint" />
-              )}
-              <span className="truncate">{e.memo || e.category || "支出"}</span>
-              <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">{e.category}</span>
-              <span className="leader" />
-              <span className="dot text-[15px] tabular-nums">{fmtYen(e.amount)}</span>
-              <button
-                onClick={() => removeExpense(e)}
-                className="shrink-0 px-1 text-xs text-ink-faint"
-                aria-label="削除"
-              >
-                ✕
-              </button>
-            </li>
-          ))}
+          {data.recent.map((e) =>
+            confirmId === e.id ? (
+              /* C7: 誤タップ対策。✕の直後にその場で確認してから削除する */
+              <li key={e.id} className="flex items-center gap-2 border-b border-rule/70 py-2 text-sm">
+                <span className="min-w-0 flex-1 truncate text-xs">
+                  「{e.memo || e.category || "支出"} {fmtYen(e.amount)}」を削除しますか？
+                </span>
+                <button
+                  onClick={() => removeExpense(e)}
+                  className="dot shrink-0 rounded border border-vermilion px-2 py-1 text-xs text-vermilion"
+                >
+                  削除する
+                </button>
+                <button
+                  onClick={() => setConfirmId(null)}
+                  className="shrink-0 rounded border border-rule px-2 py-1 text-xs text-ink-faint"
+                >
+                  やめる
+                </button>
+              </li>
+            ) : (
+              <li key={e.id} className="flex items-baseline gap-1 border-b border-rule/70 py-2 text-sm">
+                {e.category && (
+                  <CategoryIcon icon={e.icon} className="h-4 w-4 shrink-0 self-center text-ink-faint" />
+                )}
+                <span className="truncate">{e.memo || e.category || "支出"}</span>
+                <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">{e.category}</span>
+                <span className="leader" />
+                <span className="dot text-[15px] tabular-nums">{fmtYen(e.amount)}</span>
+                <button
+                  onClick={() => setConfirmId(e.id)}
+                  className="shrink-0 px-1 text-xs text-ink-faint"
+                  aria-label="削除"
+                >
+                  ✕
+                </button>
+              </li>
+            ),
+          )}
         </ul>
       </section>
 
-      {/* かんたん入力のトースト（記録直後は「元に戻す」つき） */}
-      {toast && (
-        <div className="fixed bottom-24 left-1/2 z-50 flex w-[calc(100%-3rem)] max-w-sm -translate-x-1/2 items-center gap-2 rounded-md bg-ink px-4 py-3 text-sm text-card shadow-lg">
-          <span className="min-w-0 flex-1">{toast.msg}</span>
-          {toast.undoId && (
-            <button
-              onClick={() => undoPreset(toast.undoId!)}
-              className="dot shrink-0 rounded border border-card/70 px-2.5 py-1 text-xs"
+      {/* B6: スクショ入力の選択ダイアログ（iOS・初回のみ） */}
+      {shortcutDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-ink/40"
+          onClick={() => setShortcutDialog(false)}
+        >
+          <div
+            className="zig zig-t mx-auto w-full max-w-md px-5 pb-8 pt-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="dot text-center text-xs text-ink-faint">＊ スクショから記録 ＊</p>
+            <p className="mt-2 text-xs leading-relaxed text-ink-faint">
+              ショートカット連携を設定すると、スクショの読み取りから記録・スクショ削除までワンタップになります。設定がまだの場合は「写真から選ぶ」でも記録できます。
+            </p>
+            <div className="mt-3 space-y-2">
+              <button
+                onClick={() => {
+                  if (shortcutDefault) localStorage.setItem("cashsync-ios-shortcut", "1");
+                  setShortcutDialog(false);
+                  runShortcut();
+                }}
+                className="dot w-full rounded-md bg-vermilion py-3 text-base text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none"
+              >
+                ショートカットで開く（設定済みの方）
+              </button>
+              <button
+                onClick={() => {
+                  setShortcutDialog(false);
+                  libRef.current?.click();
+                }}
+                className="w-full rounded-md border border-rule bg-paper py-3 text-sm"
+              >
+                写真から選ぶ
+              </button>
+            </div>
+            <label className="mt-3 flex items-center gap-2 text-xs text-ink">
+              <input
+                type="checkbox"
+                checked={shortcutDefault}
+                onChange={(e) => setShortcutDefault(e.target.checked)}
+                className="h-4 w-4 accent-vermilion"
+              />
+              次からショートカットで開く（この確認を出さない）
+            </label>
+            <Link
+              href="/settings"
+              onClick={() => setShortcutDialog(false)}
+              className="mt-3 block w-full text-center text-[11px] text-ink-faint underline underline-offset-2"
             >
-              元に戻す
-            </button>
-          )}
+              ショートカット連携の設定について（設定画面）
+            </Link>
+          </div>
         </div>
       )}
+
+      {/* 完了フィードバックのトースト（記録・削除直後は「元に戻す」つき） */}
+      <Toast toast={toast} hide={hide} />
     </div>
   );
 }

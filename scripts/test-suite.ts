@@ -1063,6 +1063,166 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
   np = await nextPayday(fixedUser, "2026-08-15");
   check("給料日当日は daysUntil=0", np !== null && np.date === "2026-08-15" && np.daysUntil === 0, np);
 
+  // --- 16. Batch2: 収入の編集（C8）と削除Undo（C7） ---
+  // /api/incomes PUT 相当のUPDATEと、編集シートから削除→トーストの「元に戻す」で
+  // 削除前の内容そのままで復元される流れをDBレベルで検証する。
+  console.log("[16] 収入の編集（C8）・削除Undo（C7）");
+  const incId = uid();
+  await d.run(
+    "INSERT INTO incomes (id, user_id, date, amount, type, memo, created_at) VALUES (?, ?, ?, ?, 'other', ?, ?)",
+    incId,
+    userId,
+    today,
+    8000,
+    "メルカリ売上",
+    Date.now(),
+  );
+  // 編集（金額・日付・メモ）：/api/incomes PUT と同じUPDATE
+  const editRes = await d.run(
+    "UPDATE incomes SET date = ?, amount = ?, memo = ? WHERE id = ? AND user_id = ?",
+    "2026-01-15",
+    8500,
+    "メルカリ売上（送料引き後）",
+    incId,
+    userId,
+  );
+  const editedInc = await d.get<{ date: string; amount: number; memo: string }>(
+    "SELECT date, amount, memo FROM incomes WHERE id = ?",
+    incId,
+  );
+  check(
+    "収入の編集: 金額・日付・メモが更新される",
+    editRes.changes === 1 &&
+      editedInc?.date === "2026-01-15" &&
+      editedInc?.amount === 8500 &&
+      editedInc?.memo === "メルカリ売上（送料引き後）",
+    editedInc,
+  );
+  // 他ユーザーは編集できない（WHERE user_id 条件）
+  const foreignEdit = await d.run(
+    "UPDATE incomes SET amount = ? WHERE id = ? AND user_id = ?",
+    1,
+    incId,
+    uid(),
+  );
+  check(
+    "他ユーザーは収入を編集できない",
+    foreignEdit.changes === 0 &&
+      (await d.get<{ amount: number }>("SELECT amount FROM incomes WHERE id = ?", incId))?.amount ===
+        8500,
+  );
+  // 削除 → Undo（同じ内容で復元）
+  await d.run("DELETE FROM incomes WHERE id = ? AND user_id = ?", incId, userId);
+  check("収入を削除できる", (await d.get("SELECT id FROM incomes WHERE id = ?", incId)) === undefined);
+  const restoredIncId = uid();
+  await d.run(
+    "INSERT INTO incomes (id, user_id, date, amount, type, memo, created_at) VALUES (?, ?, ?, ?, 'other', ?, ?)",
+    restoredIncId,
+    userId,
+    "2026-01-15",
+    8500,
+    "メルカリ売上（送料引き後）",
+    Date.now(),
+  );
+  const restoredInc = await d.get<{ date: string; amount: number; memo: string }>(
+    "SELECT date, amount, memo FROM incomes WHERE id = ?",
+    restoredIncId,
+  );
+  check(
+    "Undoで削除前の内容そのままで復元される（収入）",
+    restoredInc?.date === "2026-01-15" &&
+      restoredInc?.amount === 8500 &&
+      restoredInc?.memo === "メルカリ売上（送料引き後）",
+    restoredInc,
+  );
+  // 支出の削除Undo：receipt_id・source も含めて復元される（レシート紐付けが切れない）
+  const delExpId = uid();
+  await d.run(
+    "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'receipt', ?, ?)",
+    delExpId,
+    userId,
+    today,
+    980,
+    foodCat.id,
+    "スーパー",
+    receiptId, // [9]で作ったレシート
+    Date.now(),
+  );
+  const undoSnapshot = await d.get<{
+    date: string;
+    amount: number;
+    category_id: string;
+    memo: string;
+    source: string;
+    receipt_id: string;
+  }>(
+    "SELECT date, amount, category_id, memo, source, receipt_id FROM expenses WHERE id = ? AND user_id = ?",
+    delExpId,
+    userId,
+  );
+  await d.run("DELETE FROM expenses WHERE id = ? AND user_id = ?", delExpId, userId);
+  check("支出を削除できる（編集シート内の削除）", (await d.get("SELECT id FROM expenses WHERE id = ?", delExpId)) === undefined);
+  const restoredExpId = uid();
+  await d.run(
+    "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    restoredExpId,
+    userId,
+    undoSnapshot!.date,
+    undoSnapshot!.amount,
+    undoSnapshot!.category_id,
+    undoSnapshot!.memo,
+    undoSnapshot!.source,
+    undoSnapshot!.receipt_id,
+    Date.now(),
+  );
+  const restoredExp = await d.get<{
+    amount: number;
+    category_id: string;
+    receipt_id: string;
+    source: string;
+  }>("SELECT amount, category_id, receipt_id, source FROM expenses WHERE id = ?", restoredExpId);
+  check(
+    "Undoで支出が復元される（カテゴリ・レシート紐付け・sourceも維持）",
+    restoredExp?.amount === 980 &&
+      restoredExp?.category_id === foodCat.id &&
+      restoredExp?.receipt_id === receiptId &&
+      restoredExp?.source === "receipt",
+    restoredExp,
+  );
+  await d.run("DELETE FROM expenses WHERE id = ?", restoredExpId);
+  await d.run("DELETE FROM incomes WHERE id = ?", restoredIncId);
+
+  // --- 16b. Batch2: カテゴリ使用回数（C6 手入力フォームの上位6個用） ---
+  console.log("[16b] カテゴリ使用回数（C6）");
+  const usedRows = await d.all<{ name: string; used: number }>(
+    `SELECT c.name, CAST(COUNT(e.id) AS INTEGER) AS used
+     FROM categories c
+     LEFT JOIN expenses e ON e.category_id = c.id AND e.user_id = c.user_id
+     WHERE c.user_id = ?
+     GROUP BY c.id, c.name, c.icon, c.sort
+     ORDER BY c.sort`,
+    userId,
+  );
+  check("全カテゴリが返る（使用0件も含む）", usedRows.length === cats.length, usedRows.length);
+  const usedFood = usedRows.find((r) => r.name === "食費");
+  check(
+    "使用回数がnumberで返る（Postgresのbigint文字列化対策）",
+    usedRows.every((r) => typeof r.used === "number"),
+    usedFood,
+  );
+  check(
+    "使用回数が実支出数と一致する（食費）",
+    usedFood?.used ===
+      Number(
+        (await d.get<{ c: number | string }>(
+          "SELECT COUNT(*) AS c FROM expenses WHERE user_id = ? AND category_id = ?",
+          userId,
+          foodCat.id,
+        ))!.c,
+      ),
+    usedFood,
+  );
+
   console.log(`\n結果: ${passed} passed / ${failed} failed`);
   return { passed, failed };
 }
