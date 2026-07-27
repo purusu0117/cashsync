@@ -24,6 +24,18 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
   )`,
   // 記録できたら通知する（既定ON）
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS record_push INTEGER NOT NULL DEFAULT 1`,
+  // C5: AI読み取りのジョブ化（アプリを閉じても解析が続くように）
+  `CREATE TABLE IF NOT EXISTS scan_jobs (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'running',
+    result_json TEXT,
+    error TEXT,
+    image_hash TEXT,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_scan_jobs_user ON scan_jobs(user_id, created_at)`,
   // B9: 既存DBへの追加カラム（冪等）：家計簿の月の開始日（1〜28。25なら7/25〜8/24が「8月」）
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS month_start_day INTEGER NOT NULL DEFAULT 1`,
   // C3: 記録リマインダー（0〜23時。-1=OFF）と最終送信日（1日1回制限）

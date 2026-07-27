@@ -46,6 +46,7 @@ export default function ScanPage() {
   const [preview, setPreview] = useState("");
   const [scan, setScan] = useState<Scan | null>(null);
   const [imageHash, setImageHash] = useState(""); // 読み取った画像のsha256（保存時に渡す）
+  const [jobId, setJobId] = useState(""); // C5: 読み取りジョブのID（保存/破棄時に消す）
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   // 確認シートに最初に表示した提案（AI or 学習値）。保存時にサーバーへ渡し、
@@ -83,6 +84,23 @@ export default function ScanPage() {
         setScansLeft(s && s.limit !== null ? Math.max(0, s.limit - s.used) : null);
       },
     ).catch(() => {});
+    // C5: ホームの「読み取りが終わった記録があります」から来た場合は、その結果を開く
+    if (new URLSearchParams(window.location.search).get("job") === "1") {
+      fetch("/api/scan-jobs")
+        .then((r) => (r.ok ? r.json() : { jobs: [] }))
+        .then((d) => {
+          const job = d.jobs?.[0];
+          if (!job?.scan) return;
+          setJobId(job.id);
+          setScan({ ...job.scan, date: job.scan.date || todayLocal() });
+          setImageHash(job.imageHash ?? "");
+          setCategoryId(job.categoryId ?? null);
+          setSuggestedCategoryId(job.categoryId ?? null);
+          setLearned(!!job.learned);
+          setPhase("confirm");
+        })
+        .catch(() => {});
+    }
     // 下タブ「撮る」やホームのボタンで既に画像が選ばれていたら、即解析を開始
     const consume = () => {
       const pending = takePendingImage();
@@ -114,17 +132,44 @@ export default function ScanPage() {
     setElapsed(0);
     setPhase("scanning");
     try {
+      // C5: 解析はサーバー側のジョブとして走らせる（アプリを閉じても中断しない）。
+      // ここでは jobId を受け取り、開いている間だけ結果をポーリングする。
       const form = new FormData();
       form.append("image", file);
-      const res = await netFetch("/api/scan-receipt", { method: "POST", body: form });
+      const res = await netFetch("/api/scan-jobs", { method: "POST", body: form });
       const d = await res.json();
       // error:'limit'（無料枠超過）のときは message に日本語の案内が入る
       if (!res.ok) {
         if (d.error === "limit") setLimitHit(true);
+        if (d.duplicate) {
+          // 同じ画像を既に記録済み。AIを使わずに即返ってくる
+          setError(d.message);
+          setPhase("idle");
+          return;
+        }
         throw new Error(d.message ?? d.error ?? "解析に失敗しました。");
       }
-      // A4: 金額も店名も読み取れなかった＝レシートとして認識できていない。
-      // 空フォームを出して手で埋めさせるのではなく、撮り直しを案内する。
+      setJobId(d.jobId);
+      await pollJob(d.jobId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "解析に失敗しました。");
+      setPhase("idle");
+    }
+  }
+
+  /** ジョブの完了を待って確認シートを出す（最大3分。画面を離れたら中断してよい＝サーバーは走り続ける） */
+  async function pollJob(id: string) {
+    for (let i = 0; i < 90; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const res = await netFetch(`/api/scan-jobs?id=${encodeURIComponent(id)}`);
+      if (!res.ok) continue;
+      const d = await res.json();
+      if (d.status === "running") continue;
+      if (d.status === "failed") {
+        setPhase("failed");
+        return;
+      }
+      // A4: 金額も店名も読み取れなかった＝レシートとして認識できていない
       if (!d.scan?.total && !(d.scan?.store ?? "").trim()) {
         setPhase("failed");
         return;
@@ -135,10 +180,11 @@ export default function ScanPage() {
       setSuggestedCategoryId(d.categoryId);
       setLearned(!!d.learned);
       setPhase("confirm");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "解析に失敗しました。");
-      setPhase("idle");
+      return;
     }
+    // ここまで来たらサーバー側がまだ処理中。閉じても結果は残ると案内する
+    setError("読み取りに時間がかかっています。この画面を閉じても大丈夫です（終わったら通知でお知らせします）。");
+    setPhase("idle");
   }
 
   // ネイティブ時のみ：読み取り元のスクショを端末から削除する（OSの確認ダイアログが出る）。
@@ -216,6 +262,13 @@ export default function ScanPage() {
       }
       if (!res.ok) throw new Error(d.error ?? "保存に失敗しました。");
       setDupConfirm(false);
+      // C5: 記録できたので読み取りジョブは用済み（ホームの「確認して」カードにも出さない）
+      if (jobId) {
+        await netFetch(`/api/scan-jobs?id=${encodeURIComponent(jobId)}`, { method: "DELETE" }).catch(
+          () => {},
+        );
+        setJobId("");
+      }
       if (fromLibrary) {
         // スクショ由来のときは「元画像はもう不要」のリマインドを出してから帰る
         setPhase("done");
@@ -306,7 +359,10 @@ export default function ScanPage() {
           <div className="zig zig-t zig-b px-5 py-6 text-center shadow-sm">
             <p className="dot printing text-lg">＊＊＊ 解析中 ＊＊＊</p>
             <p className="mt-2 text-xs text-ink-faint">AIが読み取り中です（10〜30秒）</p>
-            <p className="mt-1 text-xs text-ink-faint">画面を閉じないでください</p>
+            {/* C5: サーバー側で処理が続くので、閉じても消えないことを明示する */}
+            <p className="mt-1 text-xs text-sage">
+              このまま閉じても大丈夫です。終わったら通知でお知らせします
+            </p>
             <p className="dot mt-3 text-sm tabular-nums text-ink-faint">{elapsed}秒経過</p>
           </div>
         </div>

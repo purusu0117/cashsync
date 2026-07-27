@@ -82,6 +82,8 @@ export default function HomePage() {
   const [data, setData] = useState<Summary | null>(null);
   const [error, setError] = useState("");
   const [amnesty, setAmnesty] = useState<string | null>(null); // つけ忘れ確認対象の日付
+  // C5: アプリを閉じている間に完了した読み取り（未確認のもの）
+  const [pendingScans, setPendingScans] = useState<{ id: string; scan?: { total?: number } }[]>([]);
   const [reviewMonth, setReviewMonth] = useState<string | null>(null); // 月初の振り返り案内
   const [weeklyKey, setWeeklyKey] = useState<string | null>(null); // 週次振り返り案内（週の前半だけ）
   const [isIOS, setIsIOS] = useState(false);
@@ -238,6 +240,11 @@ export default function HomePage() {
   useEffect(() => {
     load();
     autoSync();
+    // C5: アプリを閉じている間に完了した読み取りを拾う（未確認なら案内カードを出す）
+    fetch("/api/scan-jobs")
+      .then((r) => (r.ok ? r.json() : { jobs: [] }))
+      .then((d) => setPendingScans(d.jobs ?? []))
+      .catch(() => {});
     // ショートカット導線は「Web/PWA版のiOS」だけ。
     // ネイティブアプリ（App Store版）は PhotoKit で直接スクショを削除できるので、
     // ショートカットを経由する必要がない（大翔指摘 2026-07-27）。
@@ -504,6 +511,19 @@ export default function HomePage() {
       )}
 
       {/* つけ忘れ赦免カード */}
+      {/* C5: 閉じている間に終わった読み取りの受け取り口。ここが無いと結果が迷子になる */}
+      {pendingScans.length > 0 && (
+        <div className="flex items-center gap-2 rounded-md border border-sage bg-card px-3 py-2 text-xs">
+          <span className="min-w-0 flex-1">
+            読み取りが終わった記録が{pendingScans.length}件あります
+            {pendingScans[0]?.scan?.total ? `（${fmtYen(pendingScans[0].scan.total)}〜）` : ""}
+          </span>
+          <Link href="/scan?job=1" className="dot shrink-0 rounded border border-sage px-2 py-1 text-sage">
+            確認する
+          </Link>
+        </div>
+      )}
+
       {amnesty && (
         <div className="flex items-center gap-2 rounded-md border border-rule bg-card px-3 py-2 text-xs">
           <span className="min-w-0 flex-1">昨日（{fmtDateJa(amnesty)}）の記録がありません</span>

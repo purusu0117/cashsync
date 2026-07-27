@@ -335,6 +335,19 @@ function migrateSqlite(d: DatabaseSync) {
       expires_at INTEGER NOT NULL,      -- 有効期限（発行から1時間）
       used_at INTEGER                   -- 使用済み時刻（NULL=未使用）
     );
+    -- C5: AI読み取りのジョブ化。画像を投げたらすぐIDを返し、解析はサーバー側で続ける。
+    -- これでアプリを閉じても読み取りが中断しない（結果は次に開いたときに確認できる）。
+    CREATE TABLE IF NOT EXISTS scan_jobs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running', -- running | done | failed
+      result_json TEXT,                       -- 解析結果（Scan＋categoryId等）
+      error TEXT,
+      image_hash TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_scan_jobs_user ON scan_jobs(user_id, created_at);
   `);
   // 追加カラムのマイグレーション（既存DBにも効くよう ALTER を冪等に流す）
   addColumn(d, "categories", "icon TEXT NOT NULL DEFAULT ''"); // 旧DB（icon列なし）向け
