@@ -23,9 +23,12 @@ platform :ios do
     # CI用の一時キーチェーンを作る（fastlane_tmp_keychain）
     setup_ci
 
+    # チームキー（Issuer IDあり）と個人用APIキー（Issuer IDなし）の両方に対応する。
+    # 個人用キーは App Store Connect の「プロフィールを編集」から即発行でき、承認待ちが要らない。
+    issuer = ENV["APPSTORE_ISSUER_ID"].to_s.strip
     api_key = app_store_connect_api_key(
       key_id: ENV.fetch("APPSTORE_KEY_ID"),
-      issuer_id: ENV.fetch("APPSTORE_ISSUER_ID"),
+      issuer_id: issuer.empty? ? nil : issuer,
       key_content: ENV.fetch("APPSTORE_PRIVATE_KEY"),
       is_key_content_base64: true,
       in_house: false,

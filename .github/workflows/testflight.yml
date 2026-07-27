@@ -44,8 +44,9 @@ jobs:
 
       - name: 必要な Secrets が揃っているか確認
         run: |
+          # APPSTORE_ISSUER_ID は任意（個人用APIキーには Issuer ID が無いため）
           missing=""
-          for k in APPLE_TEAM_ID APPLE_CERT_P12_BASE64 APPLE_CERT_PASSWORD APPSTORE_ISSUER_ID APPSTORE_KEY_ID APPSTORE_PRIVATE_KEY; do
+          for k in APPLE_TEAM_ID APPLE_CERT_P12_BASE64 APPLE_CERT_PASSWORD APPSTORE_KEY_ID APPSTORE_PRIVATE_KEY; do
             if [ -z "${!k}" ]; then missing="$missing $k"; fi
           done
           if [ -n "$missing" ]; then
