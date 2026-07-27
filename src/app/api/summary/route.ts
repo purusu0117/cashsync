@@ -3,12 +3,12 @@ import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
   currentMonth,
-  dailyAllowance,
-  daysRemainingInMonth,
+  dailyBudget,
   monthForecast,
   monthSummary,
   noMoneyDays,
   postRecurringForMonth,
+  todaySpent,
 } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -45,13 +45,16 @@ export async function GET() {
          WHERE p.user_id = ? ORDER BY p.sort`,
       )
       .all(user.id);
+    const budget = dailyBudget(summary, todaySpent(user.id), savingsGoal);
     return Response.json({
       user: { name: user.name },
       month,
       summary,
       savingsGoal,
-      allowance: dailyAllowance(summary, savingsGoal),
-      daysRemaining: daysRemainingInMonth(),
+      // allowance = 「今日あと使える額」（日次予算 − 今日の支出。マイナス＝超過）
+      allowance: budget.remainingToday,
+      budget,
+      daysRemaining: budget.daysRemaining,
       noMoney: noMoneyDays(user.id, month),
       forecast: monthForecast(user.id, summary),
       yesterday: { date: ydStr, recorded: ydCount.c > 0 },

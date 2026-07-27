@@ -27,7 +27,15 @@ interface Summary {
     shift: { total: number; shiftCount: number };
   };
   savingsGoal: number;
-  allowance: number;
+  allowance: number; // 今日あと使える額（今日の予算 − 今日の支出。マイナス＝超過）
+  // 日次予算の内訳（旧キャッシュには無いので optional）
+  budget?: {
+    todayBudget: number;
+    spentToday: number;
+    remainingToday: number;
+    spentBeforeToday: number;
+    daysRemaining: number;
+  };
   daysRemaining: number;
   noMoney: { count: number; streak: number };
   forecast: { forecast: number; avgDaily: number };
@@ -355,13 +363,24 @@ export default function HomePage() {
 
         <div className="cutline my-3.5" />
 
-        <p className="dot text-center text-sm tracking-[0.18em] text-ink-faint">＊ 今日使えるお金 ＊</p>
+        <p className="dot text-center text-sm tracking-[0.18em] text-ink-faint">＊ 今日あと使える ＊</p>
         <p className={`dot mt-3 text-center text-[64px] leading-none tabular-nums ${signalColor}`}>
-          {fmtYen(Math.max(0, data.allowance))}
+          {fmtYen(data.allowance).replace("¥-", "-¥")}
         </p>
-        <p className="mt-2 text-center text-xs text-ink-faint">
-          残り{data.daysRemaining}日{savingsGoal > 0 && " ・ 貯金目標を先取りした残り"}から計算
-        </p>
+        {data.budget && (
+          <p className="mt-2 text-center text-xs text-ink-faint">
+            今日の予算 {fmtYen(data.budget.todayBudget)} − 今日使った {fmtYen(data.budget.spentToday)}
+          </p>
+        )}
+        {data.allowance < 0 ? (
+          <p className="mt-1 text-center text-[11px] text-vermilion">
+            今日は{fmtYen(-data.allowance)}超過（明日の予算が自動で減ります）
+          </p>
+        ) : (
+          <p className="mt-1 text-center text-[11px] text-ink-faint">
+            残り{data.daysRemaining}日{savingsGoal > 0 && " ・ 貯金目標を先取り"}で計算
+          </p>
+        )}
 
         <div className="cutline my-4" />
 

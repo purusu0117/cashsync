@@ -3,13 +3,13 @@ import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
   currentMonth,
-  dailyAllowance,
-  daysRemainingInMonth,
+  dailyBudget,
   monthPlan,
   monthShiftIncome,
   monthSummary,
   paydays,
   postRecurringForMonth,
+  todaySpent,
 } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +49,9 @@ export async function GET(request: Request) {
       | undefined;
     const savingsGoal = goalRow?.savings_goal ?? 0;
     const otherIncome = summary.incomeTotal - shift.total;
+    // 今月のみ：日次予算＋繰り越し方式（予算は昨日までの支出で割り、今日の分は満額引く）
+    const budget =
+      month === currentMonth() ? dailyBudget(summary, todaySpent(user.id), savingsGoal) : null;
 
     return Response.json({
       month,
@@ -62,9 +65,16 @@ export async function GET(request: Request) {
         incomeTotal: summary.incomeTotal,
         savingsGoal,
         expenseTotal: summary.expenseTotal,
-        remain: summary.incomeTotal - savingsGoal - summary.expenseTotal,
-        daysRemaining: month === currentMonth() ? daysRemainingInMonth() : null,
-        allowance: month === currentMonth() ? dailyAllowance(summary, savingsGoal) : null,
+        // remain: 今月は「昨日までの支出」を引いた予算の分母、過去/未来月は月の収支
+        remain: budget
+          ? summary.incomeTotal - savingsGoal - budget.spentBeforeToday
+          : summary.incomeTotal - savingsGoal - summary.expenseTotal,
+        daysRemaining: budget ? budget.daysRemaining : null,
+        todayBudget: budget ? budget.todayBudget : null,
+        spentToday: budget ? budget.spentToday : null,
+        spentBeforeToday: budget ? budget.spentBeforeToday : null,
+        // allowance = 「今日あと使える額」（今日の予算 − 今日の支出）
+        allowance: budget ? budget.remainingToday : null,
       },
     });
   } catch (e) {
