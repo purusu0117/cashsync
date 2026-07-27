@@ -1386,6 +1386,9 @@ export default function SettingsPage() {
         <Link href="/legal/privacy" className="underline underline-offset-2">
           プライバシーポリシー
         </Link>
+        <Link href="/debug" className="underline underline-offset-2">
+          ネイティブ連携の診断
+        </Link>
       </p>
       <p className="dot pb-2 text-center text-[10px] text-ink-faint">CashSync v0.1</p>
 
