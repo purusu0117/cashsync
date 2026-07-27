@@ -57,8 +57,9 @@
 			<string>cstr6suwn9.skadnetwork</string>
 		</dict>
 	</array>
-	<key>NSUserTrackingUsageDescription</key>
-	<string>広告の最適化のために使用します。許可しなくてもアプリは利用できます。</string>
+	<!-- ATT（トラッキング許可）は要求しない方針。広告は常に非パーソナライズ（npa）で配信するため、
+	     NSUserTrackingUsageDescription は意図的に置かない（審査で「なぜ宣言しているのか」を問われないように）。
+	     方針を変えてATTを出す場合は、このキーと src/lib/native.ts の requestTrackingAuthorization を両方戻すこと。 -->
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>記録済みのスクリーンショットを端末から削除するために写真ライブラリへアクセスします。</string>
 </dict>

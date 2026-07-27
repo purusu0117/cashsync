@@ -61,13 +61,23 @@ async function admob() {
 
 let adMobReady: Promise<void> | null = null;
 
-/** AdMob SDK の初期化（初回のみ。ネイティブ以外では何もしない） */
+/**
+ * AdMob SDK の初期化（初回のみ。ネイティブ以外では何もしない）。
+ *
+ * ATT（Appのトラッキング許可ダイアログ）は**出さない**方針（2026-07-26 大翔承認）。
+ * プラグイン v8 では ATT は `AdMob.requestTrackingAuthorization()` を明示的に呼んだときだけ出るので、
+ * ここでは呼ばない＝ダイアログは表示されない。代わりに広告は常に非パーソナライズ（NPA）で配信する
+ * （各広告リクエストの npa: true）。
+ * eCPMは多少下がるが、①審査項目が1つ減る ②「許可しますか」で離脱しない、を優先した判断。
+ * 方針を変えるときは、この初期化直後に requestTrackingAuthorization() を呼び、
+ * Info.plist に NSUserTrackingUsageDescription を戻し、npa を状態に応じて切り替えること。
+ */
 export function initAdMob(): Promise<void> {
   if (!isNativePlatform()) return Promise.resolve();
   if (!adMobReady) {
     adMobReady = (async () => {
       const { AdMob } = await admob();
-      await AdMob.initialize();
+      await AdMob.initialize(); // ATTは要求しない（呼ばなければダイアログは出ない）
     })().catch((e) => {
       adMobReady = null; // 失敗時は次回リトライ
       throw e;
@@ -87,6 +97,7 @@ export async function showTopBanner(): Promise<void> {
     position: BannerAdPosition.TOP_CENTER,
     margin: 0,
     isTesting: AD_TESTING,
+    npa: true, // ATTを出さない方針のため常に非パーソナライズ広告
   });
 }
 
@@ -124,6 +135,7 @@ export async function showRewardedAd(): Promise<boolean> {
     await AdMob.prepareRewardVideoAd({
       adId: REWARDED_AD_ID[platform()],
       isTesting: AD_TESTING,
+      npa: true, // ATTを出さない方針のため常に非パーソナライズ広告
     });
     await AdMob.showRewardVideoAd();
     await done;

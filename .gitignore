@@ -43,3 +43,10 @@ next-env.d.ts
 # CashSync local data (real user DB + backups) - never commit
 /.data/
 server.log
+
+# 署名まわり（絶対にコミットしない）
+dist-cert.p12
+*.p8
+*.p12
+*.mobileprovision
+build/
