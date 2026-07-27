@@ -359,6 +359,8 @@ function migrateSqlite(d: DatabaseSync) {
   addColumn(d, "recurring_items", "is_fixed INTEGER NOT NULL DEFAULT 1"); // C12: 1=固定費（先取り対象）, 0=変動費扱い
   addColumn(d, "expenses", "recurring_id TEXT"); // C12: どの定期から計上されたか（固定/変動の判定用。旧レコードはNULL=固定扱い）
   addColumn(d, "category_budgets", "carryover INTEGER NOT NULL DEFAULT 0"); // C13: 1=前月の余りを当月予算に繰り越す
+  addColumn(d, "users", "reminder_hour INTEGER NOT NULL DEFAULT -1"); // C3: 記録リマインダーの時刻（0〜23時。-1=OFF）
+  addColumn(d, "users", "last_reminder_push TEXT"); // C3: リマインダーの最終送信日（1日1回制限）
 }
 
 // 掛け持ちバイトの色パレット（紙背景で判別しやすい順）

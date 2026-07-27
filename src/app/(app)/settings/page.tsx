@@ -178,6 +178,7 @@ export default function SettingsPage() {
     cachedFetch<{
       savingsGoal?: number;
       monthStartDay?: number;
+      reminderHour?: number;
       apiToken?: string;
       plan?: string;
       aiUsage?: {
@@ -187,6 +188,7 @@ export default function SettingsPage() {
     }>("/api/profile", (d) => {
       setGoal(d.savingsGoal ? String(d.savingsGoal) : "");
       setMonthStart(String(d.monthStartDay ?? 1));
+      setReminderHour(d.reminderHour ?? -1);
       setApiToken(d.apiToken ?? "");
       setPlan(planOf(d.plan));
       setAiUsage(d.aiUsage ?? null);
@@ -408,6 +410,22 @@ export default function SettingsPage() {
       .then((d) => setPushOn(!!d.subscribed))
       .catch(() => {});
   }, []);
+
+  // --- C3: 記録リマインダー（-1=OFF / 0〜23=その時刻） ---
+  const [reminderHour, setReminderHour] = useState(-1);
+  const [reminderSaved, setReminderSaved] = useState(false);
+  async function saveReminderHour(hour: number) {
+    const prev = reminderHour;
+    setReminderHour(hour); // 先に反映して待たせない
+    try {
+      await apiCall("/api/profile", apiJson({ reminderHour: hour }));
+      setReminderSaved(true);
+      setTimeout(() => setReminderSaved(false), 2500);
+    } catch (e) {
+      setReminderHour(prev);
+      setPageError(e instanceof Error ? e.message : "リマインダーの保存に失敗しました。");
+    }
+  }
 
   function b64ToUint8(base64: string): Uint8Array<ArrayBuffer> {
     const padding = "=".repeat((4 - (base64.length % 4)) % 4);
@@ -1111,7 +1129,7 @@ export default function SettingsPage() {
       </section>
 
       <section id="push" className="zig zig-t zig-b px-4 py-4 shadow-sm">
-        <h2 className="dot text-sm">使いすぎ予兆の通知</h2>
+        <h2 className="dot text-sm">通知</h2>
         <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
           毎晩チェックして、月末赤字ペースのときだけ「1日あと◯円おさえれば黒字」と通知します（1日1回まで）。iPhoneは「ホーム画面に追加」したアプリからONにしてください。
         </p>
@@ -1124,6 +1142,34 @@ export default function SettingsPage() {
         >
           {pushBusy ? "・・・" : pushOn ? "通知ON（タップでOFF）" : "通知をONにする"}
         </button>
+
+        {/* C3: 記録リマインダー。つけ忘れの日だけ届く（記録済みの日は送らない） */}
+        <div className="mt-4 border-t border-dotted border-rule pt-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm">記録リマインド</span>
+            {reminderSaved && <span className="text-[11px] text-sage">保存しました</span>}
+          </div>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
+            指定した時刻に、その日まだ1件も記録していないときだけお知らせします。記録済みの日は届きません。上の通知がONのときに動きます。
+          </p>
+          <select
+            value={String(reminderHour)}
+            onChange={(e) => saveReminderHour(Number(e.target.value))}
+            className="mt-2 w-full rounded-md border border-rule bg-card px-3 py-2.5 text-sm"
+          >
+            <option value="-1">リマインドしない</option>
+            {[18, 19, 20, 21, 22, 23].map((h) => (
+              <option key={h} value={h}>
+                毎日 {h}:00
+              </option>
+            ))}
+          </select>
+          {!pushOn && reminderHour >= 0 && (
+            <p className="mt-1 text-[11px] text-vermilion">
+              上の「通知をONにする」を押すまでリマインドは届きません。
+            </p>
+          )}
+        </div>
       </section>
 
       {/* B8: アプリロック（4桁パスコード。この端末だけのロック・覗き見防止） */}

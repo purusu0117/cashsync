@@ -1,0 +1,102 @@
+// C3: 記録リマインダー（Vercel Cron／PC版はタスクスケジューラから毎時叩かれる想定）。
+// 設定した時刻になっても「今日まだ1件も記録していない」ユーザーにだけ、1日1回通知する。
+// 記録済みの人には送らない（無駄な通知で切られないための最重要ルール）。
+// Vercel は TZ=UTC なので、時刻の判定は jstHour() で日本時間に固定する。
+import { db } from "@/lib/db";
+import { fmtYen } from "@/lib/format";
+import { jstHour } from "@/lib/jst";
+import {
+  accountingMonth,
+  currentMonth,
+  dailyBudget,
+  getMonthStartDay,
+  monthFixedCost,
+  monthSummary,
+  postRecurringForMonth,
+  todaySpent,
+  todayStr,
+} from "@/lib/money";
+import { pushToUser } from "@/lib/push";
+
+export const dynamic = "force-dynamic";
+
+export async function GET(request: Request) {
+  const params = new URL(request.url).searchParams;
+  const key = params.get("key");
+  // Vercel Cron は Authorization: Bearer <CRON_SECRET> を付けてくるので、それも受け付ける
+  const bearer = request.headers.get("authorization");
+  const cronSecret = process.env.CRON_SECRET;
+  const okByKey = !!key && key === process.env.CRON_KEY;
+  const okByBearer = !!cronSecret && bearer === `Bearer ${cronSecret}`;
+  if (!okByKey && !okByBearer) {
+    return Response.json({ error: "forbidden" }, { status: 403 });
+  }
+  // 通常は現在のJST時刻。テスト用に ?hour= で上書きできる（0〜23）
+  const hourParam = params.get("hour");
+  const hour =
+    hourParam !== null && /^\d{1,2}$/.test(hourParam) && Number(hourParam) <= 23
+      ? Number(hourParam)
+      : jstHour();
+  const today = todayStr();
+  const d = await db();
+  const users = await d.all<{
+    id: string;
+    savings_goal: number;
+    reminder_hour: number;
+    last_reminder_push: string | null;
+  }>(
+    `SELECT DISTINCT u.id, u.savings_goal, u.reminder_hour, u.last_reminder_push
+     FROM users u JOIN push_subscriptions p ON p.user_id = u.id
+     WHERE u.reminder_hour = ?`,
+    hour,
+  );
+  let notified = 0;
+  let skippedRecorded = 0;
+  for (const u of users) {
+    if (u.last_reminder_push === today) continue; // 1日1回
+    // 今日すでに記録している人には送らない（定期の自動計上は「記録した」に数えない）
+    const recorded = Number(
+      (
+        (await d.get<{ c: number }>(
+          "SELECT (SELECT COUNT(*) FROM expenses WHERE user_id = ? AND date = ? AND source != 'recurring') + (SELECT COUNT(*) FROM incomes WHERE user_id = ? AND date = ? AND type != 'recurring') AS c",
+          u.id,
+          today,
+          u.id,
+          today,
+        )) as { c: number }
+      ).c,
+    );
+    if (recorded > 0) {
+      skippedRecorded++;
+      continue;
+    }
+    await postRecurringForMonth(u.id, currentMonth());
+    // 「今日あと使える額」を添えて、開く理由をつくる（計算できないときは本文だけ）
+    let tail = "";
+    try {
+      const month = await accountingMonth(u.id);
+      const summary = await monthSummary(u.id, month);
+      const budget = dailyBudget(
+        summary,
+        await todaySpent(u.id, today),
+        u.savings_goal,
+        today,
+        await monthFixedCost(u.id, month),
+        await getMonthStartDay(u.id),
+      );
+      if (budget.remainingToday > 0) tail = `（今日はあと${fmtYen(budget.remainingToday)}使えます）`;
+    } catch {
+      tail = "";
+    }
+    const sent = await pushToUser(
+      u.id,
+      "CashSync 記録リマインド",
+      `今日の記録がまだです。レシートを撮るだけなら3秒で終わります${tail}`,
+    );
+    if (sent > 0) {
+      await d.run("UPDATE users SET last_reminder_push = ? WHERE id = ?", today, u.id);
+      notified++;
+    }
+  }
+  return Response.json({ ok: true, hour, targets: users.length, notified, skippedRecorded });
+}

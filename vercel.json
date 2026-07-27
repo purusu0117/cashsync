@@ -1,3 +1,13 @@
 {
-  "regions": ["hnd1"]
+  "regions": ["hnd1"],
+  "crons": [
+    {
+      "path": "/api/push/reminder",
+      "schedule": "0 9-14 * * *"
+    },
+    {
+      "path": "/api/push/check",
+      "schedule": "30 11 * * *"
+    }
+  ]
 }

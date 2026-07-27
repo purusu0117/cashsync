@@ -18,7 +18,12 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const key = new URL(request.url).searchParams.get("key");
-  if (!key || key !== process.env.CRON_KEY) {
+  // Vercel Cron は Authorization: Bearer <CRON_SECRET> を付けてくるので、それも受け付ける
+  const bearer = request.headers.get("authorization");
+  const cronSecret = process.env.CRON_SECRET;
+  const okByKey = !!key && key === process.env.CRON_KEY;
+  const okByBearer = !!cronSecret && bearer === `Bearer ${cronSecret}`;
+  if (!okByKey && !okByBearer) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
   const d = await db();

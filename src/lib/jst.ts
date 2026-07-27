@@ -12,6 +12,11 @@ export function jstToday(offsetDays = 0): { y: number; m: number; d: number; dow
   return { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate(), dow: t.getUTCDay() };
 }
 
+/** JSTの現在時刻の「時」（0〜23）。Vercel等のTZ=UTC環境でも日本時間で返す */
+export function jstHour(): number {
+  return new Date(Date.now() + JST_OFFSET_MS).getUTCHours();
+}
+
 /** JSTの今日を 'YYYY-MM-DD' で */
 export function jstTodayStr(offsetDays = 0): string {
   const { y, m, d } = jstToday(offsetDays);

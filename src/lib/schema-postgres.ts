@@ -17,10 +17,15 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     api_token TEXT,
     last_overspend_push TEXT,
     plan TEXT NOT NULL DEFAULT 'free',
-    month_start_day INTEGER NOT NULL DEFAULT 1
+    month_start_day INTEGER NOT NULL DEFAULT 1,
+    reminder_hour INTEGER NOT NULL DEFAULT -1,
+    last_reminder_push TEXT
   )`,
   // B9: 既存DBへの追加カラム（冪等）：家計簿の月の開始日（1〜28。25なら7/25〜8/24が「8月」）
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS month_start_day INTEGER NOT NULL DEFAULT 1`,
+  // C3: 記録リマインダー（0〜23時。-1=OFF）と最終送信日（1日1回制限）
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS reminder_hour INTEGER NOT NULL DEFAULT -1`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reminder_push TEXT`,
   `CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
