@@ -212,7 +212,7 @@ export default function StatsPage() {
                       <p className="dot">{fmtMonthJa(String(label))}</p>
                       <p style={{ color: INCOME }}>収入 {fmtYen(p.income)}</p>
                       <p style={{ color: EXPENSE }}>支出 {fmtYen(p.expense)}</p>
-                      <p className="text-ink-faint">貯蓄 {fmtYen(p.savings)}</p>
+                      <p className="text-ink-faint">実績（収入−支出） {fmtYen(p.savings)}</p>
                     </div>
                   );
                 }}
@@ -229,14 +229,15 @@ export default function StatsPage() {
         <h2 className="dot text-sm tracking-[0.1em]">{fmtMonthJa(selected)} の内訳</h2>
         {sel && (
           <div className="mt-2 flex items-baseline text-sm">
-            <span className="text-ink-faint">この月の貯蓄</span>
+            {/* A8: 予測（ホームの「月末までの予測」）と区別するため「実績」と明示 */}
+            <span className="text-ink-faint">{Number(selected.slice(5))}月の実績（収入−支出）</span>
             <span className="leader" />
             <span
               className="dot text-xl tabular-nums"
               style={{ color: sel.savings >= 0 ? INCOME : EXPENSE }}
             >
               {sel.savings >= 0 ? "+" : ""}
-              {fmtYen(sel.savings).replace("¥-", "-¥")}
+              {fmtYen(sel.savings)}
             </span>
           </div>
         )}

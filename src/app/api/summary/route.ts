@@ -5,8 +5,10 @@ import { jstTodayStr } from "@/lib/jst";
 import {
   currentMonth,
   dailyBudget,
+  monthFixedCost,
   monthForecast,
   monthSummary,
+  nextPayday,
   noMoneyDays,
   postRecurringForMonth,
   todaySpent,
@@ -24,7 +26,8 @@ export async function GET() {
     const ydStr = jstTodayStr(-1);
     // クラウド版（Vercel⇄Supabase）はDB往復ごとにレイテンシが乗るため、独立クエリは並列で投げる。
     // forecast だけは summary に依存するので、summary の完了に連結する。
-    const [sf, goalRow, recent, ydCount, presets, noMoney, spentToday] = await Promise.all([
+    const [sf, goalRow, recent, ydCount, presets, noMoney, spentToday, fixedTotal, payday] =
+      await Promise.all([
       monthSummary(user.id, month).then(async (summary) => ({
         summary,
         forecast: await monthForecast(user.id, summary),
@@ -49,19 +52,23 @@ export async function GET() {
       ),
       noMoneyDays(user.id, month),
       todaySpent(user.id),
+      monthFixedCost(user.id, month),
+      nextPayday(user.id),
     ]);
     const { summary, forecast } = sf;
     const savingsGoal = goalRow?.savings_goal ?? 0;
-    const budget = dailyBudget(summary, spentToday, savingsGoal);
+    // 固定費（定期計上・分割）は今月分を満額先取りし、日々の数字は変動支出だけで動かす
+    const budget = dailyBudget(summary, spentToday, savingsGoal, undefined, fixedTotal);
     return Response.json({
       user: { name: user.name },
       month,
       summary,
       savingsGoal,
-      // allowance = 「今日あと使える額」（日次予算 − 今日の支出。マイナス＝超過）
+      // allowance = 「今日あと使える額」（日次予算 − 今日の変動支出。マイナス＝超過）
       allowance: budget.remainingToday,
       budget,
       daysRemaining: budget.daysRemaining,
+      nextPayday: payday,
       noMoney,
       forecast,
       yesterday: { date: ydStr, recorded: ydCount.c > 0 },

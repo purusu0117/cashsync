@@ -18,10 +18,12 @@ import {
   currentMonth,
   dailyBudget,
   isWeekendOrHoliday,
+  monthFixedCost,
   monthPlan,
   monthShiftIncome,
   monthSummary,
   monthWorkIncome,
+  nextPayday,
   postRecurringForMonth,
   todaySpent,
   todayStr,
@@ -849,7 +851,8 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
   check("monthPlan は何度呼んでも実体化しない（読み取り専用）", Number(m1Rows.c) === 0, m1Rows);
 
   // --- 15. 今日使えるお金（日次予算＋繰り越し方式） ---
-  // 予算は「昨日までの支出」で割り、今日の支出は満額引く。使いすぎは即マイナス表示＆翌日予算が自動減。
+  // 予算は「昨日までの変動支出」で割り、今日の変動支出は満額引く。使いすぎは即マイナス表示＆翌日予算が自動減。
+  // 固定費（定期計上 source='recurring'）は月初に満額を土台から先取りし、日々の数字には含めない（15b）。
   // 実日付に依存しないよう、固定日（2026-07-29 = 残り3日）を today 引数で渡して日跨ぎを再現する。
   console.log("[15] 日次予算（dailyBudget）");
   const budgetUser = uid();
@@ -932,6 +935,133 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
   // 貯金目標は先取り（分子から差し引いてから割る）
   bb = dailyBudget(await monthSummary(budgetUser, bMonth), 0, 6000, `${bMonth}-30`);
   check("貯金目標6,000を先取り: 予算(30,000−6,000−18,000)÷2=3,000", bb.todayBudget === 3000, bb);
+
+  // --- 15b. 固定費（定期計上）の先取り分離 ---
+  // 家賃などの定期計上（source='recurring'）は「今日使った」に含めず、今月分を満額土台から先取りする。
+  // → 計上日に「今日あと使える額」が家賃分だけ一気にマイナスへ崩壊しない。
+  console.log("[15b] 固定費の先取り分離（monthFixedCost＋dailyBudget）");
+  const fixedUser = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    fixedUser,
+    "fixed@example.com",
+    "固定費太郎",
+    hashPassword("password123"),
+    Date.now(),
+  );
+  await d.run(
+    "INSERT INTO incomes (id, user_id, date, amount, type, memo, created_at) VALUES (?, ?, ?, ?, 'other', ?, ?)",
+    uid(),
+    fixedUser,
+    `${bMonth}-01`,
+    80000,
+    "仕送り",
+    Date.now(),
+  );
+  const fSpend = (date: string, amount: number, source = "manual") =>
+    d.run(
+      "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      uid(),
+      fixedUser,
+      date,
+      amount,
+      null,
+      "",
+      source,
+      null,
+      Date.now(),
+    );
+  await fSpend(`${bMonth}-10`, 15000); // 昨日までの変動支出
+  await fSpend(`${bMonth}-29`, 50000, "recurring"); // 家賃の定期計上（計上日=今日）
+  check("monthFixedCost は定期計上だけを合計する", (await monthFixedCost(fixedUser, bMonth)) === 50000);
+  check(
+    "todaySpent は定期計上を含めない（計上日でも0）",
+    (await todaySpent(fixedUser, `${bMonth}-29`)) === 0,
+  );
+  const fCalc = async (day: string) =>
+    dailyBudget(
+      await monthSummary(fixedUser, bMonth),
+      await todaySpent(fixedUser, day),
+      0,
+      day,
+      await monthFixedCost(fixedUser, bMonth),
+    );
+  let fb = await fCalc(`${bMonth}-29`);
+  check(
+    "家賃計上日: 土台(80,000−固定50,000−変動15,000)=15,000 → 予算15,000÷3=5,000で崩壊しない",
+    fb.todayBudget === 5000 &&
+      fb.remainingToday === 5000 &&
+      fb.fixedTotal === 50000 &&
+      fb.monthRemaining === 15000 &&
+      fb.spentBeforeToday === 15000,
+    fb,
+  );
+  await fSpend(`${bMonth}-29`, 2000); // 今日の変動支出
+  fb = await fCalc(`${bMonth}-29`);
+  check("計上日に変動2,000使用: 今日あと5,000−2,000=3,000", fb.remainingToday === 3000, fb);
+  fb = await fCalc(`${bMonth}-30`);
+  check(
+    "翌日も整合: 予算(80,000−50,000−17,000)÷2=6,500",
+    fb.todayBudget === 6500 && fb.spentBeforeToday === 17000,
+    fb,
+  );
+  // B2: 変動支出を積み増して土台をマイナスに → monthRemaining < 0（ホームは「今月使える残りがありません」に切替）
+  await fSpend(`${bMonth}-30`, 20000);
+  fb = await fCalc(`${bMonth}-31`);
+  check(
+    "B2 予算切れ: 土台(80,000−50,000−37,000)=−7,000 → monthRemaining<0",
+    fb.monthRemaining === -7000 && fb.todayBudget === -7000 && fb.daysRemaining === 1,
+    fb,
+  );
+
+  // --- 15c. 次の給料日（nextPayday） ---
+  // 末日締め・翌月15日払いのバイト。7月勤務→8/15支給。7/29時点の次の給料日は 8/15（あと17日）。
+  console.log("[15c] 次の給料日（nextPayday）");
+  check("バイト先が無ければ null", (await nextPayday(fixedUser, `${bMonth}-29`)) === null);
+  const npJob = uid();
+  await d.run(
+    "INSERT INTO jobs (id, user_id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, calendar_keywords, calendar_exclude, color, closing_day, pay_month_offset, pay_day, pay_same_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    npJob,
+    fixedUser,
+    "給料日テスト",
+    1200,
+    1300,
+    0,
+    "",
+    "",
+    "#2f8f5b",
+    31,
+    1,
+    15,
+    0,
+  );
+  // シフト未入力：金額未定（amount 0）で日付だけ返る（7/29 以降で最初の給料日は 8/15）
+  let np = await nextPayday(fixedUser, `${bMonth}-29`);
+  check(
+    "シフト未入力: 日付だけ（8/15・あと17日・金額0）",
+    np !== null && np.date === "2026-08-15" && np.amount === 0 && np.daysUntil === 17,
+    np,
+  );
+  // 7/6(月) 10:00-15:00 休憩60分 → 4h × 1,200 = 4,800（末日締め翌月払い → 8/15 支給）
+  await d.run(
+    "INSERT INTO shifts (id, user_id, job_id, date, start_min, end_min, break_min, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    uid(),
+    fixedUser,
+    npJob,
+    `${bMonth}-06`,
+    600,
+    900,
+    60,
+    "manual",
+  );
+  np = await nextPayday(fixedUser, `${bMonth}-29`);
+  check(
+    "入力済みシフトあり: 8/15 +4,800（あと17日）",
+    np !== null && np.date === "2026-08-15" && np.amount === 4800 && np.daysUntil === 17,
+    np,
+  );
+  np = await nextPayday(fixedUser, "2026-08-15");
+  check("給料日当日は daysUntil=0", np !== null && np.date === "2026-08-15" && np.daysUntil === 0, np);
 
   console.log(`\n結果: ${passed} passed / ${failed} failed`);
   return { passed, failed };

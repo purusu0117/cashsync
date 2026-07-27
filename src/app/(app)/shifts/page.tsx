@@ -582,6 +582,12 @@ export default function ShiftsPage() {
           <p className="mt-1.5 text-center text-[11px] text-ink-faint">
             平日 {income.weekdayHours.toFixed(1)}h ／ 土日祝 {income.weekendHolidayHours.toFixed(1)}h ／ {income.shiftCount}回 ・ 振込日はカレンダー参照
           </p>
+          <p className="mt-1 text-center text-[11px] text-ink-faint">
+            {Number(month.slice(5))}月に働いた分（給料日は締め日の翌月など）・
+            <Link href="/" className="underline underline-offset-2">
+              振込月ベースの収入はホームへ
+            </Link>
+          </p>
         </div>
       )}
 

@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     let body = "";
     if (fc.forecast < 0) {
       const recover = Math.ceil(-fc.forecast / daysRemainingInMonth());
-      body = `⚠ このままだと月末 -${fmtYen(-fc.forecast).replace("¥", "")}円。1日あと${fmtYen(recover)}おさえれば黒字に戻せます`;
+      body = `⚠ このままだと月末 ${fmtYen(fc.forecast)}。1日あと${fmtYen(recover)}おさえれば黒字に戻せます`;
     } else if (u.savings_goal > 0 && fc.forecast < u.savings_goal) {
       body = `🟡 黒字ペースですが、貯金目標まであと${fmtYen(u.savings_goal - fc.forecast)}足りない見込みです`;
     }
