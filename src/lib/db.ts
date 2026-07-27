@@ -205,6 +205,10 @@ function migrate(d: DatabaseSync) {
   addColumn(d, "category_budgets", "carryover INTEGER NOT NULL DEFAULT 0"); // C13: 1=前月の余りを当月予算に繰り越す
   addColumn(d, "users", "reminder_hour INTEGER NOT NULL DEFAULT -1"); // C3: 記録リマインダーの時刻（0〜23時。-1=OFF）
   addColumn(d, "users", "last_reminder_push TEXT"); // C3: リマインダーの最終送信日（1日1回制限）
+  // 同じ「画像そのもの」を二度読みしたときだけ弾くための sha256（同額・同店の別の支払いは弾かない）
+  addColumn(d, "receipts", "image_hash TEXT");
+  addColumn(d, "incomes", "image_hash TEXT");
+  addColumn(d, "users", "record_push INTEGER NOT NULL DEFAULT 1"); // 記録できたら通知する（既定ON）
   migrateCategoryIcons(d);
 }
 

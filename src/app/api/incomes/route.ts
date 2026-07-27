@@ -1,7 +1,9 @@
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
+import { fmtYen } from "@/lib/format";
 import { DUPLICATE_MESSAGE, duplicateIncomeExists } from "@/lib/merchant";
 import { monthRange, todayStr } from "@/lib/money";
+import { pushRecordResult } from "@/lib/push";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +34,7 @@ export async function POST(request: Request) {
       memo?: string;
       dedupe?: boolean; // スキャン保存だけ true（手入力の意図的な同額連続入力は妨げない）
       allowDuplicate?: boolean; // 409後にユーザーが「本当に別の受け取り」と確認した再送信のみ true
+      imageHash?: string; // 読み取った画像のsha256（同じ画像の二度読み判定用）
     };
     const amount = Math.round(Number(body.amount));
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -47,11 +50,20 @@ export async function POST(request: Request) {
       return Response.json({ error: DUPLICATE_MESSAGE, duplicate: true }, { status: 409 });
     }
     const id = uid();
+    const memo = (body.memo ?? "").trim();
     db()
       .prepare(
-        "INSERT INTO incomes (id, user_id, date, amount, type, memo, created_at) VALUES (?, ?, ?, ?, 'other', ?, ?)",
+        "INSERT INTO incomes (id, user_id, date, amount, type, memo, image_hash, created_at) VALUES (?, ?, ?, ?, 'other', ?, ?, ?)",
       )
-      .run(id, user.id, date, amount, (body.memo ?? "").trim(), Date.now());
+      .run(id, user.id, date, amount, memo, (body.imageHash ?? "").trim() || null, Date.now());
+    // スキャン由来（dedupe:true）のときだけ記録完了を通知する（手入力は画面で結果が見えている）
+    if (body.dedupe) {
+      await pushRecordResult(
+        user.id,
+        "CashSync 収入を記録しました",
+        `✅${fmtYen(amount)}（${memo || "収入"}）を記録しました`,
+      ).catch(() => {});
+    }
     return Response.json({ ok: true, id });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
