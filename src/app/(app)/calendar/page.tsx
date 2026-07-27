@@ -2,6 +2,8 @@
 
 // お金カレンダー：日付ごとの−支出/+収入と給料日を月表示。タップで詳細。
 // 上部に「今日使えるお金」の計算内訳（何がいくらで、どう割られているか）を表示。
+// 日別シートからその日にシフトを直接追加できる（複数日まとめて・音声はシフト画面のまま）。
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ExpenseEditSheet } from "@/components/EditSheets";
 import { CategoryIcon } from "@/components/Icons";
@@ -109,6 +111,46 @@ export default function CalendarPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [editing, setEditing] = useState<CalExpense | null>(null);
   const { toast, show, hide } = useToast();
+  // カレンダーからのシフト直接入力（複数日まとめて・音声はシフト画面のまま）
+  const [jobs, setJobs] = useState<{ id: string; name: string; color: string }[]>([]);
+  const [showShiftAdd, setShowShiftAdd] = useState(false);
+  const [shiftJob, setShiftJob] = useState("");
+  const [shiftStart, setShiftStart] = useState("17:00");
+  const [shiftEnd, setShiftEnd] = useState("22:00");
+  const [shiftBreak, setShiftBreak] = useState("0");
+  const [shiftBusy, setShiftBusy] = useState(false);
+
+  async function addShift() {
+    if (!shiftJob || !selected || shiftBusy) return;
+    const toMin = (t: string) => {
+      const [h, m] = t.split(":").map(Number);
+      return (h || 0) * 60 + (m || 0);
+    };
+    setShiftBusy(true);
+    try {
+      const r = await fetch("/api/shifts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobId: shiftJob,
+          date: selected,
+          startMin: toMin(shiftStart),
+          endMin: toMin(shiftEnd),
+          breakMin: Number(shiftBreak) || 0,
+          source: "calendar",
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "追加に失敗しました。");
+      setShowShiftAdd(false);
+      load(month);
+      show("シフトを追加しました（給料は給料日に反映）");
+    } catch (e) {
+      show(e instanceof Error ? e.message : "追加に失敗しました。");
+    } finally {
+      setShiftBusy(false);
+    }
+  }
 
   // 月切替の連打時に古い月のレスポンスで上書きされないよう、最新リクエストだけ反映する
   const reqRef = useRef(0);
@@ -128,6 +170,11 @@ export default function CalendarPage() {
     cachedFetch<{ categories?: Category[] }>("/api/categories", (d) =>
       setCategories(d.categories ?? []),
     ).catch(() => {});
+    // シフト直接入力のためのバイト先一覧
+    cachedFetch<{ jobs?: { id: string; name: string; color: string }[] }>("/api/jobs", (d) => {
+      setJobs(d.jobs ?? []);
+      if (d.jobs && d.jobs[0]) setShiftJob((p) => p || d.jobs![0].id);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -557,6 +604,85 @@ export default function CalendarPage() {
                 この日のお金の動きはありません（ノーマネーデー）
               </p>
             )}
+
+            {/* この日にシフトを直接追加（カレンダーから。複数日まとめて・音声はシフト画面のまま） */}
+            <div className="mt-4 cutline pt-3">
+              {jobs.length === 0 ? (
+                <Link
+                  href="/settings#jobs"
+                  className="dot block text-center text-[11px] text-ink-faint underline underline-offset-2"
+                >
+                  バイト先を登録すると、ここからシフトを入れられます
+                </Link>
+              ) : !showShiftAdd ? (
+                <button
+                  onClick={() => setShowShiftAdd(true)}
+                  className="dot w-full rounded-md border border-ink py-2 text-sm active:translate-y-0.5"
+                >
+                  ＋ この日にシフトを追加
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  {jobs.length > 1 && (
+                    <select
+                      value={shiftJob}
+                      onChange={(e) => setShiftJob(e.target.value)}
+                      className="w-full rounded-md border border-rule bg-paper px-3 py-2 text-sm"
+                    >
+                      {jobs.map((j) => (
+                        <option key={j.id} value={j.id}>
+                          {j.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <div className="flex items-center gap-2 text-sm">
+                    <input
+                      type="time"
+                      value={shiftStart}
+                      onChange={(e) => setShiftStart(e.target.value)}
+                      className="flex-1 rounded-md border border-rule bg-paper px-2 py-2"
+                    />
+                    <span className="text-ink-faint">〜</span>
+                    <input
+                      type="time"
+                      value={shiftEnd}
+                      onChange={(e) => setShiftEnd(e.target.value)}
+                      className="flex-1 rounded-md border border-rule bg-paper px-2 py-2"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <label className="flex flex-1 items-center gap-1.5 text-ink-faint">
+                      休憩
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={shiftBreak}
+                        onChange={(e) => setShiftBreak(e.target.value)}
+                        className="w-16 rounded-md border border-rule bg-paper px-2 py-1.5 text-right"
+                      />
+                      分
+                    </label>
+                    <button
+                      onClick={() => setShowShiftAdd(false)}
+                      className="rounded-md border border-rule px-3 py-1.5 text-xs text-ink-faint"
+                    >
+                      やめる
+                    </button>
+                    <button
+                      onClick={addShift}
+                      disabled={shiftBusy || !shiftJob}
+                      className="dot rounded-md bg-vermilion px-4 py-1.5 text-sm text-card active:translate-y-0.5 disabled:opacity-50"
+                    >
+                      追加
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-ink-faint">
+                    複数日まとめて・音声での入力は「シフト」タブから
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

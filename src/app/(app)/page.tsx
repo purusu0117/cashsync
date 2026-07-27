@@ -309,18 +309,6 @@ export default function HomePage() {
     setAmnesty(null);
   }
 
-  // 初回セットアップ：働き方（収入タイプ）を選ぶと画面を最適化（下タブのシフト表示など）。
-  // 設定でいつでも変更できる。localStorage も即更新して下タブに反映する。
-  async function chooseWorkStyle(v: string) {
-    if (typeof localStorage !== "undefined") localStorage.setItem("cashsync-workstyle", v);
-    try {
-      await apiCall("/api/profile", apiJson({ workStyle: v }));
-      load();
-    } catch {
-      /* 失敗しても次回起動時に再設定できる */
-    }
-  }
-
   // C7: 行内確認→削除。削除後は8秒間「元に戻す」で復元できる
   async function removeExpense(e: Summary["recent"][number]) {
     setConfirmId(null);
@@ -440,51 +428,18 @@ export default function HomePage() {
           <p className="mt-1 text-[11px] text-ink-faint">
             4つのステップで「今日あと使える」が動き出します
           </p>
-          {/* まず働き方を選ぶ→画面を最適化（月給・日給の人はシフトを出さない）。設定でいつでも変更可 */}
-          <div className="mt-3">
-            <p className="dot text-xs text-ink-faint">まず、あなたの収入は？（あとで設定から変更できます）</p>
-            <div className="mt-1.5 grid grid-cols-3 gap-2">
-              {(
-                [
-                  { v: "hourly", label: "時給・シフト", sub: "バイト" },
-                  { v: "salary", label: "月給", sub: "会社員" },
-                  { v: "daily", label: "日給", sub: "" },
-                ] as { v: string; label: string; sub: string }[]
-              ).map((o) => (
-                <button
-                  key={o.v}
-                  onClick={() => chooseWorkStyle(o.v)}
-                  className={`dot rounded-md border px-1 py-2 text-center text-xs active:translate-y-0.5 ${
-                    (data.workStyle ?? "hourly") === o.v
-                      ? "border-vermilion text-vermilion"
-                      : "border-rule text-ink-faint"
-                  }`}
-                >
-                  <span className="block">{o.label}</span>
-                  {o.sub && <span className="block text-[10px] opacity-70">{o.sub}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
           <ol className="cutline mt-3 space-y-2.5 pt-3">
             {(
               [
                 {
-                  // 働き方に合わせて収入登録の入口を変える（時給→シフト、月給/日給→定期収入=給料）
-                  label:
-                    (data.workStyle ?? "hourly") === "salary"
-                      ? "毎月の給料を登録"
-                      : (data.workStyle ?? "hourly") === "daily"
-                        ? "収入を登録"
-                        : "バイト先と時給を登録",
-                  done:
-                    (data.workStyle ?? "hourly") === "hourly"
-                      ? data.counts.jobs > 0
-                      : (data.counts.recurringIncome ?? 0) > 0,
-                  href:
-                    (data.workStyle ?? "hourly") === "hourly"
-                      ? "/settings#jobs"
-                      : "/settings#recurring",
+                  // 収入源はバイト（シフト）でも給料（定期収入）でもOK。どちらか登録すれば完了
+                  label: "収入を登録（バイト or 給料）",
+                  done: data.counts.jobs > 0 || (data.counts.recurringIncome ?? 0) > 0,
+                  href: null,
+                  actions: [
+                    { label: "シフト", href: "/settings#jobs" },
+                    { label: "給料", href: "/settings#recurring" },
+                  ],
                 },
                 {
                   label: "家賃などの固定費を登録",
