@@ -26,7 +26,7 @@ export async function GET() {
     const ydStr = jstTodayStr(-1);
     // クラウド版（Vercel⇄Supabase）はDB往復ごとにレイテンシが乗るため、独立クエリは並列で投げる。
     // forecast だけは summary に依存するので、summary の完了に連結する。
-    const [sf, goalRow, recent, ydCount, presets, noMoney, spentToday, fixedTotal, payday] =
+    const [sf, goalRow, recent, ydCount, presets, noMoney, spentToday, fixedTotal, payday, counts] =
       await Promise.all([
       monthSummary(user.id, month).then(async (summary) => ({
         summary,
@@ -54,6 +54,23 @@ export async function GET() {
       todaySpent(user.id),
       monthFixedCost(user.id, month),
       nextPayday(user.id),
+      // B3: 初回セットアップカード用の登録状況（全期間）。expensesAll は空データ時の
+      // 虚偽表示（ノーマネーデー称賛・振り返り案内・黒字判子）の抑制にも使う
+      (async () => {
+        const [jobs, rec, exp] = await Promise.all([
+          d.get<{ c: number }>("SELECT COUNT(*) AS c FROM jobs WHERE user_id = ?", user.id),
+          d.get<{ c: number }>(
+            "SELECT COUNT(*) AS c FROM recurring_items WHERE user_id = ? AND kind = 'expense'",
+            user.id,
+          ),
+          d.get<{ c: number }>("SELECT COUNT(*) AS c FROM expenses WHERE user_id = ?", user.id),
+        ]);
+        return {
+          jobs: jobs?.c ?? 0,
+          recurringExpense: rec?.c ?? 0,
+          expensesAll: exp?.c ?? 0,
+        };
+      })(),
     ]);
     const { summary, forecast } = sf;
     const savingsGoal = goalRow?.savings_goal ?? 0;
@@ -74,6 +91,7 @@ export async function GET() {
       yesterday: { date: ydStr, recorded: ydCount.c > 0 },
       recent,
       presets,
+      counts,
     });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();

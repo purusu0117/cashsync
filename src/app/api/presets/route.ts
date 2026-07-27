@@ -85,6 +85,53 @@ export async function POST(request: Request) {
   }
 }
 
+// B7: かんたん入力ボタンの編集（名前・金額・カテゴリの変更）
+export async function PUT(request: Request) {
+  try {
+    const user = await requireUser();
+    const body = (await request.json()) as {
+      id?: string;
+      label?: string;
+      amount?: number;
+      categoryId?: string | null;
+    };
+    if (!body.id) return Response.json({ error: "id required" }, { status: 400 });
+    const label = (body.label ?? "").trim();
+    const amount = Math.round(Number(body.amount));
+    if (!label || !Number.isFinite(amount) || amount <= 0) {
+      return Response.json({ error: "名前と金額は必須です。" }, { status: 400 });
+    }
+    if (label.length > 20) {
+      return Response.json({ error: "名前は20文字以内にしてください。" }, { status: 400 });
+    }
+    const d = await db();
+    const cur = await d.get("SELECT id FROM quick_presets WHERE id = ? AND user_id = ?", body.id, user.id);
+    if (!cur) return Response.json({ error: "ボタンが見つかりません。" }, { status: 404 });
+    // categoryId は本人のカテゴリのみ許可（他ユーザーIDの混入防止）
+    let categoryId: string | null = null;
+    if (body.categoryId) {
+      const row = await d.get(
+        "SELECT id FROM categories WHERE id = ? AND user_id = ?",
+        body.categoryId,
+        user.id,
+      );
+      categoryId = row ? body.categoryId : null;
+    }
+    await d.run(
+      "UPDATE quick_presets SET label = ?, amount = ?, category_id = ? WHERE id = ? AND user_id = ?",
+      label,
+      amount,
+      categoryId,
+      body.id,
+      user.id,
+    );
+    return Response.json({ ok: true, id: body.id });
+  } catch (e) {
+    if (e instanceof AuthError) return unauthorized();
+    return Response.json({ error: String(e) }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: Request) {
   try {
     const user = await requireUser();

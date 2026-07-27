@@ -53,6 +53,42 @@ export interface UsageCheck {
   limit: number | null; // null = 無制限
 }
 
+export interface AiUsageDisplay {
+  plan: Plan;
+  // limit: null = 無制限表示（premium / founder）。free はリワードボーナス込みの上限
+  scans: { used: number; limit: number | null };
+  parses: { used: number; limit: number | null };
+}
+
+/** B12: 設定のプラン欄・スキャン画面の残量表示用（今月の使用回数とプラン別上限） */
+export async function getAiUsageDisplay(userId: string, plan?: Plan): Promise<AiUsageDisplay> {
+  const d = await db();
+  const p = plan ?? (await getUserPlan(userId));
+  const ym = jstTodayStr().slice(0, 7);
+  const row = await d.get<{
+    scans: number;
+    parses: number;
+    bonus_scans: number;
+    bonus_parses: number;
+  }>(
+    "SELECT scans, parses, bonus_scans, bonus_parses FROM ai_usage WHERE user_id = ? AND ym = ?",
+    userId,
+    ym,
+  );
+  const free = p === "free";
+  return {
+    plan: p,
+    scans: {
+      used: row?.scans ?? 0,
+      limit: free ? FREE_LIMITS.scans + (row?.bonus_scans ?? 0) : null,
+    },
+    parses: {
+      used: row?.parses ?? 0,
+      limit: free ? FREE_LIMITS.parses + (row?.bonus_parses ?? 0) : null,
+    },
+  };
+}
+
 /**
  * 使用枠を確認して1回分カウントする。
  *  - free   : 月上限（FREE_LIMITS＋リワード動画ボーナス bonus_scans / bonus_parses）まで

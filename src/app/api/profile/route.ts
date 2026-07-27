@@ -1,6 +1,6 @@
-// ユーザー単位の設定（貯金目標・ショートカット連携トークンなど）
+// ユーザー単位の設定（貯金目標・ショートカット連携トークン・AI残量など）
 import { AuthError, ensureApiToken, requireUser, unauthorized } from "@/lib/auth";
-import { normalizePlan } from "@/lib/aiUsage";
+import { getAiUsageDisplay, normalizePlan } from "@/lib/aiUsage";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +13,14 @@ export async function GET() {
       "SELECT savings_goal, plan FROM users WHERE id = ?",
       user.id,
     );
+    const plan = normalizePlan(row?.plan);
+    // B12: プランと今月のAI使用量（設定のプラン欄・スキャン画面の残量表示用）
+    const usage = await getAiUsageDisplay(user.id, plan);
     return Response.json({
       savingsGoal: row?.savings_goal ?? 0,
-      plan: normalizePlan(row?.plan),
+      plan,
       apiToken: await ensureApiToken(user.id),
+      aiUsage: { scans: usage.scans, parses: usage.parses },
     });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();

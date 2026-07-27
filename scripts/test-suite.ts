@@ -4,7 +4,13 @@
 import { randomBytes, scryptSync } from "node:crypto";
 import { isCategoryIconKey, stripCategoryEmoji } from "../src/lib/categoryIcons";
 import { migrateCategoryIcons, setDbForTesting, seedCategories, uid, type Db } from "../src/lib/db";
-import { checkAndCountUsage, getUserPlan, FREE_LIMITS, PREMIUM_SCAN_LIMIT } from "../src/lib/aiUsage";
+import {
+  checkAndCountUsage,
+  getAiUsageDisplay,
+  getUserPlan,
+  FREE_LIMITS,
+  PREMIUM_SCAN_LIMIT,
+} from "../src/lib/aiUsage";
 import { applyPurchaseEvent, setPlanFromEntitlement } from "../src/lib/purchases-server";
 import {
   duplicateExpenseExists,
@@ -1222,6 +1228,247 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
       ),
     usedFood,
   );
+
+  // --- 17. Batch3 (B7): バイト先・カテゴリ・プリセットの編集 ---
+  console.log("[17] Batch3 編集系（B7）");
+  // バイト先の部分更新（/api/jobs POST id付き相当）：指定項目だけ変わり、未指定は保持
+  await d.run(
+    "UPDATE jobs SET name = ?, weekday_rate = ?, closing_day = ? WHERE id = ? AND user_id = ?",
+    "キミハン新館",
+    1250,
+    15,
+    jobId,
+    userId,
+  );
+  const editedJob = await d.get<{
+    name: string;
+    weekday_rate: number;
+    weekend_holiday_rate: number;
+    closing_day: number;
+    pay_day: number;
+  }>(
+    "SELECT name, weekday_rate, weekend_holiday_rate, closing_day, pay_day FROM jobs WHERE id = ?",
+    jobId,
+  );
+  check(
+    "バイト先の編集: 名前・時給・締め日が更新され、未指定項目（土日祝時給・支払日）は保持",
+    editedJob?.name === "キミハン新館" &&
+      editedJob?.weekday_rate === 1250 &&
+      editedJob?.closing_day === 15 &&
+      editedJob?.weekend_holiday_rate === 1200 &&
+      editedJob?.pay_day === 25,
+    editedJob,
+  );
+  // shift_count（/api/jobs GET のサブクエリ）：削除確認「シフト◯件も削除されます」用
+  const jobRows = await d.all<{ id: string; shift_count: number | string }>(
+    `SELECT j.id,
+            (SELECT COUNT(*) FROM shifts s WHERE s.job_id = j.id AND s.user_id = j.user_id) AS shift_count
+     FROM jobs j WHERE j.user_id = ?`,
+    userId,
+  );
+  const jobWithShifts = jobRows.find((j) => j.id === jobId);
+  check(
+    "shift_count がバイト先ごとのシフト数を返す（当月＋来月の2件）",
+    Number(jobWithShifts?.shift_count) === 2,
+    jobRows,
+  );
+  // 他ユーザーはバイト先を編集できない
+  const foreignJobEdit = await d.run(
+    "UPDATE jobs SET name = ? WHERE id = ? AND user_id = ?",
+    "乗っ取り",
+    jobId,
+    uid(),
+  );
+  check("他ユーザーはバイト先を編集できない", foreignJobEdit.changes === 0);
+  // カテゴリの編集（/api/categories PUT 相当）：名前・アイコン
+  await d.run(
+    "UPDATE categories SET name = ?, icon = ? WHERE id = ? AND user_id = ?",
+    "ごはん",
+    "food",
+    foodCat.id,
+    userId,
+  );
+  const editedCat = await d.get<{ name: string; icon: string }>(
+    "SELECT name, icon FROM categories WHERE id = ?",
+    foodCat.id,
+  );
+  check("カテゴリの編集: 名前・アイコンが更新される", editedCat?.name === "ごはん" && editedCat?.icon === "food", editedCat);
+  check(
+    "カテゴリ編集後も既存支出の紐付けは維持される",
+    ((await d.get<{ c: number | string }>(
+      "SELECT COUNT(*) AS c FROM expenses WHERE user_id = ? AND category_id = ?",
+      userId,
+      foodCat.id,
+    ))!.c as number) > 0,
+  );
+  // プリセットの編集（/api/presets PUT 相当）：名前・金額・カテゴリ
+  const editPresetId = uid();
+  await d.run(
+    "INSERT INTO quick_presets (id, user_id, label, amount, category_id, sort) VALUES (?, ?, ?, ?, ?, ?)",
+    editPresetId,
+    userId,
+    "Suicaチャージ",
+    1000,
+    transportCat.id,
+    5,
+  );
+  await d.run(
+    "UPDATE quick_presets SET label = ?, amount = ?, category_id = ? WHERE id = ? AND user_id = ?",
+    "Suica2000",
+    2000,
+    null,
+    editPresetId,
+    userId,
+  );
+  const editedPreset = await d.get<{ label: string; amount: number; category_id: string | null }>(
+    "SELECT label, amount, category_id FROM quick_presets WHERE id = ?",
+    editPresetId,
+  );
+  check(
+    "プリセットの編集: 名前・金額・カテゴリ（外す）が更新される",
+    editedPreset?.label === "Suica2000" && editedPreset?.amount === 2000 && editedPreset?.category_id === null,
+    editedPreset,
+  );
+  const foreignPresetEdit = await d.run(
+    "UPDATE quick_presets SET amount = ? WHERE id = ? AND user_id = ?",
+    1,
+    editPresetId,
+    uid(),
+  );
+  check("他ユーザーはプリセットを編集できない", foreignPresetEdit.changes === 0);
+  await d.run("DELETE FROM quick_presets WHERE id = ?", editPresetId);
+
+  // --- 17b. Batch3 (B12): AI残量表示（getAiUsageDisplay） ---
+  console.log("[17b] Batch3 AI残量表示（B12）");
+  const displayUser = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    displayUser,
+    "display@example.com",
+    "残量花子",
+    hashPassword("password123"),
+    Date.now(),
+  );
+  let disp = await getAiUsageDisplay(displayUser);
+  check(
+    "使用0のfree: 0/30回・0/30回",
+    disp.plan === "free" &&
+      disp.scans.used === 0 &&
+      disp.scans.limit === FREE_LIMITS.scans &&
+      disp.parses.used === 0 &&
+      disp.parses.limit === FREE_LIMITS.parses,
+    disp,
+  );
+  await d.run(
+    "INSERT INTO ai_usage (user_id, ym, scans, parses) VALUES (?, ?, ?, ?)",
+    displayUser,
+    month,
+    12,
+    3,
+  );
+  disp = await getAiUsageDisplay(displayUser);
+  check(
+    "freeの残量表示: 今月のAI読み取り12/30・文章入力3/30",
+    disp.scans.used === 12 && disp.scans.limit === 30 && disp.parses.used === 3 && disp.parses.limit === 30,
+    disp,
+  );
+  // リワード動画ボーナスは上限に上乗せされる（12/33 のように表示できる）
+  await d.run(
+    "UPDATE ai_usage SET bonus_scans = 3 WHERE user_id = ? AND ym = ?",
+    displayUser,
+    month,
+  );
+  disp = await getAiUsageDisplay(displayUser);
+  check("ボーナス+3で上限が33になる", disp.scans.limit === FREE_LIMITS.scans + 3, disp);
+  await d.run("UPDATE users SET plan = 'premium' WHERE id = ?", displayUser);
+  disp = await getAiUsageDisplay(displayUser);
+  check(
+    "premiumはlimit=null（無制限表示）",
+    disp.plan === "premium" && disp.scans.limit === null && disp.parses.limit === null,
+    disp,
+  );
+  await d.run("UPDATE users SET plan = 'founder' WHERE id = ?", displayUser);
+  disp = await getAiUsageDisplay(displayUser);
+  check(
+    "founderもlimit=null（無制限表示）",
+    disp.plan === "founder" && disp.scans.limit === null && disp.parses.limit === null,
+    disp,
+  );
+
+  // --- 17c. Batch3 (B3): セットアップカード用counts・週次recordCount ---
+  console.log("[17c] Batch3 オンボーディングcounts（B3）");
+  const newbie = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    newbie,
+    "newbie@example.com",
+    "新規太郎",
+    hashPassword("password123"),
+    Date.now(),
+  );
+  const countsOf = async (uid2: string) => ({
+    jobs: Number(
+      (await d.get<{ c: number | string }>("SELECT COUNT(*) AS c FROM jobs WHERE user_id = ?", uid2))!.c,
+    ),
+    recurringExpense: Number(
+      (await d.get<{ c: number | string }>(
+        "SELECT COUNT(*) AS c FROM recurring_items WHERE user_id = ? AND kind = 'expense'",
+        uid2,
+      ))!.c,
+    ),
+    expensesAll: Number(
+      (await d.get<{ c: number | string }>("SELECT COUNT(*) AS c FROM expenses WHERE user_id = ?", uid2))!.c,
+    ),
+  });
+  let cnt = await countsOf(newbie);
+  check(
+    "新規ユーザーのcountsは全て0（セットアップカード表示・虚偽称賛の抑制対象）",
+    cnt.jobs === 0 && cnt.recurringExpense === 0 && cnt.expensesAll === 0,
+    cnt,
+  );
+  cnt = await countsOf(userId);
+  check(
+    "既存ユーザーはcountsが立つ（カード非表示）",
+    cnt.jobs > 0 && cnt.recurringExpense > 0 && cnt.expensesAll > 0,
+    cnt,
+  );
+  // 週次のrecordCount：定期計上（source='recurring'）を除いた行数。0件の週は称賛でなく案内に切り替える
+  const wkStart = "2000-01-03";
+  const wkEnd = "2000-01-09";
+  const recordCountOf = async (uid2: string) =>
+    Number(
+      (await d.get<{ c: number | string }>(
+        "SELECT COUNT(*) AS c FROM expenses WHERE user_id = ? AND date >= ? AND date <= ? AND source != 'recurring'",
+        uid2,
+        wkStart,
+        wkEnd,
+      ))!.c,
+    );
+  check("記録0件の週は recordCount=0（案内表示）", (await recordCountOf(newbie)) === 0);
+  await d.run(
+    "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'recurring', ?, ?)",
+    uid(),
+    newbie,
+    "2000-01-04",
+    50000,
+    null,
+    "家賃",
+    null,
+    Date.now(),
+  );
+  check("定期計上だけの週も recordCount=0（行動の記録ではないため）", (await recordCountOf(newbie)) === 0);
+  await d.run(
+    "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?)",
+    uid(),
+    newbie,
+    "2000-01-05",
+    650,
+    null,
+    "昼飯",
+    null,
+    Date.now(),
+  );
+  check("手入力1件で recordCount=1（振り返り表示に切替）", (await recordCountOf(newbie)) === 1);
 
   console.log(`\n結果: ${passed} passed / ${failed} failed`);
   return { passed, failed };

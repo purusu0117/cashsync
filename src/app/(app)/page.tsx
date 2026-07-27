@@ -55,6 +55,8 @@ interface Summary {
     category: string | null;
     icon: string | null;
   }[];
+  // B3: 初回セットアップカード用の登録状況（旧キャッシュには無いので optional）
+  counts?: { jobs: number; recurringExpense: number; expensesAll: number };
 }
 
 interface Preset {
@@ -89,6 +91,8 @@ export default function HomePage() {
   // B6: iOSスクショボタンの初回タップ時の選択ダイアログ（ショートカット未設定ユーザー対策）
   const [shortcutDialog, setShortcutDialog] = useState(false);
   const [shortcutDefault, setShortcutDefault] = useState(false);
+  // B3: 初回セットアップカード（新規登録直後のデータ0件ユーザーだけに表示）
+  const [showSetup, setShowSetup] = useState(false);
   const syncedRef = useRef(false);
   const camRef = useRef<HTMLInputElement>(null);
   const libRef = useRef<HTMLInputElement>(null);
@@ -99,9 +103,34 @@ export default function HomePage() {
       await cachedFetch<Summary>("/api/summary", (d) => {
         setData(d);
         // つけ忘れ赦免：昨日の記録が1件も無ければ、細いカードで確認（完璧主義による離脱対策）
+        // B3: まだ1件も記録していない新規ユーザーには「昨日の記録がありません」を出さない
         const yd = d.yesterday?.date ?? yesterdayLocal();
         const dismissed = localStorage.getItem(`cashsync-amnesty-${yd}`);
-        setAmnesty(!d.yesterday?.recorded && !dismissed && yd.startsWith(d.month) ? yd : null);
+        const hasExp = (d.counts?.expensesAll ?? 1) > 0;
+        setAmnesty(
+          hasExp && !d.yesterday?.recorded && !dismissed && yd.startsWith(d.month) ? yd : null,
+        );
+        // B3: 初回セットアップカードの表示判定。
+        //  - localStorage 未設定＋データ0件 → カード開始（"active"）
+        //  - localStorage 未設定＋データあり → 既存ユーザーなので出さない（"done"）
+        //  - 4ステップ完了 or 「閉じる」→ "done" で以後表示しない
+        if (d.counts) {
+          const c = d.counts;
+          const stepsDone =
+            c.jobs > 0 && c.recurringExpense > 0 && (d.savingsGoal ?? 0) > 0 && c.expensesAll > 0;
+          const ls = localStorage.getItem("cashsync-setup");
+          if (ls === "done" || stepsDone) {
+            if (ls === "active") localStorage.setItem("cashsync-setup", "done");
+            setShowSetup(false);
+          } else if (ls === "active") {
+            setShowSetup(true);
+          } else {
+            const hasData =
+              c.jobs > 0 || c.recurringExpense > 0 || c.expensesAll > 0 || (d.savingsGoal ?? 0) > 0;
+            localStorage.setItem("cashsync-setup", hasData ? "done" : "active");
+            setShowSetup(!hasData);
+          }
+        }
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "読み込みに失敗しました。");
@@ -296,6 +325,9 @@ export default function HomePage() {
   if (!data) return <Loading />;
 
   const { summary, forecast, savingsGoal, noMoney } = data;
+  // B3: 支出0件の間は「ノーマネーデー◯日連続」「黒字判子」等の虚偽の称賛を出さない
+  // （counts が無い旧キャッシュは従来どおり表示）
+  const hasExpenses = (data.counts?.expensesAll ?? 1) > 0;
   // B2: 今日の予算の土台（今月収入 − 貯金目標 − 固定費 − 昨日までの変動支出）がマイナス＝今月使える残りなし
   const budgetExhausted = (data.budget?.monthRemaining ?? 0) < 0;
   // 予算信号機（Zaim方式）：赤=このままだと赤字 / 黄=黒字だが貯金目標に届かない / 緑=目標達成ペース
@@ -330,8 +362,90 @@ export default function HomePage() {
         className="hidden"
       />
 
-      {/* 月初：先月の振り返りレポート案内 */}
-      {reviewMonth && (
+      {/* B3: 初回セットアップカード（レシート世界観・番号付きステップ） */}
+      {showSetup && data.counts && (
+        <section className="zig zig-t zig-b px-5 pb-4 pt-4 shadow-sm">
+          <div className="flex items-baseline justify-between">
+            <p className="dot text-sm tracking-[0.14em]">＊ はじめかた ＊</p>
+            <button
+              onClick={() => {
+                localStorage.setItem("cashsync-setup", "done");
+                setShowSetup(false);
+              }}
+              className="text-[11px] text-ink-faint underline underline-offset-2"
+            >
+              閉じる
+            </button>
+          </div>
+          <p className="mt-1 text-[11px] text-ink-faint">
+            4つのステップで「今日あと使える」が動き出します
+          </p>
+          <ol className="cutline mt-3 space-y-2.5 pt-3">
+            {(
+              [
+                {
+                  label: "バイト先と時給を登録",
+                  done: data.counts.jobs > 0,
+                  href: "/settings#jobs",
+                },
+                {
+                  label: "家賃などの固定費を登録",
+                  done: data.counts.recurringExpense > 0,
+                  href: "/settings#recurring",
+                },
+                { label: "貯金目標を決める", done: savingsGoal > 0, href: "/settings#goal" },
+                { label: "最初の記録をしてみる", done: data.counts.expensesAll > 0, href: null },
+              ] as { label: string; done: boolean; href: string | null }[]
+            ).map((s, i) => (
+              <li key={s.label} className="flex items-center gap-2.5 text-sm">
+                <span
+                  className={`dot flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[13px] tabular-nums ${
+                    s.done ? "border-sage text-sage" : "border-ink"
+                  }`}
+                >
+                  {i + 1}
+                </span>
+                <span className={`min-w-0 flex-1 ${s.done ? "text-ink-faint line-through" : ""}`}>
+                  {s.label}
+                </span>
+                {s.done ? (
+                  <span
+                    className="stamp dot shrink-0 px-1.5 py-0.5 text-xs text-sage"
+                    style={{ borderColor: "currentColor" }}
+                  >
+                    済
+                  </span>
+                ) : s.href ? (
+                  <Link
+                    href={s.href}
+                    className="dot shrink-0 rounded border border-ink px-2 py-1 text-xs active:translate-y-0.5"
+                  >
+                    設定へ
+                  </Link>
+                ) : (
+                  <span className="flex shrink-0 gap-1.5">
+                    <button
+                      onClick={() => camRef.current?.click()}
+                      className="dot rounded border border-ink px-2 py-1 text-xs active:translate-y-0.5"
+                    >
+                      撮る
+                    </button>
+                    <Link
+                      href="/add"
+                      className="dot rounded border border-ink px-2 py-1 text-xs active:translate-y-0.5"
+                    >
+                      手入力
+                    </Link>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {/* 月初：先月の振り返りレポート案内（B3: 記録が1件もない間は出さない） */}
+      {reviewMonth && hasExpenses && (
         <div className="flex items-center gap-2 rounded-md border border-rule bg-card px-3 py-2 text-xs">
           <span className="min-w-0 flex-1">先月の振り返りレポートができます</span>
           <Link
@@ -354,8 +468,8 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* 週次振り返り案内（月〜水） */}
-      {weeklyKey && (
+      {/* 週次振り返り案内（月〜水）。B3: 記録が1件もない間は出さない */}
+      {weeklyKey && hasExpenses && (
         <div className="flex items-center gap-2 rounded-md border border-rule bg-card px-3 py-2 text-xs">
           <span className="min-w-0 flex-1">先週の振り返りができました</span>
           <Link
@@ -454,31 +568,40 @@ export default function HomePage() {
 
         <div className="cutline my-4" />
 
-        {/* 月末予測 ＋ 判子（黒字/注意/赤字）：署名要素はここに1つだけ */}
-        <div className="relative pr-16">
+        {/* 月末予測 ＋ 判子（黒字/注意/赤字）：署名要素はここに1つだけ。
+            B3: 支出0件の間は判子・達成ペース文言を出さない（記録していないだけの虚偽の称賛になるため） */}
+        <div className={`relative ${hasExpenses ? "pr-16" : ""}`}>
           <div className="flex items-baseline text-sm">
             <span className="text-ink-faint">月末までの予測</span>
             <span className="leader" />
-            <span className={`dot text-xl tabular-nums ${signalColor}`}>
+            <span className={`dot text-xl tabular-nums ${hasExpenses ? signalColor : ""}`}>
               {forecast.forecast >= 0 ? "+" : ""}
               {fmtYen(forecast.forecast)}
             </span>
           </div>
-          <p className={`mt-0.5 text-[11px] ${signal === "red" ? "text-vermilion" : "text-ink-faint"}`}>
-            {signal === "green" && "貯金目標を達成するペースです"}
-            {/* 赤=月末赤字ペースなら挽回額、今日の超過だけ（月は黒字ペース）ならその旨 */}
-            {signal === "red" &&
-              (forecast.forecast < 0
-                ? `1日あと${fmtYen(recoverPerDay)}減らせば黒字`
-                : "月全体では黒字ペースです")}
-            {signal === "yellow" && "黒字だが目標まであと少し"}
-          </p>
-          <span
-            className={`stamp dot absolute right-0 top-1/2 -translate-y-1/2 px-2 py-1 text-sm ${signalColor}`}
-            style={{ borderColor: "currentColor" }}
-          >
-            {signal === "green" ? "黒字" : signal === "yellow" ? "注意" : "赤字"}
-          </span>
+          {hasExpenses ? (
+            <p className={`mt-0.5 text-[11px] ${signal === "red" ? "text-vermilion" : "text-ink-faint"}`}>
+              {signal === "green" && "貯金目標を達成するペースです"}
+              {/* 赤=月末赤字ペースなら挽回額、今日の超過だけ（月は黒字ペース）ならその旨 */}
+              {signal === "red" &&
+                (forecast.forecast < 0
+                  ? `1日あと${fmtYen(recoverPerDay)}減らせば黒字`
+                  : "月全体では黒字ペースです")}
+              {signal === "yellow" && "黒字だが目標まであと少し"}
+            </p>
+          ) : (
+            <p className="mt-0.5 text-[11px] text-ink-faint">
+              支出を記録すると予測とペース判定が動き出します
+            </p>
+          )}
+          {hasExpenses && (
+            <span
+              className={`stamp dot absolute right-0 top-1/2 -translate-y-1/2 px-2 py-1 text-sm ${signalColor}`}
+              style={{ borderColor: "currentColor" }}
+            >
+              {signal === "green" ? "黒字" : signal === "yellow" ? "注意" : "赤字"}
+            </span>
+          )}
         </div>
 
         {/* 貯金目標の進捗 */}
@@ -536,15 +659,18 @@ export default function HomePage() {
             {fmtYen(summary.expenseTotal)}
           </span>
         </div>
-        <div className="mt-2 flex items-baseline justify-between text-xs text-ink-faint">
-          <span>
-            <span className="mu">無</span> ノーマネーデー
-          </span>
-          <span className="leader" />
-          <span className="dot tabular-nums">
-            今月{noMoney.count}日{noMoney.streak >= 2 && `・${noMoney.streak}日連続`}
-          </span>
-        </div>
+        {/* B3: 支出0件の間は「今月◯日・◯日連続」が全日ノーマネー扱いになり嘘くさいので出さない */}
+        {hasExpenses && (
+          <div className="mt-2 flex items-baseline justify-between text-xs text-ink-faint">
+            <span>
+              <span className="mu">無</span> ノーマネーデー
+            </span>
+            <span className="leader" />
+            <span className="dot tabular-nums">
+              今月{noMoney.count}日{noMoney.streak >= 2 && `・${noMoney.streak}日連続`}
+            </span>
+          </div>
+        )}
 
         <div className="barcode mt-4" />
         <p className="dot mt-1 text-center text-[10px] tracking-[0.3em] text-ink-faint">

@@ -58,6 +58,34 @@ export async function POST(request: Request) {
   }
 }
 
+// B7: カテゴリの編集（名前・アイコンの変更）
+export async function PUT(request: Request) {
+  try {
+    const user = await requireUser();
+    const body = (await request.json()) as { id?: string; name?: string; icon?: string };
+    if (!body.id) return Response.json({ error: "id required" }, { status: 400 });
+    const name = stripCategoryEmoji((body.name ?? "").trim());
+    if (!name) return Response.json({ error: "名前は必須です。" }, { status: 400 });
+    const icon = isCategoryIconKey((body.icon ?? "").trim())
+      ? (body.icon ?? "").trim()
+      : DEFAULT_CATEGORY_ICON;
+    const d = await db();
+    const cur = await d.get("SELECT id FROM categories WHERE id = ? AND user_id = ?", body.id, user.id);
+    if (!cur) return Response.json({ error: "カテゴリが見つかりません。" }, { status: 404 });
+    await d.run(
+      "UPDATE categories SET name = ?, icon = ? WHERE id = ? AND user_id = ?",
+      name,
+      icon,
+      body.id,
+      user.id,
+    );
+    return Response.json({ ok: true, id: body.id });
+  } catch (e) {
+    if (e instanceof AuthError) return unauthorized();
+    return Response.json({ error: String(e) }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: Request) {
   try {
     const user = await requireUser();
