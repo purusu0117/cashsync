@@ -177,3 +177,43 @@ export async function deletePhotos(ids: string[]): Promise<{ deleted: number; ca
   if (!plugin || ids.length === 0) return { deleted: 0 };
   return await plugin.deletePhotos({ ids });
 }
+
+// ---------------------------------------------------------------------------
+// ホーム画面ウィジェット連携 ＋ ローカル通知（どちらもネイティブのみ）
+// ---------------------------------------------------------------------------
+
+/**
+ * ウィジェットが /api/widget を叩けるよう、APIトークンと接続先を端末側（App Group）に渡す。
+ * ウィジェットはアプリとは別プロセスでセッションCookieを読めないため、これが無いと
+ * 「アプリでログインするとここに残額が出ます」の表示のままになる。
+ */
+export async function syncWidgetAuth(token: string): Promise<void> {
+  const plugin = photoCleaner();
+  if (!plugin || !token) return;
+  await plugin
+    .setWidgetAuth({ token, baseUrl: window.location.origin })
+    .catch(() => {}); // 失敗してもアプリ本体の動作は止めない
+}
+
+/** ログアウト時：ウィジェットに残額が出続けないよう保存データを消す */
+export async function clearWidgetAuth(): Promise<void> {
+  const plugin = photoCleaner();
+  if (!plugin) return;
+  await plugin.clearWidgetAuth().catch(() => {});
+}
+
+/**
+ * 記録リマインドのローカル通知を設定（hour<0 で解除）。
+ * サーバーからのプッシュと違い証明書不要で、機内モードでも端末内で発火する。
+ */
+export async function scheduleLocalReminder(
+  hour: number,
+): Promise<{ scheduled: boolean; denied?: boolean }> {
+  const plugin = photoCleaner();
+  if (!plugin) return { scheduled: false };
+  try {
+    return await plugin.scheduleReminder({ hour });
+  } catch {
+    return { scheduled: false };
+  }
+}

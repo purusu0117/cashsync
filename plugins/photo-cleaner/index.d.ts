@@ -18,6 +18,12 @@ export interface PhotoCleanerPlugin {
    * ユーザーがキャンセルした場合は { deleted: 0, cancelled: true }。
    */
   deletePhotos(options: { ids: string[] }): Promise<{ deleted: number; cancelled?: boolean }>;
+  /** ホーム画面ウィジェット用に、APIトークンと接続先を App Group へ保存する */
+  setWidgetAuth(options: { token: string; baseUrl?: string }): Promise<{ ok: boolean }>;
+  /** ログアウト時にウィジェットの保存データを消す */
+  clearWidgetAuth(): Promise<{ ok: boolean }>;
+  /** 記録リマインドのローカル通知を毎日 hour:00 に設定（hour<0 で解除） */
+  scheduleReminder(options: { hour: number }): Promise<{ scheduled: boolean; denied?: boolean }>;
 }
 
 export declare const PhotoCleaner: PhotoCleanerPlugin;

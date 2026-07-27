@@ -17,7 +17,7 @@ import { CATEGORY_ICON_KEYS, DEFAULT_CATEGORY_ICON } from "@/lib/categoryIcons";
 import { cachedFetch, clearApiCache } from "@/lib/cachedFetch";
 import { apiCall, apiJson } from "@/lib/clientApi";
 import { fmtYen } from "@/lib/format";
-import { isNativePlatform } from "@/lib/native";
+import { clearWidgetAuth, isNativePlatform, scheduleLocalReminder } from "@/lib/native";
 import { isPurchasesAvailable, purchasePremium, restorePremium } from "@/lib/purchases";
 
 interface Job {
@@ -435,6 +435,13 @@ export default function SettingsPage() {
     setReminderHour(hour); // 先に反映して待たせない
     try {
       await apiCall("/api/profile", apiJson({ reminderHour: hour }));
+      // ネイティブアプリはサーバープッシュが届かないので、端末のローカル通知として登録する
+      const local = await scheduleLocalReminder(hour);
+      if (hour >= 0 && isNativePlatform() && local.denied) {
+        setPageError(
+          "iPhoneの通知が許可されていません。設定 → 通知 → CashSync から通知を許可してください。",
+        );
+      }
       setReminderSaved(true);
       setTimeout(() => setReminderSaved(false), 2500);
     } catch (e) {
@@ -578,6 +585,9 @@ export default function SettingsPage() {
     });
     // 別ユーザーでログインし直しても前のデータが見えないよう、キャッシュを必ず全消し
     clearApiCache();
+    // ウィジェットに前のユーザーの残額が出続けないよう、端末側の保存も消す＋リマインドも解除
+    await clearWidgetAuth();
+    await scheduleLocalReminder(-1);
     // B8: アプリロックはログアウトで解除（パスコードを忘れた場合の逃げ道）
     disableLock();
     location.href = "/login";

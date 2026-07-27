@@ -1,17 +1,90 @@
 import Foundation
 import Capacitor
 import Photos
+import UserNotifications
+import WidgetKit
 
-/// CashSync カスタムプラグイン：端末のスクリーンショット一覧取得と削除。
-/// 削除は PHPhotoLibrary.performChanges → OS標準の確認ダイアログが出る。
+/// CashSync カスタムプラグイン：
+///  - 端末のスクリーンショット一覧取得と削除（削除はOS標準の確認ダイアログつき）
+///  - ホーム画面ウィジェットへのログイン情報の受け渡し（App Group 経由）
+///  - 記録リマインドのローカル通知（毎日指定時刻・端末内で完結）
 @objc(PhotoCleanerPlugin)
 public class PhotoCleanerPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "PhotoCleanerPlugin"
     public let jsName = "PhotoCleaner"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "listRecentScreenshots", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "deletePhotos", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "deletePhotos", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setWidgetAuth", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearWidgetAuth", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "scheduleReminder", returnType: CAPPluginReturnPromise)
     ]
+
+    private let appGroupId = "group.com.daito.cashsync"
+
+    /// ウィジェットが /api/widget を叩けるように、トークンとベースURLを App Group に保存する。
+    /// これが無いとウィジェットは「アプリでログインすると…」のままになる。
+    @objc func setWidgetAuth(_ call: CAPPluginCall) {
+        guard let token = call.getString("token"), !token.isEmpty else {
+            call.reject("token required")
+            return
+        }
+        guard let defaults = UserDefaults(suiteName: appGroupId) else {
+            call.reject("app group unavailable")
+            return
+        }
+        defaults.set(token, forKey: "apiToken")
+        if let baseUrl = call.getString("baseUrl"), !baseUrl.isEmpty {
+            defaults.set(baseUrl, forKey: "baseUrl")
+        }
+        WidgetCenter.shared.reloadAllTimelines()
+        call.resolve(["ok": true])
+    }
+
+    /// ログアウト時に呼ぶ。ウィジェットに残額が出続けないようにする。
+    @objc func clearWidgetAuth(_ call: CAPPluginCall) {
+        if let defaults = UserDefaults(suiteName: appGroupId) {
+            for key in ["apiToken", "remainingToday", "todayBudget", "spentToday", "nextPaydayDate", "nextPaydayAmount", "updatedAt"] {
+                defaults.removeObject(forKey: key)
+            }
+        }
+        WidgetCenter.shared.reloadAllTimelines()
+        call.resolve(["ok": true])
+    }
+
+    /// 記録リマインドのローカル通知（毎日 hour:00）。hour が負なら解除。
+    /// サーバーからのプッシュと違い証明書不要で、端末内で完結する。
+    @objc func scheduleReminder(_ call: CAPPluginCall) {
+        let hour = call.getInt("hour") ?? -1
+        let center = UNUserNotificationCenter.current()
+        let identifier = "cashsync-record-reminder"
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
+        if hour < 0 || hour > 23 {
+            call.resolve(["scheduled": false])
+            return
+        }
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            guard granted else {
+                call.resolve(["scheduled": false, "denied": true])
+                return
+            }
+            let content = UNMutableNotificationContent()
+            content.title = "CashSync"
+            content.body = "今日の記録がまだです。レシートを撮るだけなら3秒で終わります"
+            content.sound = .default
+            var components = DateComponents()
+            components.hour = hour
+            components.minute = 0
+            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+            center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)) { error in
+                if let error = error {
+                    call.reject(error.localizedDescription)
+                } else {
+                    call.resolve(["scheduled": true])
+                }
+            }
+        }
+    }
 
     @objc func listRecentScreenshots(_ call: CAPPluginCall) {
         let limit = call.getInt("limit") ?? 30

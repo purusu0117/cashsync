@@ -3,6 +3,7 @@ import AppLock from "@/components/AppLock";
 import BottomNav from "@/components/BottomNav";
 import NativeAds from "@/components/NativeAds";
 import NativePurchases from "@/components/NativePurchases";
+import NativeWidgetBridge from "@/components/NativeWidgetBridge";
 import { getUserPlan } from "@/lib/aiUsage";
 import { currentUser } from "@/lib/auth";
 
@@ -18,6 +19,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <NativeAds plan={plan} />
       {/* ネイティブアプリ＋RevenueCatキー設定済みのときだけ課金SDKを初期化（Webでは何もしない） */}
       <NativePurchases userId={user.id} />
+      {/* ネイティブ：ウィジェットへトークンを渡す＋記録リマインドをローカル通知として登録 */}
+      <NativeWidgetBridge />
       {children}
       <BottomNav />
       {/* B8: アプリロック（設定でONにした端末のみ。起動時・復帰時に全画面で覆う） */}
