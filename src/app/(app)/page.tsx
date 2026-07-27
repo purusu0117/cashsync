@@ -396,7 +396,11 @@ export default function HomePage() {
           </div>
           <p className={`mt-0.5 text-[11px] ${signal === "red" ? "text-vermilion" : "text-ink-faint"}`}>
             {signal === "green" && "貯金目標を達成するペースです"}
-            {signal === "red" && `1日あと${fmtYen(recoverPerDay)}減らせば黒字`}
+            {/* 赤=月末赤字ペースなら挽回額、今日の超過だけ（月は黒字ペース）ならその旨 */}
+            {signal === "red" &&
+              (forecast.forecast < 0
+                ? `1日あと${fmtYen(recoverPerDay)}減らせば黒字`
+                : "月全体では黒字ペースです")}
             {signal === "yellow" && "黒字だが目標まであと少し"}
           </p>
           <span
