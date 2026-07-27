@@ -17,6 +17,21 @@ export function vapidPublicKey(): string {
   return process.env.VAPID_PUBLIC_KEY ?? "";
 }
 
+/**
+ * 記録できた／できなかったことを通知する（設定 users.record_push が1のときだけ）。
+ * ショートカット経由やバックグラウンド処理は画面が見えないので、
+ * 成功も失敗も通知しないと「送ったのに入っていない」に気づけない。
+ */
+export async function pushRecordResult(userId: string, title: string, body: string): Promise<number> {
+  const d = await db();
+  const row = await d.get<{ record_push: number }>(
+    "SELECT record_push FROM users WHERE id = ?",
+    userId,
+  );
+  if (row && Number(row.record_push) === 0) return 0;
+  return pushToUser(userId, title, body);
+}
+
 /** ユーザーの全端末に通知を送る。無効になった購読は掃除する */
 export async function pushToUser(userId: string, title: string, body: string): Promise<number> {
   if (!setup()) return 0;

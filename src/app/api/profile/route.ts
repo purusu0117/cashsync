@@ -14,8 +14,9 @@ export async function GET() {
       plan: string | null;
       month_start_day: number;
       reminder_hour: number;
+      record_push: number;
     }>(
-      "SELECT savings_goal, plan, month_start_day, reminder_hour FROM users WHERE id = ?",
+      "SELECT savings_goal, plan, month_start_day, reminder_hour, record_push FROM users WHERE id = ?",
       user.id,
     );
     const plan = normalizePlan(row?.plan);
@@ -27,6 +28,8 @@ export async function GET() {
       monthStartDay: row?.month_start_day ?? 1,
       // C3: 記録リマインダーの時刻（0〜23時。-1＝OFF）
       reminderHour: row?.reminder_hour ?? -1,
+      // 記録できたら通知する（既定ON）
+      recordPush: Number(row?.record_push ?? 1) === 1,
       plan,
       apiToken: await ensureApiToken(user.id),
       aiUsage: { scans: usage.scans, parses: usage.parses },
@@ -44,6 +47,7 @@ export async function POST(request: Request) {
       savingsGoal?: number;
       monthStartDay?: number;
       reminderHour?: number; // C3: 0〜23＝その時刻に通知、-1＝OFF
+      recordPush?: boolean; // 記録できたら通知する
     };
     const d = await db();
     if (body.savingsGoal !== undefined) {
@@ -68,6 +72,10 @@ export async function POST(request: Request) {
         return Response.json({ error: "リマインダーの時刻が不正です。" }, { status: 400 });
       }
       await d.run("UPDATE users SET reminder_hour = ? WHERE id = ?", hour, user.id);
+    }
+    // 記録できたら通知（レシート/スクショの記録完了・スキップ・失敗のお知らせ）
+    if (body.recordPush !== undefined) {
+      await d.run("UPDATE users SET record_push = ? WHERE id = ?", body.recordPush ? 1 : 0, user.id);
     }
     return Response.json({ ok: true });
   } catch (e) {

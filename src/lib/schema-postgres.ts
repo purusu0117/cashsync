@@ -19,8 +19,11 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     plan TEXT NOT NULL DEFAULT 'free',
     month_start_day INTEGER NOT NULL DEFAULT 1,
     reminder_hour INTEGER NOT NULL DEFAULT -1,
-    last_reminder_push TEXT
+    last_reminder_push TEXT,
+    record_push INTEGER NOT NULL DEFAULT 1
   )`,
+  // 記録できたら通知する（既定ON）
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS record_push INTEGER NOT NULL DEFAULT 1`,
   // B9: 既存DBへの追加カラム（冪等）：家計簿の月の開始日（1〜28。25なら7/25〜8/24が「8月」）
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS month_start_day INTEGER NOT NULL DEFAULT 1`,
   // C3: 記録リマインダー（0〜23時。-1=OFF）と最終送信日（1日1回制限）
@@ -62,8 +65,11 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     taken_date TEXT NOT NULL,
     total INTEGER NOT NULL,
     items_json TEXT NOT NULL DEFAULT '[]',
+    image_hash TEXT,
     created_at BIGINT NOT NULL
   )`,
+  // 同じ画像の二度読みだけを弾くための sha256
+  `ALTER TABLE receipts ADD COLUMN IF NOT EXISTS image_hash TEXT`,
   `CREATE TABLE IF NOT EXISTS incomes (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -71,9 +77,12 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     amount INTEGER NOT NULL,
     type TEXT NOT NULL DEFAULT 'other',
     memo TEXT NOT NULL DEFAULT '',
+    image_hash TEXT,
     created_at BIGINT NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS idx_incomes_user_date ON incomes(user_id, date)`,
+  // 同じ画像の二度読みだけを弾くための sha256
+  `ALTER TABLE incomes ADD COLUMN IF NOT EXISTS image_hash TEXT`,
   `CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,

@@ -7,7 +7,7 @@ import { askClaudeReceipt } from "@/lib/ai";
 import { checkAndCountUsage, getUserPlan, limitResponseBody } from "@/lib/aiUsage";
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { learnedCategoryId } from "@/lib/merchant";
+import { imageHashOf, learnedCategoryId } from "@/lib/merchant";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 180;
@@ -55,7 +55,8 @@ export async function POST(request: Request) {
         learned = true;
       }
     }
-    return Response.json({ scan, categoryId, learned });
+    // 保存時に「同じ画像の二度読み」を判定できるよう、画像のsha256を返す（保存APIがそのまま記録する）
+    return Response.json({ scan, categoryId, learned, imageHash: imageHashOf(buf) });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
     return Response.json(

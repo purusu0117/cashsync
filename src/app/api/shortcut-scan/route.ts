@@ -10,13 +10,9 @@ import { checkAndCountUsage, getUserPlan, limitMessage } from "@/lib/aiUsage";
 import { userFromBearer } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 import { fmtYen } from "@/lib/format";
-import {
-  DUPLICATE_SHORTCUT_MESSAGE,
-  duplicateExpenseExists,
-  duplicateIncomeExists,
-  learnedCategoryId,
-} from "@/lib/merchant";
+import { imageHashOf, learnedCategoryId, recordedImage } from "@/lib/merchant";
 import { todayStr } from "@/lib/money";
+import { pushRecordResult } from "@/lib/push";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 180;
@@ -47,6 +43,14 @@ export async function POST(request: Request) {
       return Response.json({ ok: "false", message: "画像がありません。" }, { status: 400 });
     }
     const buf = Buffer.from(await file.arrayBuffer());
+    // 同じ画像を2回送ったときだけ弾く（同じ店・同じ金額の"別の支払い"は正常に記録する）
+    const hash = imageHashOf(buf);
+    const already = await recordedImage(user.id, hash);
+    if (already) {
+      const msg = `⚠️このスクショは既に記録済みです（${already.date} ${fmtYen(already.amount)}${already.memo ? `／${already.memo}` : ""}）。重複しないよう記録しませんでした。`;
+      await pushRecordResult(user.id, "CashSync 記録しませんでした", msg);
+      return Response.json({ ok: "false", message: msg }, { status: 409 });
+    }
     const dir = path.join(os.tmpdir(), "cashsync-scan");
     await fs.mkdir(dir, { recursive: true });
     const ext = file.type.includes("png") ? "png" : "jpg";
@@ -64,36 +68,30 @@ export async function POST(request: Request) {
       plan,
     );
     if (!scan.total || scan.total <= 0) {
-      return Response.json(
-        { ok: "false", message: "金額を読み取れませんでした。写真を確認してください。" },
-        { status: 422 },
-      );
+      const msg = "金額を読み取れませんでした。写真を確認してください。";
+      await pushRecordResult(user.id, "CashSync 読み取れませんでした", `⚠️${msg}`);
+      return Response.json({ ok: "false", message: msg }, { status: 422 });
     }
     const date = scan.date || todayStr();
 
     // 受け取り画面（PayPay受け取り・給与振込等）は収入として記録
     if (scan.kind === "income") {
       const memo = scan.store || "スクショ収入";
-      // 同じスクショを2回読ませた等の二重登録ガード。
-      // ショートカットは対話できないので常にブロック（本当に2回ならアプリのスキャン画面から確認つきで記録できる）。
-      if (await duplicateIncomeExists(user.id, date, scan.total, memo)) {
-        return Response.json(
-          { ok: "false", message: DUPLICATE_SHORTCUT_MESSAGE },
-          { status: 409 },
-        );
-      }
       await d.run(
-        "INSERT INTO incomes (id, user_id, date, amount, type, memo, created_at) VALUES (?, ?, ?, ?, 'other', ?, ?)",
+        "INSERT INTO incomes (id, user_id, date, amount, type, memo, image_hash, created_at) VALUES (?, ?, ?, ?, 'other', ?, ?, ?)",
         uid(),
         user.id,
         date,
         scan.total,
         memo,
+        hash,
         Date.now(),
       );
+      const message = `${fmtYen(scan.total)}（${scan.store || "受け取り"}）を収入として記録しました`;
+      await pushRecordResult(user.id, "CashSync 収入を記録しました", `✅${message}`);
       return Response.json({
         ok: "true",
-        message: `${fmtYen(scan.total)}（${scan.store || "受け取り"}）を収入として記録しました`,
+        message,
         store: scan.store,
         total: scan.total,
         category: "",
@@ -113,25 +111,18 @@ export async function POST(request: Request) {
         learned = true;
       }
     }
-    // 同じスクショを2回読ませた等の二重登録ガード。
-    // ショートカットは対話できないので常にブロック（本当に2回ならアプリのスキャン画面から確認つきで記録できる）。
-    if (await duplicateExpenseExists(user.id, date, scan.total, scan.store)) {
-      return Response.json(
-        { ok: "false", message: DUPLICATE_SHORTCUT_MESSAGE },
-        { status: 409 },
-      );
-    }
     const receiptId = uid();
     // レシートと支出は必ずセットで保存（片方だけ残る中途半端な状態を防ぐ）
     await d.transaction(async (tx) => {
       await tx.run(
-        "INSERT INTO receipts (id, user_id, store, taken_date, total, items_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO receipts (id, user_id, store, taken_date, total, items_json, image_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         receiptId,
         user.id,
         scan.store,
         date,
         scan.total,
         JSON.stringify(scan.items),
+        hash,
         Date.now(),
       );
       await tx.run(
@@ -147,9 +138,11 @@ export async function POST(request: Request) {
       );
     });
 
+    const message = `${fmtYen(scan.total)}（${scan.store || "店名不明"}／${categoryLabel}${learned ? "・学習済み" : ""}）を記録しました`;
+    await pushRecordResult(user.id, "CashSync 記録しました", `✅${message}`);
     return Response.json({
       ok: "true",
-      message: `${fmtYen(scan.total)}（${scan.store || "店名不明"}／${categoryLabel}${learned ? "・学習済み" : ""}）を記録しました`,
+      message,
       store: scan.store,
       total: scan.total,
       category: learned ? categoryLabel : scan.category,
@@ -157,6 +150,14 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     console.error("[shortcut-scan] failed:", e); // server.logに残す（原因調査用）
+    const failUser = await userFromBearer(request);
+    if (failUser) {
+      await pushRecordResult(
+        failUser.id,
+        "CashSync 記録できませんでした",
+        `⚠️読み取りに失敗しました：${e instanceof Error ? e.message : "エラー"}。写真は消さずに残しています。`,
+      ).catch(() => {});
+    }
     return Response.json(
       { ok: "false", message: `読み取りに失敗しました：${e instanceof Error ? e.message : "エラー"}` },
       { status: 500 },

@@ -45,6 +45,7 @@ export default function ScanPage() {
   const [error, setError] = useState("");
   const [preview, setPreview] = useState("");
   const [scan, setScan] = useState<Scan | null>(null);
+  const [imageHash, setImageHash] = useState(""); // 読み取った画像のsha256（保存時に渡す）
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   // 確認シートに最初に表示した提案（AI or 学習値）。保存時にサーバーへ渡し、
@@ -129,6 +130,7 @@ export default function ScanPage() {
         return;
       }
       setScan({ ...d.scan, date: d.scan.date || todayLocal() });
+      setImageHash(d.imageHash ?? ""); // 保存時に渡して「同じ画像の二度読み」を記録に残す
       setCategoryId(d.categoryId);
       setSuggestedCategoryId(d.categoryId);
       setLearned(!!d.learned);
@@ -188,6 +190,7 @@ export default function ScanPage() {
                 memo: scan.store || "スクショ収入",
                 dedupe: true, // 同じスクショの二重読み取り防止（手入力には影響しない）
                 allowDuplicate, // 「本当に別の支払い」と確認済みの再送信のみ true
+                imageHash,
               }),
             })
           : await netFetch("/api/receipts", {
@@ -201,6 +204,7 @@ export default function ScanPage() {
                 suggestedCategoryId, // 提案から変更されていたらサーバーが店名→カテゴリを学習する
                 items: scan.items,
                 allowDuplicate, // 「本当に別の支払い」と確認済みの再送信のみ true
+                imageHash,
               }),
             });
       const d = await res.json();

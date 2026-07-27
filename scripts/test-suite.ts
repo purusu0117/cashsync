@@ -15,9 +15,11 @@ import { applyPurchaseEvent, setPlanFromEntitlement } from "../src/lib/purchases
 import {
   duplicateExpenseExists,
   duplicateIncomeExists,
+  imageHashOf,
   learnMerchantCategory,
   learnedCategoryId,
   normalizeMerchant,
+  recordedImage,
 } from "../src/lib/merchant";
 import {
   accountingMonthFor,
@@ -2038,6 +2040,64 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
     check("C2: エイリアス（光熱費→住まい）", resolveCategoryId("水道・光熱費", cats5) === cat5("住まい"));
     check("C2: 未知カテゴリは null", resolveCategoryId("宇宙開発", cats5) === null);
     check("C2: UTF-8で壊れる場合はShift_JISで読み直す", decodeCsvBuffer(new Uint8Array([0x93, 0xfa, 0x95, 0x74])) === "日付");
+  }
+
+  // --- スクショの二度読み判定（2026-07-27の修正：同額の別の支払いを弾かない） ---
+  console.log("[dedupe] 画像ハッシュによる二度読み判定");
+  {
+    const uH = uid();
+    await d.run(
+      "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+      uH,
+      "hash@example.com",
+      "ハッシュ",
+      hashPassword("password123"),
+      Date.now(),
+    );
+    const hashA = imageHashOf(new TextEncoder().encode("screenshot-A"));
+    const hashB = imageHashOf(new TextEncoder().encode("screenshot-B"));
+    check("同じ内容の画像は同じハッシュ", imageHashOf(new TextEncoder().encode("screenshot-A")) === hashA);
+    check("違う画像は違うハッシュ", hashA !== hashB);
+    check("記録前は null", (await recordedImage(uH, hashA)) === null);
+    // 同じ金額・同じ店の支払いを2件（別画像）記録できる
+    await d.run(
+      "INSERT INTO receipts (id, user_id, store, taken_date, total, items_json, image_hash, created_at) VALUES (?, ?, 'Steam', '2005-07-27', 6100, '[]', ?, ?)",
+      uid(),
+      uH,
+      hashA,
+      Date.now(),
+    );
+    await d.run(
+      "INSERT INTO receipts (id, user_id, store, taken_date, total, items_json, image_hash, created_at) VALUES (?, ?, 'Steam', '2005-07-27', 6100, '[]', ?, ?)",
+      uid(),
+      uH,
+      hashB,
+      Date.now(),
+    );
+    const count = Number(
+      (await d.get<{ c: number }>("SELECT COUNT(*) AS c FROM receipts WHERE user_id = ?", uH))!.c,
+    );
+    check("同額・同店の別画像は2件とも保存できる", count === 2, count);
+    const hit = await recordedImage(uH, hashA);
+    check("同じ画像は検出される", hit?.kind === "expense" && hit.amount === 6100, hit);
+    check("検出結果に日付・店名が入る", hit?.date === "2005-07-27" && hit?.memo === "Steam", hit);
+    check("未登録の画像は検出されない", (await recordedImage(uH, imageHashOf(new TextEncoder().encode("C")))) === null);
+    check("空ハッシュは常に null", (await recordedImage(uH, "")) === null);
+    // 収入（スクショ受け取り）も同じ仕組み
+    const hashI = imageHashOf(new TextEncoder().encode("income-shot"));
+    await d.run(
+      "INSERT INTO incomes (id, user_id, date, amount, type, memo, image_hash, created_at) VALUES (?, ?, '2005-07-27', 3000, 'other', 'PayPay受け取り', ?, ?)",
+      uid(),
+      uH,
+      hashI,
+      Date.now(),
+    );
+    const inc = await recordedImage(uH, hashI);
+    check("収入側の画像も検出される", inc?.kind === "income" && inc.amount === 3000, inc);
+    check("他ユーザーの画像は検出されない", (await recordedImage(userId, hashA)) === null);
+    // 記録できたら通知フラグ（既定ON）
+    const rp = await d.get<{ record_push: number }>("SELECT record_push FROM users WHERE id = ?", uH);
+    check("record_push の既定は1（通知ON）", Number(rp?.record_push) === 1, rp);
   }
 
   console.log(`\n結果: ${passed} passed / ${failed} failed`);

@@ -179,6 +179,7 @@ export default function SettingsPage() {
       savingsGoal?: number;
       monthStartDay?: number;
       reminderHour?: number;
+      recordPush?: boolean;
       apiToken?: string;
       plan?: string;
       aiUsage?: {
@@ -189,6 +190,7 @@ export default function SettingsPage() {
       setGoal(d.savingsGoal ? String(d.savingsGoal) : "");
       setMonthStart(String(d.monthStartDay ?? 1));
       setReminderHour(d.reminderHour ?? -1);
+      setRecordPush(d.recordPush ?? true);
       setApiToken(d.apiToken ?? "");
       setPlan(planOf(d.plan));
       setAiUsage(d.aiUsage ?? null);
@@ -410,6 +412,19 @@ export default function SettingsPage() {
       .then((d) => setPushOn(!!d.subscribed))
       .catch(() => {});
   }, []);
+
+  // --- 記録できたら通知（レシート/スクショの記録完了・スキップ・失敗のお知らせ） ---
+  const [recordPush, setRecordPush] = useState(true);
+  async function toggleRecordPush() {
+    const next = !recordPush;
+    setRecordPush(next);
+    try {
+      await apiCall("/api/profile", apiJson({ recordPush: next }));
+    } catch (e) {
+      setRecordPush(!next);
+      setPageError(e instanceof Error ? e.message : "設定の保存に失敗しました。");
+    }
+  }
 
   // --- C3: 記録リマインダー（-1=OFF / 0〜23=その時刻） ---
   const [reminderHour, setReminderHour] = useState(-1);
@@ -1142,6 +1157,24 @@ export default function SettingsPage() {
         >
           {pushBusy ? "・・・" : pushOn ? "通知ON（タップでOFF）" : "通知をONにする"}
         </button>
+
+        {/* 記録できたら通知：ショートカット経由など画面を見ていない経路の成否を必ず知らせる */}
+        <div className="mt-4 border-t border-dotted border-rule pt-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm">記録できたら通知</span>
+            <button
+              onClick={toggleRecordPush}
+              className={`rounded-md px-3 py-1.5 text-[12px] ${
+                recordPush ? "border border-sage text-sage" : "border border-rule text-ink-faint"
+              }`}
+            >
+              {recordPush ? "ON" : "OFF"}
+            </button>
+          </div>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
+            レシート・スクショから記録できたときに「◯円を記録しました」と通知します。読み取れなかったとき・同じスクショで記録しなかったときも理由を通知するので、黙って消えることがありません。
+          </p>
+        </div>
 
         {/* C3: 記録リマインダー。つけ忘れの日だけ届く（記録済みの日は送らない） */}
         <div className="mt-4 border-t border-dotted border-rule pt-3">
