@@ -66,18 +66,20 @@ interface CalData {
   paydays: Payday[];
   plan?: MonthPlan; // 未来月のみ中身が入る（旧キャッシュには無いので optional）
   breakdown: {
+    planned?: boolean; // true=未来月（予定込みの1系統で表示。実績行は出さない）
     shiftIncome: number;
     otherIncome: number;
-    incomeTotal: number;
+    incomeTotal: number; // 未来月は予定収入込み
     savingsGoal: number;
-    expenseTotal: number;
+    expenseTotal: number; // 未来月は予定支出込み
+    fixedTotal?: number | null; // 今月の固定費（先取り済み。今月のみ）
     remain: number;
     daysRemaining: number | null;
     // 日次予算＋繰り越し方式の内訳（今月のみ。旧キャッシュには無いので optional）
     todayBudget?: number | null;
     spentToday?: number | null;
     spentBeforeToday?: number | null;
-    allowance: number | null; // 今日あと使える額（今日の予算 − 今日の支出）
+    allowance: number | null; // 今日あと使える額（今日の予算 − 今日の変動支出）
   };
 }
 
@@ -276,26 +278,63 @@ export default function CalendarPage() {
       <section className="rounded-sm border border-rule bg-card px-5 py-3 shadow-sm">
         <button onClick={() => setShowCalc(!showCalc)} className="flex w-full items-baseline">
           <h2 className="dot text-xs text-ink-faint">
-            {b.allowance !== null ? "＊ 今日あと使えるお金の計算 ＊" : "＊ この月の収支 ＊"}
+            {b.allowance !== null
+              ? "＊ 今日あと使えるお金の計算 ＊"
+              : b.planned
+                ? "＊ この月の予定収支 ＊"
+                : "＊ この月の収支 ＊"}
           </h2>
           <span className="leader" />
           {b.allowance !== null && (
             <span className={`dot text-lg tabular-nums ${b.allowance < 0 ? "text-vermilion" : ""}`}>
-              {fmtYen(b.allowance).replace("¥-", "-¥")}
+              {fmtYen(b.allowance)}
             </span>
           )}
           <span className="ml-1 text-xs text-ink-faint">{showCalc ? "▲" : "▼"}</span>
         </button>
-        {hasPlan && plan && (
+        {b.planned && (b.expenseTotal > 0 || b.incomeTotal > 0) && (
           <div className="mt-1.5 flex items-baseline text-xs">
             <span className="text-ink-faint">予定合計</span>
             <span className="leader" />
             <span className="dot shrink-0 tabular-nums text-ink-faint">
-              支出 −{fmtYen(plan.expenseTotal)} ・ 収入 +{fmtYen(plan.incomeTotal)}
+              支出 −{fmtYen(b.expenseTotal)} ・ 収入 +{fmtYen(b.incomeTotal)}
             </span>
           </div>
         )}
-        {showCalc && (
+        {showCalc && b.planned && (
+          /* A1: 未来月は「予定込みの1系統」。実績行（¥0の行）は出さない */
+          <div className="mt-2 space-y-1 text-sm">
+            <div className="flex items-baseline">
+              <span className="text-ink-faint">予定収入（定期＋入力済みシフトの給料）</span>
+              <span className="leader" />
+              <span className="dot shrink-0 tabular-nums text-sage">+{fmtYen(b.incomeTotal)}</span>
+            </div>
+            {b.savingsGoal > 0 && (
+              <div className="flex items-baseline">
+                <span className="text-ink-faint">貯金目標（先取り）</span>
+                <span className="leader" />
+                <span className="dot tabular-nums">−{fmtYen(b.savingsGoal)}</span>
+              </div>
+            )}
+            <div className="flex items-baseline">
+              <span className="text-ink-faint">予定支出（定期・分割）</span>
+              <span className="leader" />
+              <span className="dot tabular-nums text-vermilion">−{fmtYen(b.expenseTotal)}</span>
+            </div>
+            <div className="cutline my-1.5" />
+            <div className="flex items-baseline">
+              <span className="text-ink-faint">残り</span>
+              <span className="leader" />
+              <span className={`dot tabular-nums ${b.remain < 0 ? "text-vermilion" : ""}`}>
+                {fmtYen(b.remain)}
+              </span>
+            </div>
+            <p className="pt-1 text-[10px] text-ink-faint">
+              シフト未入力の給料日は金額未定のため含みません
+            </p>
+          </div>
+        )}
+        {showCalc && !b.planned && (
           <div className="mt-2 space-y-1 text-sm">
             <div className="flex items-baseline">
               <span className="text-ink-faint">バイト給料（今月支払い分）</span>
@@ -314,9 +353,16 @@ export default function CalendarPage() {
                 <span className="dot tabular-nums">−{fmtYen(b.savingsGoal)}</span>
               </div>
             )}
+            {b.allowance !== null && (b.fixedTotal ?? 0) > 0 && (
+              <div className="flex items-baseline">
+                <span className="text-ink-faint">今月の固定費（先取り済み）</span>
+                <span className="leader" />
+                <span className="dot tabular-nums text-vermilion">−{fmtYen(b.fixedTotal ?? 0)}</span>
+              </div>
+            )}
             <div className="flex items-baseline">
               <span className="text-ink-faint">
-                {b.allowance !== null ? "昨日までの支出" : "この月の支出"}
+                {b.allowance !== null ? "昨日までの変動支出" : "この月の支出"}
               </span>
               <span className="leader" />
               <span className="dot tabular-nums text-vermilion">
@@ -327,7 +373,9 @@ export default function CalendarPage() {
             <div className="flex items-baseline">
               <span className="text-ink-faint">残り</span>
               <span className="leader" />
-              <span className="dot tabular-nums">{fmtYen(b.remain)}</span>
+              <span className={`dot tabular-nums ${b.remain < 0 ? "text-vermilion" : ""}`}>
+                {fmtYen(b.remain)}
+              </span>
             </div>
             {b.allowance !== null && b.daysRemaining !== null && (
               <>
@@ -347,7 +395,7 @@ export default function CalendarPage() {
                   <span className="text-ink-faint">= 今日あと使える</span>
                   <span className="leader" />
                   <span className={`dot tabular-nums ${b.allowance < 0 ? "text-vermilion" : ""}`}>
-                    {fmtYen(b.allowance).replace("¥-", "-¥")}
+                    {fmtYen(b.allowance)}
                   </span>
                 </div>
               </>

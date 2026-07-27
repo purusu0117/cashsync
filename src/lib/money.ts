@@ -424,25 +424,41 @@ export function monthSummary(userId: string, month: string): MonthSummary {
 }
 
 export interface DailyBudget {
-  todayBudget: number; // 今日の予算 =（今月収入 − 貯金目標 − 昨日までの支出）÷ 残り日数（今日を含む）
-  spentToday: number; // 今日の支出合計
-  remainingToday: number; // 今日あと使える額 = 今日の予算 − 今日の支出（マイナス＝超過）
-  spentBeforeToday: number; // 昨日までの支出合計
+  todayBudget: number; // 今日の予算 =（今月収入 − 貯金目標 − 今月の固定費 − 昨日までの変動支出）÷ 残り日数（今日を含む）
+  spentToday: number; // 今日の変動支出合計（定期計上を除く）
+  remainingToday: number; // 今日あと使える額 = 今日の予算 − 今日の変動支出（マイナス＝超過）
+  spentBeforeToday: number; // 昨日までの変動支出合計（定期計上を除く）
   daysRemaining: number; // 今日を含む残り日数
+  fixedTotal: number; // 今月の固定費（定期計上・分割の合計）。月初に満額を先取り済み
+  monthRemaining: number; // 日割り前の土台（今月収入 − 貯金目標 − 固定費 − 昨日までの変動支出）。マイナス＝今月使える残りなし
 }
 
-/** 今日の支出合計（日次予算の「今日使った分」） */
+/** 今日の変動支出合計（日次予算の「今日使った分」。定期計上は固定費として先取り済みなので含めない） */
 export function todaySpent(userId: string, today = todayStr()): number {
   const row = db()
-    .prepare("SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date = ?")
+    .prepare(
+      "SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date = ? AND source != 'recurring'",
+    )
     .get(userId, today) as { s: number };
+  return row.s;
+}
+
+/** 今月の固定費合計（定期計上・分割で expenses に計上された支出。月初に一括計上済み） */
+export function monthFixedCost(userId: string, month: string): number {
+  const row = db()
+    .prepare(
+      "SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date LIKE ? AND source = 'recurring'",
+    )
+    .get(userId, `${month}-%`) as { s: number };
   return row.s;
 }
 
 /**
  * 今日使えるお金（日次予算＋繰り越し方式）。
  * 貯金目標を先に差し引く「先取り貯金」方式：残った分だけ使えば目標が必ず貯まる。
- * 予算は「昨日までの支出」だけで割り、今日使った分は予算から満額引く。
+ * 固定費（定期計上・分割）は今月分を満額先取りして土台から引き、日々の数字は変動支出だけで動かす。
+ * → 家賃などの計上日に「今日あと使える額」が一気にマイナスへ崩壊しない。
+ * 予算は「昨日までの変動支出」だけで割り、今日使った分は予算から満額引く。
  * → 今日使いすぎれば「今日あと使える額」が即マイナスになり、翌日の予算も自動的に減る。
  * 旧方式（今月の全支出を引いてから割る）は今日の支出が残り日数で薄まって見える楽観バイアスがあった。
  */
@@ -451,19 +467,65 @@ export function dailyBudget(
   spentToday: number,
   savingsGoal = 0,
   today = todayStr(),
+  fixedTotal = 0,
 ): DailyBudget {
-  const spentBeforeToday = summary.expenseTotal - spentToday;
+  // summary.expenseTotal は固定費込みの実額。ここから固定費と今日の変動分を除くと「昨日までの変動支出」
+  const spentBeforeToday = summary.expenseTotal - fixedTotal - spentToday;
   const daysRemaining = daysRemainingInMonth(today);
-  const todayBudget = Math.floor(
-    (summary.incomeTotal - savingsGoal - spentBeforeToday) / daysRemaining,
-  );
+  const monthRemaining = summary.incomeTotal - savingsGoal - fixedTotal - spentBeforeToday;
+  const todayBudget = Math.floor(monthRemaining / daysRemaining);
   return {
     todayBudget,
     spentToday,
     remainingToday: todayBudget - spentToday,
     spentBeforeToday,
     daysRemaining,
+    fixedTotal,
+    monthRemaining,
   };
+}
+
+export interface NextPayday {
+  date: string; // 次の給料日
+  amount: number; // 入力済みシフトから計算した金額（0＝シフト未入力で金額未定）
+  daysUntil: number; // 今日からの日数（0＝今日）
+}
+
+/**
+ * 今日以降で最初に来る給料日（ホームの「次の給料日」行・予算切れ時の案内用）。
+ * 入力済みシフトから金額が出る場合のみ金額つき。シフト未入力でも給料日設定があれば日付だけ返す。
+ */
+export function nextPayday(userId: string, today = todayStr()): NextPayday | null {
+  const d = db();
+  const jobs = d
+    .prepare(
+      "SELECT id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, closing_day, pay_month_offset, pay_day, pay_same_day, color FROM jobs WHERE user_id = ?",
+    )
+    .all(userId) as unknown as (JobRow & { pay_day: number; color: string })[];
+  if (jobs.length === 0) return null;
+  const candidates: { date: string; amount: number }[] = [];
+  // 当月〜2ヶ月先までの給料日から「今日以降」を拾う（給料日は最長でも翌々月には来る）
+  let month = monthOf(today);
+  for (let i = 0; i < 3; i++) {
+    const confirmed = paydays(userId, month).filter((p) => p.date >= today);
+    for (const p of confirmed) candidates.push({ date: p.date, amount: p.amount });
+    // シフト未入力で paydays に出ないバイト先も、給料日設定があれば日付だけの候補にする
+    const covered = new Set(confirmed.map((p) => p.jobId));
+    for (const job of jobs) {
+      if (job.pay_same_day || covered.has(job.id)) continue;
+      const date = dateStr(month, Math.min(job.pay_day || 25, daysInMonth(month)));
+      if (date >= today) candidates.push({ date, amount: 0 });
+    }
+    month = nextMonth(month);
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => a.date.localeCompare(b.date));
+  const first = candidates[0].date;
+  const amount = candidates.filter((c) => c.date === first).reduce((s, c) => s + c.amount, 0);
+  const daysUntil = Math.round(
+    (parseLocalDate(first).getTime() - parseLocalDate(today).getTime()) / 86_400_000,
+  );
+  return { date: first, amount, daysUntil };
 }
 
 export interface MonthForecast {

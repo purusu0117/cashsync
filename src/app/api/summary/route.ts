@@ -4,8 +4,10 @@ import { db } from "@/lib/db";
 import {
   currentMonth,
   dailyBudget,
+  monthFixedCost,
   monthForecast,
   monthSummary,
+  nextPayday,
   noMoneyDays,
   postRecurringForMonth,
   todaySpent,
@@ -45,16 +47,24 @@ export async function GET() {
          WHERE p.user_id = ? ORDER BY p.sort`,
       )
       .all(user.id);
-    const budget = dailyBudget(summary, todaySpent(user.id), savingsGoal);
+    // 固定費（定期計上・分割）は今月分を満額先取りし、日々の数字は変動支出だけで動かす
+    const budget = dailyBudget(
+      summary,
+      todaySpent(user.id),
+      savingsGoal,
+      undefined,
+      monthFixedCost(user.id, month),
+    );
     return Response.json({
       user: { name: user.name },
       month,
       summary,
       savingsGoal,
-      // allowance = 「今日あと使える額」（日次予算 − 今日の支出。マイナス＝超過）
+      // allowance = 「今日あと使える額」（日次予算 − 今日の変動支出。マイナス＝超過）
       allowance: budget.remainingToday,
       budget,
       daysRemaining: budget.daysRemaining,
+      nextPayday: nextPayday(user.id),
       noMoney: noMoneyDays(user.id, month),
       forecast: monthForecast(user.id, summary),
       yesterday: { date: ydStr, recorded: ydCount.c > 0 },

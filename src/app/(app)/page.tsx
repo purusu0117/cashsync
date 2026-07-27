@@ -27,7 +27,7 @@ interface Summary {
     shift: { total: number; shiftCount: number };
   };
   savingsGoal: number;
-  allowance: number; // 今日あと使える額（今日の予算 − 今日の支出。マイナス＝超過）
+  allowance: number; // 今日あと使える額（今日の予算 − 今日の変動支出。マイナス＝超過）
   // 日次予算の内訳（旧キャッシュには無いので optional）
   budget?: {
     todayBudget: number;
@@ -35,8 +35,11 @@ interface Summary {
     remainingToday: number;
     spentBeforeToday: number;
     daysRemaining: number;
+    fixedTotal?: number; // 今月の固定費（定期計上・分割）。先取り済み
+    monthRemaining?: number; // 日割り前の土台。マイナス＝今月使える残りなし
   };
   daysRemaining: number;
+  nextPayday?: { date: string; amount: number; daysUntil: number } | null;
   noMoney: { count: number; streak: number };
   forecast: { forecast: number; avgDaily: number };
   yesterday: { date: string; recorded: boolean };
@@ -257,6 +260,8 @@ export default function HomePage() {
   if (!data) return <Loading />;
 
   const { summary, forecast, savingsGoal, noMoney } = data;
+  // B2: 今日の予算の土台（今月収入 − 貯金目標 − 固定費 − 昨日までの変動支出）がマイナス＝今月使える残りなし
+  const budgetExhausted = (data.budget?.monthRemaining ?? 0) < 0;
   // 予算信号機（Zaim方式）：赤=このままだと赤字 / 黄=黒字だが貯金目標に届かない / 緑=目標達成ペース
   const signal =
     data.allowance < 0 || forecast.forecast < 0
@@ -363,23 +368,52 @@ export default function HomePage() {
 
         <div className="cutline my-3.5" />
 
-        <p className="dot text-center text-sm tracking-[0.18em] text-ink-faint">＊ 今日あと使える ＊</p>
-        <p className={`dot mt-3 text-center text-[64px] leading-none tabular-nums ${signalColor}`}>
-          {fmtYen(data.allowance).replace("¥-", "-¥")}
-        </p>
-        {data.budget && (
-          <p className="mt-2 text-center text-xs text-ink-faint">
-            今日の予算 {fmtYen(data.budget.todayBudget)} − 今日使った {fmtYen(data.budget.spentToday)}
-          </p>
-        )}
-        {data.allowance < 0 ? (
-          <p className="mt-1 text-center text-[11px] text-vermilion">
-            今日は{fmtYen(-data.allowance)}超過（明日の予算が自動で減ります）
-          </p>
+        {budgetExhausted ? (
+          /* B2: 予算の土台がマイナス＝日割りしても意味がないので、数式ではなく文言カードに切り替える */
+          <>
+            <p className="dot text-center text-sm tracking-[0.18em] text-ink-faint">＊ 今日あと使える ＊</p>
+            <p className="dot mt-4 text-center text-2xl leading-snug text-vermilion">
+              今月使える残りが
+              <br />
+              ありません
+            </p>
+            {data.nextPayday && (
+              <p className="mt-2 text-center text-xs text-ink-faint">
+                次の給料日 {fmtDateJa(data.nextPayday.date)}{" "}
+                {data.nextPayday.daysUntil === 0 ? "（今日）" : `まであと${data.nextPayday.daysUntil}日`}
+              </p>
+            )}
+            <p className="mt-1 text-center text-[11px] text-ink-faint">
+              固定費と使った分が今月の収入{savingsGoal > 0 && "（貯金目標を先取り後）"}を上回っています
+            </p>
+          </>
         ) : (
-          <p className="mt-1 text-center text-[11px] text-ink-faint">
-            残り{data.daysRemaining}日{savingsGoal > 0 && " ・ 貯金目標を先取り"}で計算
-          </p>
+          <>
+            <p className="dot text-center text-sm tracking-[0.18em] text-ink-faint">＊ 今日あと使える ＊</p>
+            <p className={`dot mt-3 text-center text-[64px] leading-none tabular-nums ${signalColor}`}>
+              {fmtYen(data.allowance)}
+            </p>
+            {data.budget && (
+              <p className="mt-2 text-center text-xs text-ink-faint">
+                今日の予算 {fmtYen(data.budget.todayBudget)} − 今日使った{" "}
+                {fmtYen(data.budget.spentToday)}
+              </p>
+            )}
+            {(data.budget?.fixedTotal ?? 0) > 0 && (
+              <p className="mt-0.5 text-center text-[11px] text-ink-faint">
+                うち固定費 {fmtYen(data.budget!.fixedTotal!)}/月（先取り済み）
+              </p>
+            )}
+            {data.allowance < 0 ? (
+              <p className="mt-1 text-center text-[11px] text-vermilion">
+                今日は{fmtYen(-data.allowance)}超過（明日の予算が自動で減ります）
+              </p>
+            ) : (
+              <p className="mt-1 text-center text-[11px] text-ink-faint">
+                残り{data.daysRemaining}日{savingsGoal > 0 && " ・ 貯金目標を先取り"}で計算
+              </p>
+            )}
+          </>
         )}
 
         <div className="cutline my-4" />
@@ -387,11 +421,11 @@ export default function HomePage() {
         {/* 月末予測 ＋ 判子（黒字/注意/赤字）：署名要素はここに1つだけ */}
         <div className="relative pr-16">
           <div className="flex items-baseline text-sm">
-            <span className="text-ink-faint">このペースだと月末</span>
+            <span className="text-ink-faint">月末までの予測</span>
             <span className="leader" />
             <span className={`dot text-xl tabular-nums ${signalColor}`}>
               {forecast.forecast >= 0 ? "+" : ""}
-              {fmtYen(forecast.forecast).replace("¥-", "-¥")}
+              {fmtYen(forecast.forecast)}
             </span>
           </div>
           <p className={`mt-0.5 text-[11px] ${signal === "red" ? "text-vermilion" : "text-ink-faint"}`}>
@@ -435,7 +469,28 @@ export default function HomePage() {
         </div>
         {summary.shift.shiftCount > 0 && (
           <p className="mt-0.5 text-right text-[11px] text-ink-faint">
-            うちバイト見込み {fmtYen(summary.shift.total)}（{summary.shift.shiftCount}回）
+            うちバイト見込み {fmtYen(summary.shift.total)}（{summary.shift.shiftCount}回・
+            {Number(data.month.slice(5))}月に振り込まれる分）
+            <Link href="/shifts" className="ml-1 underline underline-offset-2">
+              シフトで確認
+            </Link>
+          </p>
+        )}
+        {/* C1: 次の給料日（金額は入力済みシフトから出る場合のみ） */}
+        {data.nextPayday && (
+          <div className="mt-2 flex items-baseline justify-between text-sm">
+            <span className="text-ink-faint">次の給料日</span>
+            <span className="leader" />
+            <span className="dot tabular-nums text-sage">
+              {fmtDateJa(data.nextPayday.date)}
+              {data.nextPayday.amount > 0 && ` +${fmtYen(data.nextPayday.amount)}`}
+            </span>
+          </div>
+        )}
+        {data.nextPayday && (
+          <p className="mt-0.5 text-right text-[11px] text-ink-faint">
+            {data.nextPayday.daysUntil === 0 ? "今日" : `あと${data.nextPayday.daysUntil}日`}
+            {data.nextPayday.amount > 0 && " ・ 入力済みシフトから計算"}
           </p>
         )}
         <div className="mt-2 flex items-baseline justify-between text-sm">

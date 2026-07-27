@@ -1,6 +1,8 @@
 // クライアント/サーバー共用の表示ユーティリティ（DBに触らない）
+/** 金額表示。負値は「-¥1,234」形式（「¥-1,234」にしない）で全画面統一 */
 export function fmtYen(n: number): string {
-  return `¥${Math.round(n).toLocaleString("ja-JP")}`;
+  const v = Math.round(n);
+  return v < 0 ? `-¥${(-v).toLocaleString("ja-JP")}` : `¥${v.toLocaleString("ja-JP")}`;
 }
 
 const DAYS = ["日", "月", "火", "水", "木", "金", "土"];
