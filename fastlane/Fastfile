@@ -15,6 +15,7 @@
 default_platform(:ios)
 
 APP_ID = "com.daito.cashsync"
+WIDGET_ID = "com.daito.cashsync.widget" # C4: ホーム画面ウィジェット（別のBundle IDが必要）
 APP_NAME = "CashSync 家計簿・バイト給料計算"
 APP_SKU = "cashsync-ios"
 XCODEPROJ = "ios/App/App.xcodeproj"
@@ -91,20 +92,32 @@ platform :ios do
     # C4: WidgetKit拡張ターゲットを追加（冪等。pbxprojの巨大diffをコミットしないためCIで毎回生成）
     sh("cd #{File.expand_path("..", __dir__)} && bundle exec ruby scripts/add-widget-target.rb")
 
-    # 署名は「自動」にする。ウィジェット追加で bundle ID（.widget）と App Groups の
-    # capability が新たに必要になるが、-allowProvisioningUpdates + APIキーなら
-    # Xcodeが登録・有効化・プロファイル作成まで面倒を見てくれる。
-    # （手動署名だと大翔がDeveloperポータルで毎回手作業する必要がある）
+    # 署名は手動（xcodebuild の自動署名はAPIキー認証が通らないため）。
+    # アプリ本体とウィジェットで別々のプロファイルが要る。
+    get_provisioning_profile(api_key: api_key, app_identifier: APP_ID, readonly: false)
+    app_profile = lane_context[SharedValues::SIGH_NAME]
+    get_provisioning_profile(api_key: api_key, app_identifier: WIDGET_ID, readonly: false)
+    widget_profile = lane_context[SharedValues::SIGH_NAME]
+
+    # 署名設定は該当ターゲットにだけ書く（グローバルに渡すとSPM依存のビルドが壊れる）
     update_code_signing_settings(
       path: XCODEPROJ,
-      targets: ["App", "CashSyncWidgetExtension"],
-      use_automatic_signing: true,
+      targets: ["App"],
+      use_automatic_signing: false,
       team_id: ENV.fetch("APPLE_TEAM_ID"),
+      bundle_identifier: APP_ID,
+      code_sign_identity: "Apple Distribution",
+      profile_name: app_profile,
     )
-
-    # xcodebuild にAPIキーを渡すためのファイル（自動署名がAppleと通信するのに使う）
-    asc_key_path = File.expand_path("../asc_api_key.p8", __dir__)
-    File.binwrite(asc_key_path, Base64.decode64(ENV.fetch("APPSTORE_PRIVATE_KEY")))
+    update_code_signing_settings(
+      path: XCODEPROJ,
+      targets: ["CashSyncWidgetExtension"],
+      use_automatic_signing: false,
+      team_id: ENV.fetch("APPLE_TEAM_ID"),
+      bundle_identifier: WIDGET_ID,
+      code_sign_identity: "Apple Distribution",
+      profile_name: widget_profile,
+    )
 
     build_app(
       project: XCODEPROJ,
@@ -113,13 +126,10 @@ platform :ios do
       export_method: "app-store",
       output_directory: "build",
       output_name: "CashSync.ipa",
-      export_options: { signingStyle: "automatic" },
-      xcargs: [
-        "-allowProvisioningUpdates",
-        "-authenticationKeyPath #{asc_key_path}",
-        "-authenticationKeyID #{ENV.fetch("APPSTORE_KEY_ID")}",
-        issuer.empty? ? nil : "-authenticationKeyIssuerID #{issuer}",
-      ].compact.join(" "),
+      export_options: {
+        signingStyle: "manual",
+        provisioningProfiles: { APP_ID => app_profile, WIDGET_ID => widget_profile },
+      },
     )
 
     upload_to_testflight(
