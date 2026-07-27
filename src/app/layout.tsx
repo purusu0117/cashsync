@@ -29,6 +29,9 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   themeColor: "#ece7dd",
+  // これが無いと env(safe-area-inset-*) が常に0になり、ノッチ／ステータスバーの下に
+  // コンテンツが潜り込んで一番上の要素がタップできなくなる（2026-07-27 大翔の実機報告）
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

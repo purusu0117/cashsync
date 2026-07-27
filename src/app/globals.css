@@ -142,9 +142,15 @@ body {
   }
 }
 
-/* ネイティブアプリ（Capacitor）で上部AdMobバナー表示中：バナー高さ50px＋セーフエリア分の余白 */
+/* ネイティブアプリ（Capacitor）: ステータスバー／ノッチの下にコンテンツが潜らないよう常に余白を取る。
+   これが無いと画面最上部の要素（週次振り返りカード等）がOSに隠れてタップできない。 */
+body.native-app {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 8px);
+}
+
+/* 上部AdMobバナー表示中（freeプランのみ）：バナー高さ50pxぶんをさらに空ける */
 body.native-banner {
-  padding-top: calc(50px + env(safe-area-inset-top, 0px));
+  padding-top: calc(50px + env(safe-area-inset-top, 0px) + 8px);
 }
 
 /* number input のスピナー消し */
