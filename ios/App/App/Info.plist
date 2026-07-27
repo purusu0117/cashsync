@@ -47,6 +47,11 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<!-- 輸出コンプライアンス: 通信は標準のHTTPS/TLSのみ＝米国輸出規制の対象外。
+	     これを宣言しておくと、アップロードのたびにApp Store Connectで暗号化の質問に答える必要がなくなる。
+	     独自の暗号化を実装した場合はこのキーを見直すこと。 -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<!-- AdMob 本番アプリID（iOS）。広告ユニットIDは src/lib/native.ts（テストID＋NEXT_PUBLIC_ADMOB_* 上書き）を参照 -->
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-8116409688907735~8441125581</string>
