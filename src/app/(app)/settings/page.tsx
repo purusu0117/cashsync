@@ -130,6 +130,9 @@ export default function SettingsPage() {
   const [editPreset, setEditPreset] = useState<Preset | null>(null);
   // B7: バイト先削除の行内確認（「シフト◯件も削除されます」を明示してから消す）
   const [jobConfirmId, setJobConfirmId] = useState<string | null>(null);
+  // 働き方（収入タイプ）。hourly=時給/シフト制, salary=月給, daily=日給。いつでも変更可。
+  const [workStyle, setWorkStyle] = useState("hourly");
+  const [workStyleSaved, setWorkStyleSaved] = useState(false);
 
   async function tryApi(fn: () => Promise<void>) {
     setPageError("");
@@ -183,6 +186,7 @@ export default function SettingsPage() {
       recordPush?: boolean;
       apiToken?: string;
       plan?: string;
+      workStyle?: string;
       aiUsage?: {
         scans: { used: number; limit: number | null };
         parses: { used: number; limit: number | null };
@@ -195,8 +199,24 @@ export default function SettingsPage() {
       setApiToken(d.apiToken ?? "");
       setPlan(planOf(d.plan));
       setAiUsage(d.aiUsage ?? null);
+      if (d.workStyle) {
+        setWorkStyle(d.workStyle);
+        if (typeof localStorage !== "undefined") localStorage.setItem("cashsync-workstyle", d.workStyle);
+      }
     }).catch(() => {});
   }, [load]);
+
+  // 働き方（収入タイプ）の変更。いつでも切替可（バイト⇄社会人の移行等）。
+  // 下タブのシフト表示などレイアウトが変わるので localStorage も即更新する。
+  async function saveWorkStyle(v: string) {
+    setWorkStyle(v);
+    if (typeof localStorage !== "undefined") localStorage.setItem("cashsync-workstyle", v);
+    await tryApi(async () => {
+      await apiCall("/api/profile", apiJson({ workStyle: v }));
+      setWorkStyleSaved(true);
+      setTimeout(() => setWorkStyleSaved(false), 2000);
+    });
+  }
 
   // B9: 月の開始日の保存。変更後は全集計が新しい期間になるので、キャッシュも消して作り直す
   async function saveMonthStart(v: string) {
@@ -632,6 +652,41 @@ export default function SettingsPage() {
           {pageError}
         </p>
       )}
+
+      {/* 働き方（収入タイプ）：選ぶと画面を最適化。いつでも変更可（バイト⇄社会人の移行もOK） */}
+      <section id="workstyle" className="zig zig-t zig-b px-4 py-4 shadow-sm">
+        <h2 className="dot text-sm">働き方（収入タイプ）</h2>
+        <p className="mt-0.5 text-[11px] text-ink-faint">
+          あなたの収入に合わせて画面を最適化します。いつでも変更できます。
+        </p>
+        <div className="mt-2 grid grid-cols-3 gap-2">
+          {(
+            [
+              { v: "hourly", label: "時給・シフト", sub: "バイト" },
+              { v: "salary", label: "月給", sub: "会社員" },
+              { v: "daily", label: "日給", sub: "" },
+            ] as { v: string; label: string; sub: string }[]
+          ).map((o) => (
+            <button
+              key={o.v}
+              type="button"
+              onClick={() => saveWorkStyle(o.v)}
+              className={`dot rounded-md border px-2 py-2.5 text-center text-xs active:translate-y-0.5 ${
+                workStyle === o.v ? "border-vermilion text-vermilion" : "border-rule text-ink-faint"
+              }`}
+            >
+              <span className="block">{o.label}</span>
+              {o.sub && <span className="block text-[10px] opacity-70">{o.sub}</span>}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-[11px] text-ink-faint">
+          {workStyle === "hourly"
+            ? "シフトを入れると給料を自動計算します（下タブに「シフト」）。"
+            : "下タブの「シフト」を隠してすっきり。給料・ボーナスは下の「定期支出・収入」から登録します。「時給・シフト」に戻せばシフトも復活します。"}
+          {workStyleSaved && <span className="ml-1 text-sage">保存しました✓</span>}
+        </p>
+      </section>
 
       <section id="plan" className="zig zig-t zig-b px-4 py-4 shadow-sm">
         <div className="flex items-baseline">

@@ -387,6 +387,9 @@ function migrateSqlite(d: DatabaseSync) {
   addColumn(d, "receipts", "image_hash TEXT");
   addColumn(d, "incomes", "image_hash TEXT");
   addColumn(d, "users", "record_push INTEGER NOT NULL DEFAULT 1"); // 記録できたら通知する（既定ON）
+  // 働き方（収入タイプ）。hourly=時給/シフト制（既定・従来挙動）, salary=月給/会社員, daily=日給。
+  // これに応じてレイアウト（下タブのシフト表示など）を切り替える。設定でいつでも変更可。
+  addColumn(d, "users", "work_style TEXT NOT NULL DEFAULT 'hourly'");
 }
 
 // 掛け持ちバイトの色パレット（紙背景で判別しやすい順）

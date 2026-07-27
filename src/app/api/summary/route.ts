@@ -40,7 +40,10 @@ export async function GET() {
         summary,
         forecast: await monthForecast(user.id, summary),
       })),
-      d.get<{ savings_goal: number }>("SELECT savings_goal FROM users WHERE id = ?", user.id),
+      d.get<{ savings_goal: number; work_style: string | null }>(
+        "SELECT savings_goal, work_style FROM users WHERE id = ?",
+        user.id,
+      ),
       d.all(
         `SELECT e.id, e.date, e.amount, e.memo, e.source, e.category_id, e.receipt_id, c.name AS category, c.icon
          FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
@@ -100,6 +103,8 @@ export async function GET() {
       monthStartDay,
       summary,
       savingsGoal,
+      // 働き方（収入タイプ）。ホームのセットアップ導線・下タブのシフト表示切替に使う
+      workStyle: goalRow?.work_style ?? "hourly",
       // allowance = 「今日あと使える額」（日次予算 − 今日の変動支出。マイナス＝超過）
       allowance: budget.remainingToday,
       budget,

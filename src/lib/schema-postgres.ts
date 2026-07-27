@@ -20,10 +20,13 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     month_start_day INTEGER NOT NULL DEFAULT 1,
     reminder_hour INTEGER NOT NULL DEFAULT -1,
     last_reminder_push TEXT,
-    record_push INTEGER NOT NULL DEFAULT 1
+    record_push INTEGER NOT NULL DEFAULT 1,
+    work_style TEXT NOT NULL DEFAULT 'hourly'
   )`,
   // 記録できたら通知する（既定ON）
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS record_push INTEGER NOT NULL DEFAULT 1`,
+  // 働き方（収入タイプ）。hourly=時給/シフト制（既定）, salary=月給, daily=日給。レイアウト切替に使う
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS work_style TEXT NOT NULL DEFAULT 'hourly'`,
   // C5: AI読み取りのジョブ化（アプリを閉じても解析が続くように）
   `CREATE TABLE IF NOT EXISTS scan_jobs (
     id TEXT PRIMARY KEY,

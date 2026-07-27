@@ -5,6 +5,7 @@
 // 6タブでも390pxで崩れないよう、中央持ち上げ（primary）は廃止して等幅フラットに統一。
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 const TABS = [
   { href: "/", label: "ホーム", icon: HomeIcon },
@@ -17,10 +18,28 @@ const TABS = [
 
 export default function BottomNav() {
   const pathname = usePathname();
+  // 働き方が時給/シフト制(hourly)のときだけ「シフト」タブを出す。
+  // 月給(salary)・日給(daily)の人には不要なので隠してUIをすっきりさせる（設定でいつでも戻せる）。
+  // localStorage で前回値を即時反映し、/api/profile で最新に更新する（初回のちらつき対策）。
+  const [workStyle, setWorkStyle] = useState<string>("hourly");
+  useEffect(() => {
+    const cached = typeof localStorage !== "undefined" ? localStorage.getItem("cashsync-workstyle") : null;
+    if (cached) setWorkStyle(cached);
+    fetch("/api/profile")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.workStyle) {
+          setWorkStyle(d.workStyle);
+          localStorage.setItem("cashsync-workstyle", d.workStyle);
+        }
+      })
+      .catch(() => {});
+  }, []);
+  const tabs = workStyle === "hourly" ? TABS : TABS.filter((t) => t.href !== "/shifts");
   return (
     <nav className="fixed bottom-0 inset-x-0 z-40 bg-card cutline pb-[env(safe-area-inset-bottom)]">
       <div className="mx-auto max-w-md flex items-stretch">
-        {TABS.map((t) => {
+        {tabs.map((t) => {
           const active = t.href === "/" ? pathname === "/" : pathname.startsWith(t.href);
           return (
             <Link

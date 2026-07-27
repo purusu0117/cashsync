@@ -15,8 +15,9 @@ export async function GET() {
       month_start_day: number;
       reminder_hour: number;
       record_push: number;
+      work_style: string | null;
     }>(
-      "SELECT savings_goal, plan, month_start_day, reminder_hour, record_push FROM users WHERE id = ?",
+      "SELECT savings_goal, plan, month_start_day, reminder_hour, record_push, work_style FROM users WHERE id = ?",
       user.id,
     );
     const plan = normalizePlan(row?.plan);
@@ -30,6 +31,8 @@ export async function GET() {
       reminderHour: row?.reminder_hour ?? -1,
       // 記録できたら通知する（既定ON）
       recordPush: Number(row?.record_push ?? 1) === 1,
+      // 働き方（収入タイプ）。hourly=時給/シフト制, salary=月給, daily=日給
+      workStyle: row?.work_style ?? "hourly",
       plan,
       apiToken: await ensureApiToken(user.id),
       aiUsage: { scans: usage.scans, parses: usage.parses },
@@ -48,6 +51,7 @@ export async function POST(request: Request) {
       monthStartDay?: number;
       reminderHour?: number; // C3: 0〜23＝その時刻に通知、-1＝OFF
       recordPush?: boolean; // 記録できたら通知する
+      workStyle?: string; // 働き方: hourly | salary | daily
     };
     const d = await db();
     if (body.savingsGoal !== undefined) {
@@ -76,6 +80,11 @@ export async function POST(request: Request) {
     // 記録できたら通知（レシート/スクショの記録完了・スキップ・失敗のお知らせ）
     if (body.recordPush !== undefined) {
       await d.run("UPDATE users SET record_push = ? WHERE id = ?", body.recordPush ? 1 : 0, user.id);
+    }
+    // 働き方（収入タイプ）。いつでも変更可（バイト⇄社会人の移行等）。既知の値のみ許可
+    if (body.workStyle !== undefined) {
+      const ws = ["hourly", "salary", "daily"].includes(body.workStyle) ? body.workStyle : "hourly";
+      await d.run("UPDATE users SET work_style = ? WHERE id = ?", ws, user.id);
     }
     return Response.json({ ok: true });
   } catch (e) {
