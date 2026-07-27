@@ -21,14 +21,74 @@ export function daysInMonth(month: string): number {
   return new Date(y, m, 0).getDate();
 }
 
-/** 今日を含む残り日数（前作 daysRemainingInMonth の移植）。today はテスト用に差し替え可 */
-export function daysRemainingInMonth(today = todayStr()): number {
-  return daysInMonth(monthOf(today)) - Number(today.slice(8)) + 1;
-}
-
 function parseLocalDate(date: string): Date {
   const [y, m, d] = date.split("-").map(Number);
   return new Date(y, m - 1, d);
+}
+
+/** 'YYYY-MM-DD' 同士の日数差（b - a）。同日=0 */
+function daysBetween(a: string, b: string): number {
+  return Math.round((parseLocalDate(b).getTime() - parseLocalDate(a).getTime()) / 86_400_000);
+}
+
+function addDays(date: string, delta: number): string {
+  const d = parseLocalDate(date);
+  d.setDate(d.getDate() + delta);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// ---------------------------------------------------------------------------
+// B9: 「月」の定義の一元化（締め日＝月の開始日）。
+// users.month_start_day（1〜28、デフォルト1）を基準に、集計上の「◯月」を
+// 「開始日〜翌月の開始日前日」で解決する。例：25日開始なら 7/25〜8/24 が「8月」。
+// 開始日1（デフォルト）は従来のカレンダー月と完全に同一挙動になる。
+// 日次予算・月次サマリー・カレンダー・グラフ・履歴・定期先取り・給料日・NMD は
+// すべて monthRange / accountingMonth 経由で期間を解決する。
+// ---------------------------------------------------------------------------
+
+/** ユーザー設定の月開始日（1〜28。範囲外・未設定は1） */
+export function getMonthStartDay(userId: string): number {
+  const row = db().prepare("SELECT month_start_day FROM users WHERE id = ?").get(userId) as
+    | { month_start_day?: number }
+    | undefined;
+  const v = Math.floor(Number(row?.month_start_day ?? 1));
+  return v >= 2 && v <= 28 ? v : 1;
+}
+
+export interface MonthRange {
+  start: string; // 期間初日（含む）
+  end: string; // 期間末日（含む）
+}
+
+/** 純粋関数版：month（'YYYY-MM'）の集計期間。startDay=1 はカレンダー月そのまま */
+export function monthRangeFor(month: string, startDay: number): MonthRange {
+  if (startDay <= 1) {
+    return { start: `${month}-01`, end: dateStr(month, 31) };
+  }
+  const prev = shiftMonthBy(month, -1);
+  return { start: dateStr(prev, startDay), end: dateStr(month, startDay - 1) };
+}
+
+/** 期間解決ヘルパー（DB版）：集計はすべてこれを経由する */
+export function monthRange(userId: string, month: string): MonthRange {
+  return monthRangeFor(month, getMonthStartDay(userId));
+}
+
+/** 純粋関数版：date が属する集計上の「月」。25日開始なら 7/25→'…-08' */
+export function accountingMonthFor(date: string, startDay: number): string {
+  if (startDay <= 1) return date.slice(0, 7);
+  return Number(date.slice(8, 10)) >= startDay ? nextMonth(date.slice(0, 7)) : date.slice(0, 7);
+}
+
+/** 今日（または指定日）が属する集計上の「今月」（DB版） */
+export function accountingMonth(userId: string, date = todayStr()): string {
+  return accountingMonthFor(date, getMonthStartDay(userId));
+}
+
+/** 今日を含む集計月の残り日数。startDay=1 は従来のカレンダー月と同値 */
+export function daysRemainingInMonth(today = todayStr(), startDay = 1): number {
+  const range = monthRangeFor(accountingMonthFor(today, startDay), startDay);
+  return daysBetween(today, range.end) + 1;
 }
 
 /** 土日 or 日本の祝日か（前作は Google 祝日カレンダー参照、holiday_jp でオフライン化） */
@@ -103,16 +163,31 @@ export function payPeriodFor(job: JobRow, month: string): { start: string; end: 
 }
 
 /**
+ * その job の給料が「集計月 month（期間 range）」に入るカレンダー月の候補を返す。
+ * 給料日（pay_day）が range 内に落ちるカレンダー月だけが対象。
+ * 開始日1（デフォルト）は候補が month のみ＝給料日は必ず月内なので従来と完全に同じ。
+ */
+function payMonthsInRange(job: { pay_day?: number }, month: string, range: MonthRange): string[] {
+  const candidates = range.start.slice(0, 7) === month ? [month] : [shiftMonthBy(month, -1), month];
+  return candidates.filter((cm) => {
+    const payDate = dateStr(cm, Math.min(job.pay_day || 25, daysInMonth(cm)));
+    return payDate >= range.start && payDate <= range.end;
+  });
+}
+
+/**
  * その月に「支払われる」シフト収入（前作 fetchKimihanIncome の計算部を移植・給料日対応）。
  * 締め日・支払月が未設定のバイト先は従来どおり当月1日〜末日の勤務＝当月収入。
+ * B9: month は集計月。締め日変更時は「給料日が期間内に落ちる支払い」を今月の収入として数える。
  */
 export function monthShiftIncome(userId: string, month: string): MonthShiftIncome {
   const d = db();
+  const range = monthRange(userId, month);
   const jobs = d
     .prepare(
-      "SELECT id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, closing_day, pay_month_offset, pay_same_day FROM jobs WHERE user_id = ?",
+      "SELECT id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, closing_day, pay_month_offset, pay_day, pay_same_day FROM jobs WHERE user_id = ?",
     )
-    .all(userId) as unknown as JobRow[];
+    .all(userId) as unknown as (JobRow & { pay_day: number })[];
   let total = 0;
   let weekdayHours = 0;
   let weekendHolidayHours = 0;
@@ -120,15 +195,24 @@ export function monthShiftIncome(userId: string, month: string): MonthShiftIncom
   const stmt = d.prepare(
     "SELECT id, job_id, date, start_min, end_min, break_min FROM shifts WHERE user_id = ? AND job_id = ? AND date >= ? AND date <= ?",
   );
-  for (const job of jobs) {
-    const period = payPeriodFor(job, month);
-    const shifts = stmt.all(userId, job.id, period.start, period.end) as unknown as ShiftRow[];
+  const add = (shifts: ShiftRow[], job: JobRow) => {
     for (const s of shifts) {
       const hours = Math.max(0, s.end_min - s.start_min - s.break_min) / 60;
       if (isWeekendOrHoliday(s.date)) weekendHolidayHours += hours;
       else weekdayHours += hours;
       total += shiftPay(s, job);
       shiftCount++;
+    }
+  };
+  for (const job of jobs) {
+    if (job.pay_same_day) {
+      // 当日払い：期間内に働いた分＝この月の収入
+      add(stmt.all(userId, job.id, range.start, range.end) as unknown as ShiftRow[], job);
+      continue;
+    }
+    for (const cm of payMonthsInRange(job, month, range)) {
+      const period = payPeriodFor(job, cm);
+      add(stmt.all(userId, job.id, period.start, period.end) as unknown as ShiftRow[], job);
     }
   }
   return { total, weekdayHours, weekendHolidayHours, shiftCount };
@@ -181,8 +265,11 @@ export interface Payday {
   periodEnd: string;
 }
 
-/** その月の給料日一覧（カレンダー表示用）。金額はその月に支払われる給料 */
-export function paydays(userId: string, month: string): Payday[] {
+/**
+ * カレンダー月 calMonth に給料日が来る支払い一覧（カレンダーグリッド表示用・従来挙動）。
+ * 当日払いは働いた日ごと（期間は指定範囲内の勤務日）。
+ */
+export function calendarPaydays(userId: string, calMonth: string): Payday[] {
   const d = db();
   const jobs = d
     .prepare(
@@ -194,7 +281,7 @@ export function paydays(userId: string, month: string): Payday[] {
     "SELECT id, job_id, date, start_min, end_min, break_min FROM shifts WHERE user_id = ? AND job_id = ? AND date >= ? AND date <= ?",
   );
   for (const job of jobs) {
-    const period = payPeriodFor(job, month);
+    const period = payPeriodFor(job, calMonth);
     const shifts = stmt.all(userId, job.id, period.start, period.end) as unknown as ShiftRow[];
     if (job.pay_same_day) {
       // 当日払い：働いた日ごとにその日の給料を表示
@@ -216,7 +303,7 @@ export function paydays(userId: string, month: string): Payday[] {
     const amount = shifts.reduce((s, sh) => s + shiftPay(sh, job), 0);
     if (amount <= 0) continue;
     out.push({
-      date: dateStr(month, Math.min(job.pay_day || 25, daysInMonth(month))),
+      date: dateStr(calMonth, Math.min(job.pay_day || 25, daysInMonth(calMonth))),
       jobId: job.id,
       jobName: job.name,
       color: job.color,
@@ -226,6 +313,28 @@ export function paydays(userId: string, month: string): Payday[] {
     });
   }
   return out;
+}
+
+/**
+ * 集計月 month（B9: 締め日基準の期間）に支払われる給料日一覧。
+ * 開始日1（デフォルト）はカレンダー月と期間が一致し、従来と完全に同じ結果。
+ */
+export function paydays(userId: string, month: string): Payday[] {
+  const startDay = getMonthStartDay(userId);
+  if (startDay <= 1) return calendarPaydays(userId, month);
+  const range = monthRangeFor(month, startDay);
+  // 期間はカレンダー月2つ（前月・当月）にまたがる。両月の給料日から期間内のものだけ拾う。
+  const out: Payday[] = [];
+  const seen = new Set<string>();
+  for (const cm of [shiftMonthBy(month, -1), month]) {
+    for (const p of calendarPaydays(userId, cm)) {
+      const key = `${p.jobId}:${p.date}`;
+      if (p.date < range.start || p.date > range.end || seen.has(key)) continue;
+      seen.add(key);
+      out.push(p);
+    }
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**
@@ -408,12 +517,17 @@ export interface MonthSummary {
 
 export function monthSummary(userId: string, month: string): MonthSummary {
   const d = db();
+  const range = monthRange(userId, month); // B9: 期間は締め日基準で一元解決
   const exp = d
-    .prepare("SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date LIKE ?")
-    .get(userId, `${month}-%`) as { s: number };
+    .prepare(
+      "SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date >= ? AND date <= ?",
+    )
+    .get(userId, range.start, range.end) as { s: number };
   const inc = d
-    .prepare("SELECT COALESCE(SUM(amount), 0) AS s FROM incomes WHERE user_id = ? AND date LIKE ?")
-    .get(userId, `${month}-%`) as { s: number };
+    .prepare(
+      "SELECT COALESCE(SUM(amount), 0) AS s FROM incomes WHERE user_id = ? AND date >= ? AND date <= ?",
+    )
+    .get(userId, range.start, range.end) as { s: number };
   const shift = monthShiftIncome(userId, month);
   return {
     month,
@@ -445,11 +559,12 @@ export function todaySpent(userId: string, today = todayStr()): number {
 
 /** 今月の固定費合計（定期計上・分割で expenses に計上された支出。月初に一括計上済み） */
 export function monthFixedCost(userId: string, month: string): number {
+  const range = monthRange(userId, month); // B9: 期間内に計上された定期支出を先取り扱い
   const row = db()
     .prepare(
-      "SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date LIKE ? AND source = 'recurring'",
+      "SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date >= ? AND date <= ? AND source = 'recurring'",
     )
-    .get(userId, `${month}-%`) as { s: number };
+    .get(userId, range.start, range.end) as { s: number };
   return row.s;
 }
 
@@ -468,10 +583,11 @@ export function dailyBudget(
   savingsGoal = 0,
   today = todayStr(),
   fixedTotal = 0,
+  monthStartDay = 1, // B9: 締め日基準の残り日数で日割りする
 ): DailyBudget {
   // summary.expenseTotal は固定費込みの実額。ここから固定費と今日の変動分を除くと「昨日までの変動支出」
   const spentBeforeToday = summary.expenseTotal - fixedTotal - spentToday;
-  const daysRemaining = daysRemainingInMonth(today);
+  const daysRemaining = daysRemainingInMonth(today, monthStartDay);
   const monthRemaining = summary.incomeTotal - savingsGoal - fixedTotal - spentBeforeToday;
   const todayBudget = Math.floor(monthRemaining / daysRemaining);
   return {
@@ -505,9 +621,10 @@ export function nextPayday(userId: string, today = todayStr()): NextPayday | nul
   if (jobs.length === 0) return null;
   const candidates: { date: string; amount: number }[] = [];
   // 当月〜2ヶ月先までの給料日から「今日以降」を拾う（給料日は最長でも翌々月には来る）
+  // B9: カレンダー月ベースで走査する（給料日はカレンダー日付なので締め日設定の影響を受けない）
   let month = monthOf(today);
   for (let i = 0; i < 3; i++) {
-    const confirmed = paydays(userId, month).filter((p) => p.date >= today);
+    const confirmed = calendarPaydays(userId, month).filter((p) => p.date >= today);
     for (const p of confirmed) candidates.push({ date: p.date, amount: p.amount });
     // シフト未入力で paydays に出ないバイト先も、給料日設定があれば日付だけの候補にする
     const covered = new Set(confirmed.map((p) => p.jobId));
@@ -539,14 +656,17 @@ export interface MonthForecast {
  */
 export function monthForecast(userId: string, summary: MonthSummary): MonthForecast {
   const d = db();
+  const range = monthRange(userId, summary.month); // B9: 経過日数・残り日数も締め日基準
   const row = d
     .prepare(
-      "SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date LIKE ? AND source != 'recurring'",
+      "SELECT COALESCE(SUM(amount), 0) AS s FROM expenses WHERE user_id = ? AND date >= ? AND date <= ? AND source != 'recurring'",
     )
-    .get(userId, `${summary.month}-%`) as { s: number };
-  const daysPassed = new Date().getDate();
-  const avgDaily = row.s / Math.max(1, daysPassed);
-  const futureSpend = avgDaily * (daysInMonth(summary.month) - daysPassed);
+    .get(userId, range.start, range.end) as { s: number };
+  const today = todayStr();
+  const totalDays = daysBetween(range.start, range.end) + 1;
+  const daysPassed = Math.min(totalDays, Math.max(1, daysBetween(range.start, today) + 1));
+  const avgDaily = row.s / daysPassed;
+  const futureSpend = avgDaily * (totalDays - daysPassed);
   return {
     forecast: Math.round(summary.incomeTotal - summary.expenseTotal - futureSpend),
     avgDaily: Math.round(avgDaily),
@@ -560,20 +680,23 @@ export interface NoMoneyDays {
 
 /** ノーマネーデー：変動支出（定期計上を除く）が1件も無かった日。過去月は月全体、当月は今日まで */
 export function noMoneyDays(userId: string, month: string): NoMoneyDays {
+  const range = monthRange(userId, month); // B9: 期間は締め日基準
   const rows = db()
     .prepare(
-      "SELECT DISTINCT date FROM expenses WHERE user_id = ? AND date LIKE ? AND source != 'recurring'",
+      "SELECT DISTINCT date FROM expenses WHERE user_id = ? AND date >= ? AND date <= ? AND source != 'recurring'",
     )
-    .all(userId, `${month}-%`) as unknown as { date: string }[];
+    .all(userId, range.start, range.end) as unknown as { date: string }[];
   const spent = new Set(rows.map((r) => r.date));
-  const lastDay = month < currentMonth() ? daysInMonth(month) : Number(todayStr().slice(8));
+  const today = todayStr();
+  const lastDate = range.end < today ? range.end : today;
+  if (lastDate < range.start) return { count: 0, streak: 0 }; // 未来の集計月
+  const dates: string[] = [];
+  for (let dt = range.start; dt <= lastDate; dt = addDays(dt, 1)) dates.push(dt);
   let count = 0;
-  for (let d = 1; d <= lastDay; d++) {
-    if (!spent.has(`${month}-${String(d).padStart(2, "0")}`)) count++;
-  }
+  for (const dt of dates) if (!spent.has(dt)) count++;
   let streak = 0;
-  for (let d = lastDay; d >= 1; d--) {
-    if (spent.has(`${month}-${String(d).padStart(2, "0")}`)) break;
+  for (let i = dates.length - 1; i >= 0; i--) {
+    if (spent.has(dates[i])) break;
     streak++;
   }
   return { count, streak };
@@ -587,12 +710,13 @@ export interface CategorySpend {
 
 /** 月のカテゴリ別支出（レビュー用） */
 export function categoryBreakdown(userId: string, month: string): CategorySpend[] {
+  const range = monthRange(userId, month); // B9: 期間は締め日基準
   return db()
     .prepare(
       `SELECT COALESCE(c.name, '未分類') AS category, SUM(e.amount) AS amount, COUNT(*) AS count
        FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
-       WHERE e.user_id = ? AND e.date LIKE ?
+       WHERE e.user_id = ? AND e.date >= ? AND e.date <= ?
        GROUP BY e.category_id ORDER BY amount DESC`,
     )
-    .all(userId, `${month}-%`) as unknown as CategorySpend[];
+    .all(userId, range.start, range.end) as unknown as CategorySpend[];
 }

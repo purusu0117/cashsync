@@ -1,24 +1,12 @@
 // サーバー専用：メール＋パスワード認証（CookSync 方式を scrypt ハッシュ化して継承）と
-// httpOnly クッキーのセッション管理。
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+// httpOnly クッキーのセッション管理。ハッシュ本体は password.ts（next非依存）に分離。
+import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { db } from "./db";
 
+export { hashPassword, verifyPassword } from "./password";
+
 export const SESSION_COOKIE = "cashsync_session";
-
-export function hashPassword(password: string): string {
-  const salt = randomBytes(16).toString("hex");
-  const hash = scryptSync(password, salt, 64).toString("hex");
-  return `${salt}:${hash}`;
-}
-
-export function verifyPassword(password: string, stored: string): boolean {
-  const [salt, hash] = stored.split(":");
-  if (!salt || !hash) return false;
-  const candidate = scryptSync(password, salt, 64);
-  const expected = Buffer.from(hash, "hex");
-  return candidate.length === expected.length && timingSafeEqual(candidate, expected);
-}
 
 export interface SessionUser {
   id: string;

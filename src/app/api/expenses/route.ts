@@ -1,7 +1,7 @@
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 import { learnMerchantCategory } from "@/lib/merchant";
-import { postRecurringForMonth, todayStr } from "@/lib/money";
+import { monthRange, postRecurringForMonth, todayStr } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -21,14 +21,16 @@ export async function GET(request: Request) {
     const user = await requireUser();
     postRecurringForMonth(user.id, todayStr().slice(0, 7)); // ホーム未訪問でも定期計上が欠けないように
     const month = new URL(request.url).searchParams.get("month") ?? todayStr().slice(0, 7);
+    // B9: 「月」は締め日基準の集計期間（開始日1なら従来のカレンダー月と同一）
+    const range = monthRange(user.id, month);
     const rows = db()
       .prepare(
         `SELECT e.id, e.date, e.amount, e.memo, e.source, e.category_id, e.receipt_id, c.name AS category, c.icon
          FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
-         WHERE e.user_id = ? AND e.date LIKE ? ORDER BY e.date DESC, e.created_at DESC`,
+         WHERE e.user_id = ? AND e.date >= ? AND e.date <= ? ORDER BY e.date DESC, e.created_at DESC`,
       )
-      .all(user.id, `${month}-%`);
-    return Response.json({ expenses: rows });
+      .all(user.id, range.start, range.end);
+    return Response.json({ expenses: rows, range });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
     return Response.json({ error: String(e) }, { status: 500 });

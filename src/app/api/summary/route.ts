@@ -2,10 +2,13 @@
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
+  accountingMonth,
   currentMonth,
   dailyBudget,
+  getMonthStartDay,
   monthFixedCost,
   monthForecast,
+  monthRangeFor,
   monthSummary,
   nextPayday,
   noMoneyDays,
@@ -18,8 +21,12 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const user = await requireUser();
-    const month = currentMonth();
-    postRecurringForMonth(user.id, month);
+    // 定期計上はカレンダー月キーで冪等管理（支払日ベース）なので従来どおり実カレンダー月まで
+    postRecurringForMonth(user.id, currentMonth());
+    // B9: 「今月」は締め日基準の集計月（デフォルト開始日1なら実カレンダー月と同一）
+    const monthStartDay = getMonthStartDay(user.id);
+    const month = accountingMonth(user.id);
+    const range = monthRangeFor(month, monthStartDay);
     const summary = monthSummary(user.id, month);
     const d = db();
     const goalRow = d.prepare("SELECT savings_goal FROM users WHERE id = ?").get(user.id) as
@@ -67,10 +74,14 @@ export async function GET() {
       savingsGoal,
       undefined,
       monthFixedCost(user.id, month),
+      monthStartDay,
     );
     return Response.json({
       user: { name: user.name },
       month,
+      // B9: 集計期間（開始日1なら実カレンダー月と同じ）。ホームの「7/25〜8/24の集計」表示用
+      range,
+      monthStartDay,
       summary,
       savingsGoal,
       // allowance = 「今日あと使える額」（日次予算 − 今日の変動支出。マイナス＝超過）

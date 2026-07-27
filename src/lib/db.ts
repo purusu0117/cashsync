@@ -179,6 +179,12 @@ function migrate(d: DatabaseSync) {
       parses INTEGER NOT NULL DEFAULT 0,-- 自然文パース回数
       PRIMARY KEY (user_id, ym)
     );
+    CREATE TABLE IF NOT EXISTS password_resets (
+      token_hash TEXT PRIMARY KEY,      -- リセットトークンの sha256（平文トークンは保存しない）
+      user_id TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,      -- 有効期限（発行から1時間）
+      used_at INTEGER                   -- 使用済み時刻（NULL=未使用）
+    );
   `);
   // 追加カラムのマイグレーション（既存DBにも効くよう ALTER を冪等に流す）
   addColumn(d, "users", "savings_goal INTEGER NOT NULL DEFAULT 0"); // 先取り貯金の月目標
@@ -193,6 +199,7 @@ function migrate(d: DatabaseSync) {
   addColumn(d, "recurring_items", "interval TEXT NOT NULL DEFAULT 'monthly'"); // 'monthly' | 'yearly'（年払いサブスク対応）
   addColumn(d, "users", "plan TEXT NOT NULL DEFAULT 'free'"); // 'free' | 'premium' | 'founder'（cloud版と表示互換のため）
   addColumn(d, "categories", "icon TEXT NOT NULL DEFAULT ''"); // 旧DB（icon列なし）向け
+  addColumn(d, "users", "month_start_day INTEGER NOT NULL DEFAULT 1"); // B9: 家計簿の月の開始日（1〜28。25なら7/25〜8/24が「8月」）
   migrateCategoryIcons(d);
 }
 

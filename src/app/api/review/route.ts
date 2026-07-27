@@ -4,6 +4,7 @@ import { askClaudeForJsonSmart } from "@/lib/ai";
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
+  accountingMonth,
   categoryBreakdown,
   currentMonth,
   monthSummary,
@@ -35,7 +36,8 @@ export async function GET(request: Request) {
     if (!/^\d{4}-\d{2}$/.test(month)) {
       return Response.json({ error: "month required" }, { status: 400 });
     }
-    if (month >= currentMonth()) {
+    // B9: 「月が終わったか」も締め日基準の集計月で判定する（開始日1なら従来と同じ）
+    if (month >= accountingMonth(user.id)) {
       return Response.json(
         { error: "月が終わってからレポートを作成できます。" },
         { status: 400 },

@@ -1,5 +1,7 @@
 // メール＋パスワード認証（CookSync 方式を scrypt ハッシュ＋セッションクッキーに強化）。
+// B5: forgot（リセットメール受付）/ reset（トークン＋新PW）/ changePassword（ログイン中の変更）を追加。
 import { cookies } from "next/headers";
+import { changePassword, consumePasswordReset, createPasswordReset } from "@/lib/account";
 import {
   SESSION_COOKIE,
   createSession,
@@ -9,6 +11,7 @@ import {
   verifyPassword,
 } from "@/lib/auth";
 import { db, seedCategories, uid } from "@/lib/db";
+import { sendPasswordResetMail } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
 
@@ -26,18 +29,77 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { action, name, email, password } = (await request.json()) as {
-      action?: string;
-      name?: string;
-      email?: string;
-      password?: string;
-    };
+    const { action, name, email, password, token, currentPassword, newPassword } =
+      (await request.json()) as {
+        action?: string;
+        name?: string;
+        email?: string;
+        password?: string;
+        token?: string; // reset用
+        currentPassword?: string; // changePassword用
+        newPassword?: string; // changePassword用
+      };
     const store = await cookies();
 
     if (action === "logout") {
-      const token = store.get(SESSION_COOKIE)?.value;
-      if (token) destroySession(token);
+      const t = store.get(SESSION_COOKIE)?.value;
+      if (t) destroySession(t);
       store.delete(SESSION_COOKIE);
+      return Response.json({ ok: true });
+    }
+
+    // B5: パスワード再設定メールの受付。
+    // 列挙攻撃対策：メールが登録済みかどうかにかかわらず、常に同じ成功レスポンスを返す。
+    if (action === "forgot") {
+      const target = (email || "").trim().toLowerCase();
+      if (!target) {
+        return Response.json({ error: "メールアドレスを入力してください。" }, { status: 400 });
+      }
+      const reset = createPasswordReset(target);
+      if (reset) {
+        const url = `${new URL(request.url).origin}/reset-password?token=${reset.token}`;
+        try {
+          await sendPasswordResetMail(target, url);
+        } catch (err) {
+          // 送信基盤の失敗もユーザーには同じ文言（存在有無を推測させない）。詳細はログのみ。
+          console.error("password reset mail failed:", err);
+        }
+      }
+      return Response.json({ ok: true });
+    }
+
+    // B5: トークン＋新パスワードで再設定
+    if (action === "reset") {
+      if (!token || !password) {
+        return Response.json({ error: "リンクが正しくありません。" }, { status: 400 });
+      }
+      const result = consumePasswordReset(token, password);
+      if (result === "weak_password") {
+        return Response.json({ error: "パスワードは8文字以上にしてください。" }, { status: 400 });
+      }
+      if (result === "invalid_token") {
+        return Response.json(
+          { error: "リンクが無効か、有効期限（1時間）が切れています。もう一度お手続きください。" },
+          { status: 400 },
+        );
+      }
+      return Response.json({ ok: true });
+    }
+
+    // B5: ログイン中のパスワード変更（現PW＋新PW）
+    if (action === "changePassword") {
+      const u = await currentUser();
+      if (!u) return Response.json({ error: "ログインしてください。" }, { status: 401 });
+      const result = changePassword(u.id, currentPassword ?? "", newPassword ?? "");
+      if (result === "weak_password") {
+        return Response.json(
+          { error: "新しいパスワードは8文字以上にしてください。" },
+          { status: 400 },
+        );
+      }
+      if (result === "wrong_password") {
+        return Response.json({ error: "現在のパスワードが違います。" }, { status: 401 });
+      }
       return Response.json({ ok: true });
     }
 
