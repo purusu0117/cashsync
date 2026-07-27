@@ -17,6 +17,7 @@ import {
   syncMonth,
 } from "@/lib/calendarImport";
 import { fmtDateJa, fmtYen, todayLocal } from "@/lib/format";
+import { isNativePlatform } from "@/lib/native";
 import { setPendingImage } from "@/lib/pendingImage";
 
 interface Summary {
@@ -237,7 +238,10 @@ export default function HomePage() {
   useEffect(() => {
     load();
     autoSync();
-    setIsIOS(/iPad|iPhone|iPod/.test(navigator.userAgent));
+    // ショートカット導線は「Web/PWA版のiOS」だけ。
+    // ネイティブアプリ（App Store版）は PhotoKit で直接スクショを削除できるので、
+    // ショートカットを経由する必要がない（大翔指摘 2026-07-27）。
+    setIsIOS(/iPad|iPhone|iPod/.test(navigator.userAgent) && !isNativePlatform());
     // 月初（1〜7日）は先月の振り返りレポートを案内
     const n = new Date();
     if (n.getDate() <= 7) {

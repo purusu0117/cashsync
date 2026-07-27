@@ -1308,7 +1308,12 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section id="shortcut" className="zig zig-t zig-b px-4 py-4 shadow-sm">
+      {/* ショートカット連携は Web/PWA版だけの機能。
+          ネイティブアプリ（App Store版）はスクショ削除をアプリ自身が行えるので出さない（大翔指摘 2026-07-27）。 */}
+      <section
+        id="shortcut"
+        className={`zig zig-t zig-b px-4 py-4 shadow-sm ${isNativePlatform() ? "hidden" : ""}`}
+      >
         <h2 className="dot text-sm">iPhoneショートカット連携</h2>
         <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
           ショートカットから「スクショ読取→記録→スクショ削除」を一気に実行するための鍵（連携キー）です。使い方は

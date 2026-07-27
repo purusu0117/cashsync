@@ -15,6 +15,7 @@ import {
 } from "@/lib/calendarImport";
 import { apiCall, apiJson } from "@/lib/clientApi";
 import { fmtDateJa, fmtMonthJa, fmtYen, hhmmToMin, minToHHMM, todayLocal } from "@/lib/format";
+import { isNativePlatform } from "@/lib/native";
 
 interface Shift {
   id: string;
@@ -210,7 +211,8 @@ export default function ShiftsPage() {
       webkitSpeechRecognition?: new () => SpeechRecognitionLike;
     };
     setSpeechOk(!!(w.SpeechRecognition || w.webkitSpeechRecognition));
-    setIsIOS(/iPad|iPhone|iPod/.test(navigator.userAgent));
+    // ネイティブアプリではショートカット導線を出さない（Web/PWA版のiOSのみ）
+    setIsIOS(/iPad|iPhone|iPod/.test(navigator.userAgent) && !isNativePlatform());
   }, []);
 
   useEffect(() => {
