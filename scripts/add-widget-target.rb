@@ -13,7 +13,7 @@ WIDGET_TARGET = "CashSyncWidgetExtension"
 WIDGET_DIR = "CashSyncWidget" # ios/App/CashSyncWidget
 APP_BUNDLE_ID = "com.daito.cashsync"
 WIDGET_BUNDLE_ID = "com.daito.cashsync.widget"
-DEPLOYMENT_TARGET = "16.0" # containerBackground（iOS17）はフォールバックするので16で可
+DEPLOYMENT_TARGET = "17.0" # containerBackground が iOS17専用のため。アプリ本体の対応OSは変えない
 
 project = Xcodeproj::Project.open(PROJECT_PATH)
 app_target = project.targets.find { |t| t.name == APP_TARGET }
