@@ -983,6 +983,11 @@ export default function CalendarPage() {
               ? "薄い数字は予定（まだ記帳前）・日付をタップで詳細"
               : "日付をタップで詳細"}
         </p>
+        {!multiMode && (
+          <p className="text-center text-[10px] text-ink-faint/80">
+            日付の下の色付きの丸 ＝ シフトのある日
+          </p>
+        )}
       </div>
 
       {/* 4) シフト登録エリア */}
