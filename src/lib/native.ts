@@ -10,11 +10,35 @@ interface CapacitorGlobal {
   isNativePlatform?: () => boolean;
   getPlatform?: () => string;
   registerPlugin?: <T>(name: string) => T;
+  Plugins?: Record<string, unknown>;
 }
 
 function capGlobal(): CapacitorGlobal | undefined {
   if (typeof window === "undefined") return undefined;
   return (window as unknown as { Capacitor?: CapacitorGlobal }).Capacitor;
+}
+
+/**
+ * カスタムプラグインの取得。
+ * remote URL 方式では、WebViewに注入される window.Capacitor に registerPlugin が
+ * 存在しないことがある（注入されるのは Plugins のプロキシのみ）。
+ * そのため ①注入された Plugins ②@capacitor/core の registerPlugin ③window.Capacitor.registerPlugin
+ * の順に解決する。ここを1本に決め打ちしていたため、ウィジェット連携と端末登録が
+ * 何も実行されずに無視されていた（2026-07-28 大翔の実機報告で判明）。
+ */
+export async function nativePlugin<T>(name: string): Promise<T | null> {
+  if (!isNativePlatform()) return null;
+  const cap = capGlobal();
+  const injected = cap?.Plugins?.[name];
+  if (injected) return injected as T;
+  try {
+    const core = await import("@capacitor/core");
+    if (core?.registerPlugin) return core.registerPlugin<T>(name) as T;
+  } catch {
+    /* パッケージが解決できない場合は次へ */
+  }
+  if (cap?.registerPlugin) return cap.registerPlugin<T>(name);
+  return null;
 }
 
 /** ネイティブアプリ（iOS/Android の Capacitor シェル）内で動いているか */
@@ -151,18 +175,16 @@ export async function showRewardedAd(): Promise<boolean> {
 
 let photoCleanerInstance: PhotoCleanerPlugin | null = null;
 
-function photoCleaner(): PhotoCleanerPlugin | null {
-  const cap = capGlobal();
-  if (!cap?.isNativePlatform?.() || !cap.registerPlugin) return null;
+async function photoCleaner(): Promise<PhotoCleanerPlugin | null> {
   if (!photoCleanerInstance) {
-    photoCleanerInstance = cap.registerPlugin<PhotoCleanerPlugin>("PhotoCleaner");
+    photoCleanerInstance = await nativePlugin<PhotoCleanerPlugin>("PhotoCleaner");
   }
   return photoCleanerInstance;
 }
 
 /** 端末のスクリーンショット一覧（新しい順）。ネイティブ以外は空配列 */
 export async function listRecentScreenshots(limit = 30): Promise<ScreenshotItem[]> {
-  const plugin = photoCleaner();
+  const plugin = await photoCleaner();
   if (!plugin) return [];
   const res = await plugin.listRecentScreenshots({ limit });
   return res.photos ?? [];
@@ -173,7 +195,7 @@ export async function listRecentScreenshots(limit = 30): Promise<ScreenshotItem[
  * 戻り値: 削除できた枚数（キャンセル時は0）。
  */
 export async function deletePhotos(ids: string[]): Promise<{ deleted: number; cancelled?: boolean }> {
-  const plugin = photoCleaner();
+  const plugin = await photoCleaner();
   if (!plugin || ids.length === 0) return { deleted: 0 };
   return await plugin.deletePhotos({ ids });
 }
@@ -188,7 +210,7 @@ export async function deletePhotos(ids: string[]): Promise<{ deleted: number; ca
  * 「アプリでログインするとここに残額が出ます」の表示のままになる。
  */
 export async function syncWidgetAuth(token: string): Promise<void> {
-  const plugin = photoCleaner();
+  const plugin = await photoCleaner();
   if (!plugin || !token) return;
   await plugin
     .setWidgetAuth({ token, baseUrl: window.location.origin })
@@ -197,7 +219,7 @@ export async function syncWidgetAuth(token: string): Promise<void> {
 
 /** ログアウト時：ウィジェットに残額が出続けないよう保存データを消す */
 export async function clearWidgetAuth(): Promise<void> {
-  const plugin = photoCleaner();
+  const plugin = await photoCleaner();
   if (!plugin) return;
   await plugin.clearWidgetAuth().catch(() => {});
 }
@@ -239,7 +261,7 @@ export async function registerPushDevice(): Promise<void> {
 export async function scheduleLocalReminder(
   hour: number,
 ): Promise<{ scheduled: boolean; denied?: boolean }> {
-  const plugin = photoCleaner();
+  const plugin = await photoCleaner();
   if (!plugin) return { scheduled: false };
   try {
     return await plugin.scheduleReminder({ hour });
