@@ -6,6 +6,7 @@ import { type ReactNode, useCallback, useEffect, useState, useSyncExternalStore 
 import { CardIcon, CategoryIcon, CoinIcon } from "@/components/Icons";
 import { ExportSection, ImportSection } from "@/components/ImportExport";
 import Loading from "@/components/Loading";
+import Switch from "@/components/Switch";
 import {
   CategoryEditSheet,
   JobEditSheet,
@@ -1145,31 +1146,34 @@ export default function SettingsPage() {
 
       <section id="push" className="zig zig-t zig-b px-4 py-4 shadow-sm">
         <h2 className="dot text-sm">通知</h2>
-        <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
-          毎晩チェックして、月末赤字ペースのときだけ「1日あと◯円おさえれば黒字」と通知します（1日1回まで）。iPhoneは「ホーム画面に追加」したアプリからONにしてください。
-        </p>
-        <button
-          onClick={togglePush}
-          disabled={pushBusy}
-          className={`mt-2 w-full rounded-md py-2.5 text-sm ${
-            pushOn ? "border border-sage text-sage" : "dot border border-ink"
-          } disabled:opacity-50`}
-        >
-          {pushBusy ? "・・・" : pushOn ? "通知ON（タップでOFF）" : "通知をONにする"}
-        </button>
+        {/* Web Push（ブラウザの通知）はWebViewの中では動かないため、ネイティブアプリでは出さない。
+            ネイティブの通知は今後 APNs／ローカル通知で対応する（大翔の指摘 2026-07-27）。 */}
+        {isNativePlatform() ? (
+          <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
+            このアプリからの通知は、iPhoneの「設定 → 通知 → CashSync」からまとめてON/OFFできます。
+          </p>
+        ) : (
+          <>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
+              毎晩チェックして、月末赤字ペースのときだけ「1日あと◯円おさえれば黒字」と通知します（1日1回まで）。iPhoneは「ホーム画面に追加」したアプリからONにしてください。
+            </p>
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-sm">使いすぎ予兆の通知</span>
+              <Switch
+                checked={pushOn}
+                onChange={togglePush}
+                disabled={pushBusy}
+                label="使いすぎ予兆の通知"
+              />
+            </div>
+          </>
+        )}
 
         {/* 記録できたら通知：ショートカット経由など画面を見ていない経路の成否を必ず知らせる */}
         <div className="mt-4 border-t border-dotted border-rule pt-3">
           <div className="flex items-center justify-between">
             <span className="text-sm">記録できたら通知</span>
-            <button
-              onClick={toggleRecordPush}
-              className={`rounded-md px-3 py-1.5 text-[12px] ${
-                recordPush ? "border border-sage text-sage" : "border border-rule text-ink-faint"
-              }`}
-            >
-              {recordPush ? "ON" : "OFF"}
-            </button>
+            <Switch checked={recordPush} onChange={toggleRecordPush} label="記録できたら通知" />
           </div>
           <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
             レシート・スクショから記録できたときに「◯円を記録しました」と通知します。読み取れなかったとき・同じスクショで記録しなかったときも理由を通知するので、黙って消えることがありません。
