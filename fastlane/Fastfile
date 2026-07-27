@@ -96,6 +96,19 @@ platform :ios do
       xcodeproj: XCODEPROJ,
     )
 
+    # 署名設定は「Appターゲットだけ」に書き込む。
+    # xcargs でグローバルに渡すと、SPM依存（RevenueCat等）にもプロファイル指定が効いてしまい
+    # "does not support provisioning profiles" でアーカイブが失敗する。
+    update_code_signing_settings(
+      path: XCODEPROJ,
+      targets: ["App"],
+      use_automatic_signing: false,
+      team_id: ENV.fetch("APPLE_TEAM_ID"),
+      bundle_identifier: APP_ID,
+      code_sign_identity: "Apple Distribution",
+      profile_name: profile_name,
+    )
+
     build_app(
       project: XCODEPROJ,
       scheme: "App",
@@ -107,12 +120,6 @@ platform :ios do
         signingStyle: "manual",
         provisioningProfiles: { APP_ID => profile_name },
       },
-      xcargs: [
-        "DEVELOPMENT_TEAM='#{ENV.fetch("APPLE_TEAM_ID")}'",
-        "PROVISIONING_PROFILE_SPECIFIER='#{profile_name}'",
-        "CODE_SIGN_STYLE=Manual",
-        "CODE_SIGN_IDENTITY='Apple Distribution'",
-      ].join(" "),
     )
 
     upload_to_testflight(
