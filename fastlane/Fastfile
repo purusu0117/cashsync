@@ -15,7 +15,40 @@
 default_platform(:ios)
 
 APP_ID = "com.daito.cashsync"
+APP_NAME = "CashSync 家計簿・バイト給料計算"
+APP_SKU = "cashsync-ios"
 XCODEPROJ = "ios/App/App.xcodeproj"
+
+# Bundle ID とアプリレコードが無ければ作る（APIキー認証・冪等）。
+def ensure_app_exists(api_key)
+  require "spaceship"
+  Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(**api_key)
+
+  if Spaceship::ConnectAPI::BundleId.find(APP_ID).nil?
+    Spaceship::ConnectAPI::BundleId.create(
+      name: "CashSync",
+      identifier: APP_ID,
+      platform: Spaceship::ConnectAPI::BundleIdPlatform::IOS,
+    )
+    UI.success("Bundle ID を作成しました: #{APP_ID}")
+  else
+    UI.message("Bundle ID は既にあります: #{APP_ID}")
+  end
+
+  if Spaceship::ConnectAPI::App.find(APP_ID).nil?
+    Spaceship::ConnectAPI::App.create(
+      name: APP_NAME,
+      version_string: "1.0",
+      sku: APP_SKU,
+      primary_locale: "ja",
+      bundle_id: APP_ID,
+      platforms: ["IOS"],
+    )
+    UI.success("App Store Connect にアプリを作成しました: #{APP_NAME}")
+  else
+    UI.message("App Store Connect のアプリは既にあります")
+  end
+end
 
 platform :ios do
   desc "TestFlight へアップロード（署名込みビルド）"
@@ -45,14 +78,9 @@ platform :ios do
     )
 
     # Bundle ID（Developer Portal）とアプリ（App Store Connect）を必要なら作成する。
-    # 既にあれば何もしない（冪等）ので、大翔が手で作っていても問題ない。
-    produce(
-      api_key: api_key,
-      app_identifier: APP_ID,
-      app_name: "CashSync 家計簿・バイト給料計算",
-      language: "Japanese",
-      sku: "cashsync-ios",
-    )
+    # fastlane の produce アクションは APIキー認証に対応していない（Apple ID＋2FA前提）ため、
+    # Spaceship を直接使う。既にあれば何もしない（冪等）＝手で作ってあっても問題ない。
+    ensure_app_exists(api_key)
 
     # App Store 用プロビジョニングプロファイル（無ければ作成される）
     get_provisioning_profile(
