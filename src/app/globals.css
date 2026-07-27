@@ -114,10 +114,10 @@ body {
   border-top: 1.5px dashed var(--rule);
 }
 
-/* スタンプ風（朱赤の押印） */
+/* スタンプ風（押印）。色は text-* クラスに委ねる（黒字=緑/赤字=朱赤/注意=琥珀）。
+   以前は color を朱赤で固定していたため「黒字」判子まで赤くなっていた（視覚QAで検出・修正）。 */
 .stamp {
-  color: var(--vermilion);
-  border: 2.5px solid var(--vermilion);
+  border: 2.5px solid currentColor;
   border-radius: 6px;
   transform: rotate(-4deg);
   opacity: 0.9;

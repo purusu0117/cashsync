@@ -674,7 +674,7 @@ export default function SettingsPage() {
         {plan === "free" && (
           <>
             <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
-              プレミアム（¥480/月）にすると：広告なし・AI読取が高精度（Sonnet）・回数無制限
+              プレミアム（¥480/月）にすると：広告なし・AI読取がより高精度・回数無制限
               <span className="block">※フェアユース：レシート読み取りは月200回まで</span>
             </p>
             {purchaseEnv === "ready" ? (

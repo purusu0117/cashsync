@@ -369,7 +369,8 @@ export default function CalendarPage() {
           startMin: hhmmToMin(shiftStart),
           endMin: hhmmToMin(shiftEnd),
           breakMin: Number(shiftBreak) || 0,
-          source: "calendar",
+          // source は既定の "manual"。"calendar" にすると Google カレンダー自動同期の
+          // 差分削除対象になり、手動追加したシフトが次回同期で消える（QA指摘の退行修正）
         }),
       );
       setShowShiftAdd(false);
