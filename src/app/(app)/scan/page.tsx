@@ -12,6 +12,7 @@ import {
   PinIcon,
   TrashIcon,
 } from "@/components/Icons";
+import { cachedFetch } from "@/lib/cachedFetch";
 import { netFetch } from "@/lib/clientApi";
 import { fmtYen, todayLocal } from "@/lib/format";
 import { takePendingImage } from "@/lib/pendingImage";
@@ -51,11 +52,20 @@ export default function ScanPage() {
   // 保存時にサーバーが409（同一日付×金額×店名の既存記録あり）を返したら true。
   // 「本当に同じものを2回買った」ケースを救済するため、確認のうえ allowDuplicate: true で再送信できる。
   const [dupConfirm, setDupConfirm] = useState(false);
+  // B12: 今月のAI読み取り残量（無料プランのみ数値。無制限プランは非表示）
+  const [scansLeft, setScansLeft] = useState<number | null>(null);
 
   useEffect(() => {
     fetch("/api/categories")
       .then((r) => r.json())
       .then((d) => setCategories(d.categories ?? []));
+    cachedFetch<{ aiUsage?: { scans: { used: number; limit: number | null } } }>(
+      "/api/profile",
+      (d) => {
+        const s = d.aiUsage?.scans;
+        setScansLeft(s && s.limit !== null ? Math.max(0, s.limit - s.used) : null);
+      },
+    ).catch(() => {});
     // 下タブ「撮る」やホームのボタンで既に画像が選ばれていたら、即解析を開始
     const consume = () => {
       const pending = takePendingImage();
@@ -170,7 +180,18 @@ export default function ScanPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="dot text-lg">レシート・スクショを読み取る</h1>
+      <div className="flex items-baseline justify-between gap-2">
+        <h1 className="dot text-lg">レシート・スクショを読み取る</h1>
+        {scansLeft !== null && (
+          <span
+            className={`dot shrink-0 text-[11px] tabular-nums ${
+              scansLeft <= 5 ? "text-caution" : "text-ink-faint"
+            }`}
+          >
+            今月あと{scansLeft}回
+          </span>
+        )}
+      </div>
       <input
         ref={fileRef}
         type="file"

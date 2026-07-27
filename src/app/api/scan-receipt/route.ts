@@ -4,6 +4,7 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import { askClaudeReceipt } from "@/lib/ai";
+import { countUsage } from "@/lib/aiUsage";
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { learnedCategoryId } from "@/lib/merchant";
@@ -34,6 +35,8 @@ export async function POST(request: Request) {
       tmp,
       categories.map((c) => c.name),
     );
+    // B12: 残量表示用に今月の読み取り回数を記録（mainは表示のみ・上限拒否はしない）
+    countUsage(user.id, "scans");
     const category = categories.find((c) => c.name === scan.category);
     let categoryId = category?.id ?? null;
     // マーチャント学習：この店で過去にユーザーが確定したカテゴリがあれば、AIの提案より優先

@@ -172,6 +172,13 @@ function migrate(d: DatabaseSync) {
       updated_at INTEGER NOT NULL,
       PRIMARY KEY (user_id, merchant)
     );
+    CREATE TABLE IF NOT EXISTS ai_usage (
+      user_id TEXT NOT NULL,
+      ym TEXT NOT NULL,                 -- 'YYYY-MM'
+      scans INTEGER NOT NULL DEFAULT 0, -- レシート/スクショ読み取り回数
+      parses INTEGER NOT NULL DEFAULT 0,-- 自然文パース回数
+      PRIMARY KEY (user_id, ym)
+    );
   `);
   // 追加カラムのマイグレーション（既存DBにも効くよう ALTER を冪等に流す）
   addColumn(d, "users", "savings_goal INTEGER NOT NULL DEFAULT 0"); // 先取り貯金の月目標
@@ -184,6 +191,7 @@ function migrate(d: DatabaseSync) {
   addColumn(d, "jobs", "pay_same_day INTEGER NOT NULL DEFAULT 0"); // 1=当日払い（働いた日にその場で支給）
   addColumn(d, "users", "last_overspend_push TEXT"); // 使いすぎ通知の最終送信日（1日1回制限）
   addColumn(d, "recurring_items", "interval TEXT NOT NULL DEFAULT 'monthly'"); // 'monthly' | 'yearly'（年払いサブスク対応）
+  addColumn(d, "users", "plan TEXT NOT NULL DEFAULT 'free'"); // 'free' | 'premium' | 'founder'（cloud版と表示互換のため）
   addColumn(d, "categories", "icon TEXT NOT NULL DEFAULT ''"); // 旧DB（icon列なし）向け
   migrateCategoryIcons(d);
 }

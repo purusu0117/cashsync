@@ -47,6 +47,19 @@ export async function GET() {
          WHERE p.user_id = ? ORDER BY p.sort`,
       )
       .all(user.id);
+    // B3: 初回セットアップカード用の登録状況（全期間）。expensesAll は空データ時の
+    // 虚偽表示（ノーマネーデー称賛・振り返り案内・黒字判子）の抑制にも使う
+    const counts = {
+      jobs: (d.prepare("SELECT COUNT(*) AS c FROM jobs WHERE user_id = ?").get(user.id) as { c: number }).c,
+      recurringExpense: (
+        d
+          .prepare("SELECT COUNT(*) AS c FROM recurring_items WHERE user_id = ? AND kind = 'expense'")
+          .get(user.id) as { c: number }
+      ).c,
+      expensesAll: (
+        d.prepare("SELECT COUNT(*) AS c FROM expenses WHERE user_id = ?").get(user.id) as { c: number }
+      ).c,
+    };
     // 固定費（定期計上・分割）は今月分を満額先取りし、日々の数字は変動支出だけで動かす
     const budget = dailyBudget(
       summary,
@@ -70,6 +83,7 @@ export async function GET() {
       yesterday: { date: ydStr, recorded: ydCount.c > 0 },
       recent,
       presets,
+      counts,
     });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();

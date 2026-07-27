@@ -6,9 +6,14 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const user = await requireUser();
+    // shift_count: バイト先削除時の「シフト◯件も削除されます」表示用（B7）
     const jobs = db()
       .prepare(
-        "SELECT id, name, weekday_rate, weekend_holiday_rate, transport_per_shift, calendar_keywords, calendar_exclude, color, closing_day, pay_month_offset, pay_day, pay_same_day FROM jobs WHERE user_id = ?",
+        `SELECT j.id, j.name, j.weekday_rate, j.weekend_holiday_rate, j.transport_per_shift,
+                j.calendar_keywords, j.calendar_exclude, j.color, j.closing_day,
+                j.pay_month_offset, j.pay_day, j.pay_same_day,
+                (SELECT COUNT(*) FROM shifts s WHERE s.job_id = j.id AND s.user_id = j.user_id) AS shift_count
+         FROM jobs j WHERE j.user_id = ?`,
       )
       .all(user.id);
     return Response.json({ jobs });

@@ -53,7 +53,15 @@ function weekStats(userId: string, range: { start: string; end: string }) {
       )
       .get(userId, range.start, range.end) as { c: number }
   ).c;
-  return { total, top: top ?? null, max: max ?? null, noMoneyDays: 7 - spentDays };
+  // B3: 記録0件の週は「支出ゼロ！」と称賛せず、記録開始の案内に切り替えるための行数
+  const recordCount = (
+    d
+      .prepare(
+        "SELECT COUNT(*) AS c FROM expenses WHERE user_id = ? AND date >= ? AND date <= ? AND source != 'recurring'",
+      )
+      .get(userId, range.start, range.end) as { c: number }
+  ).c;
+  return { total, top: top ?? null, max: max ?? null, noMoneyDays: 7 - spentDays, recordCount };
 }
 
 export async function GET() {
@@ -71,6 +79,7 @@ export async function GET() {
       top: cur.top,
       max: cur.max,
       noMoneyDays: cur.noMoneyDays,
+      recordCount: cur.recordCount,
     });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();

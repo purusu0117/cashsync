@@ -1,5 +1,6 @@
 // 自然文（「昨日セブンで昼飯650円」）→ 支出レコード案。保存は確認後にクライアントが行う。
 import { askClaudeParseEntry } from "@/lib/ai";
+import { countUsage } from "@/lib/aiUsage";
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db } from "@/lib/db";
 
@@ -20,6 +21,8 @@ export async function POST(request: Request) {
       text.trim(),
       categories.map((c) => c.name),
     );
+    // B12: 残量表示用に今月の文章入力（AI解析）回数を記録（mainは表示のみ・上限拒否はしない）
+    countUsage(user.id, "parses");
     const category = categories.find((c) => c.name === parsed.category);
     return Response.json({ parsed, categoryId: category?.id ?? null });
   } catch (e) {

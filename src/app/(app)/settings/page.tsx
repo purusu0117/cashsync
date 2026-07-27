@@ -5,6 +5,11 @@ import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { CardIcon, CategoryIcon, CoinIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
+import {
+  CategoryEditSheet,
+  JobEditSheet,
+  PresetEditSheet,
+} from "@/components/SettingsEditSheets";
 import { CATEGORY_ICON_KEYS, DEFAULT_CATEGORY_ICON } from "@/lib/categoryIcons";
 import { cachedFetch, clearApiCache } from "@/lib/cachedFetch";
 import { apiCall, apiJson } from "@/lib/clientApi";
@@ -21,6 +26,7 @@ interface Job {
   pay_month_offset: number;
   pay_day: number;
   pay_same_day: number;
+  shift_count: number;
 }
 interface Recurring {
   id: string;
@@ -91,6 +97,18 @@ export default function SettingsPage() {
   const [pageError, setPageError] = useState("");
   const [apiToken, setApiToken] = useState("");
   const [tokenCopied, setTokenCopied] = useState(false);
+  // B12: プランと今月のAI使用量（読み取り/文章入力の残量表示）
+  const [plan, setPlan] = useState<"free" | "premium" | "founder">("free");
+  const [aiUsage, setAiUsage] = useState<{
+    scans: { used: number; limit: number | null };
+    parses: { used: number; limit: number | null };
+  } | null>(null);
+  // B7: 編集シートの対象（null = 閉じている）
+  const [editJob, setEditJob] = useState<Job | null>(null);
+  const [editCategory, setEditCategory] = useState<Category | null>(null);
+  const [editPreset, setEditPreset] = useState<Preset | null>(null);
+  // B7: バイト先削除の行内確認（「シフト◯件も削除されます」を明示してから消す）
+  const [jobConfirmId, setJobConfirmId] = useState<string | null>(null);
 
   async function tryApi(fn: () => Promise<void>) {
     setPageError("");
@@ -125,9 +143,19 @@ export default function SettingsPage() {
 
   useEffect(() => {
     load();
-    cachedFetch<{ savingsGoal?: number; apiToken?: string }>("/api/profile", (d) => {
+    cachedFetch<{
+      savingsGoal?: number;
+      apiToken?: string;
+      plan?: "free" | "premium" | "founder";
+      aiUsage?: {
+        scans: { used: number; limit: number | null };
+        parses: { used: number; limit: number | null };
+      };
+    }>("/api/profile", (d) => {
       setGoal(d.savingsGoal ? String(d.savingsGoal) : "");
       setApiToken(d.apiToken ?? "");
+      setPlan(d.plan ?? "free");
+      setAiUsage(d.aiUsage ?? null);
     }).catch(() => {});
   }, [load]);
 
@@ -402,29 +430,64 @@ export default function SettingsPage() {
         <Fold summary={`${jobs.length}件`}>
         <ul className="space-y-1.5">
           {jobs.length === 0 && <li className="text-[11px] text-ink-faint">まだ登録がありません</li>}
-          {jobs.map((j) => (
-            <li key={j.id}>
-              <div className="flex items-baseline text-sm">
-                <span
-                  className="mr-1.5 inline-block h-2.5 w-2.5 shrink-0 self-center rounded-full"
-                  style={{ backgroundColor: j.color || "var(--vermilion)" }}
-                />
-                <span className="min-w-0 truncate">{j.name}</span>
-                <span className="leader" />
-                <span className="dot shrink-0 tabular-nums">
-                  平日{fmtYen(j.weekday_rate)} / 土日祝{fmtYen(j.weekend_holiday_rate)}
+          {jobs.map((j) =>
+            jobConfirmId === j.id ? (
+              /* B7: 削除前にシフトも一緒に消えることを明示して確認する */
+              <li key={j.id} className="flex items-center gap-2 rounded-md border border-vermilion bg-paper px-2 py-2">
+                <span className="min-w-0 flex-1 text-xs leading-snug">
+                  「{j.name}」を削除しますか？
+                  {j.shift_count > 0 && (
+                    <span className="block text-vermilion">
+                      入力済みのシフト{j.shift_count}件も削除されます
+                    </span>
+                  )}
                 </span>
-                <button onClick={() => del(`/api/jobs?id=${j.id}`)} className="ml-2 shrink-0 text-xs text-vermilion">
-                  ✕
+                <button
+                  onClick={() => {
+                    setJobConfirmId(null);
+                    del(`/api/jobs?id=${j.id}`);
+                  }}
+                  className="dot shrink-0 rounded border border-vermilion px-2 py-1 text-xs text-vermilion"
+                >
+                  削除する
                 </button>
-              </div>
-              <p className="ml-4 text-[11px] text-ink-faint">
-                {j.pay_same_day
-                  ? "当日払い（働いた日にその場で支給）"
-                  : `${j.closing_day >= 28 ? "末日" : `${j.closing_day}日`}締め・${j.pay_month_offset ? "翌月" : "当月"}${j.pay_day >= 28 ? "末日" : `${j.pay_day}日`}払い`}
-              </p>
-            </li>
-          ))}
+                <button
+                  onClick={() => setJobConfirmId(null)}
+                  className="shrink-0 rounded border border-rule px-2 py-1 text-xs text-ink-faint"
+                >
+                  やめる
+                </button>
+              </li>
+            ) : (
+              <li key={j.id}>
+                <div className="flex items-baseline text-sm">
+                  <span
+                    className="mr-1.5 inline-block h-2.5 w-2.5 shrink-0 self-center rounded-full"
+                    style={{ backgroundColor: j.color || "var(--vermilion)" }}
+                  />
+                  <span className="min-w-0 truncate">{j.name}</span>
+                  <span className="leader" />
+                  <span className="dot shrink-0 tabular-nums">
+                    平日{fmtYen(j.weekday_rate)} / 土日祝{fmtYen(j.weekend_holiday_rate)}
+                  </span>
+                  <button
+                    onClick={() => setEditJob(j)}
+                    className="ml-2 shrink-0 text-xs text-ink-faint underline underline-offset-2"
+                  >
+                    編集
+                  </button>
+                  <button onClick={() => setJobConfirmId(j.id)} className="ml-2 shrink-0 text-xs text-vermilion">
+                    ✕
+                  </button>
+                </div>
+                <p className="ml-4 text-[11px] text-ink-faint">
+                  {j.pay_same_day
+                    ? "当日払い（働いた日にその場で支給）"
+                    : `${j.closing_day >= 28 ? "末日" : `${j.closing_day}日`}締め・${j.pay_month_offset ? "翌月" : "当月"}${j.pay_day >= 28 ? "末日" : `${j.pay_day}日`}払い`}
+                </p>
+              </li>
+            ),
+          )}
         </ul>
         </Fold>
         <div className="mt-3 grid grid-cols-2 gap-2">
@@ -633,6 +696,12 @@ export default function SettingsPage() {
               {p.category && <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">{p.category}</span>}
               <span className="leader" />
               <span className="dot shrink-0 tabular-nums">{fmtYen(p.amount)}</span>
+              <button
+                onClick={() => setEditPreset(p)}
+                className="ml-2 shrink-0 text-xs text-ink-faint underline underline-offset-2"
+              >
+                編集
+              </button>
               <button onClick={() => del(`/api/presets?id=${p.id}`)} className="ml-2 shrink-0 text-xs text-vermilion">
                 ✕
               </button>
@@ -682,6 +751,12 @@ export default function SettingsPage() {
             {categories.map((c) => (
               <span key={c.id} className="flex items-center gap-1 rounded-full border border-rule bg-paper px-3 py-1 text-sm">
                 <CategoryIcon icon={c.icon} className="h-4 w-4 text-ink-faint" /> {c.name}
+                <button
+                  onClick={() => setEditCategory(c)}
+                  className="ml-0.5 text-[10px] text-ink-faint underline underline-offset-2"
+                >
+                  編集
+                </button>
                 <button onClick={() => del(`/api/categories?id=${c.id}`)} className="text-xs text-vermilion">
                   ✕
                 </button>
@@ -732,10 +807,55 @@ export default function SettingsPage() {
         </button>
       </section>
 
+      {/* B12: プランと今月のAI残量 */}
+      <section id="plan" className="zig zig-t zig-b px-4 py-4 shadow-sm">
+        <div className="flex items-baseline justify-between">
+          <h2 className="dot text-sm">プラン</h2>
+          <span className="dot shrink-0 text-sm">
+            {plan === "founder" ? "ファウンダー" : plan === "premium" ? "プレミアム" : "無料プラン"}
+          </span>
+        </div>
+        {aiUsage &&
+          (plan === "free" ? (
+            <ul className="mt-2 space-y-1 text-sm">
+              {(
+                [
+                  ["今月のAI読み取り", aiUsage.scans],
+                  ["文章入力", aiUsage.parses],
+                ] as const
+              ).map(([label, u]) => {
+                const remaining = u.limit !== null ? Math.max(0, u.limit - u.used) : null;
+                return (
+                  <li key={label} className="flex items-baseline">
+                    <span className="text-ink-faint">{label}</span>
+                    <span className="leader" />
+                    <span
+                      className={`dot tabular-nums ${
+                        remaining !== null && remaining <= 5 ? "text-caution" : ""
+                      }`}
+                    >
+                      {u.used}/{u.limit}回
+                    </span>
+                  </li>
+                );
+              })}
+              <li className="text-[11px] text-ink-faint">毎月1日にリセットされます</li>
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm">
+              AI読み取り・文章入力 <span className="dot">無制限</span>
+            </p>
+          ))}
+      </section>
+
       <section id="shortcut" className="zig zig-t zig-b px-4 py-4 shadow-sm">
         <h2 className="dot text-sm">iPhoneショートカット連携</h2>
         <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
-          ショートカットから「スクショ読取→記録→スクショ削除」を一気に実行するための鍵です。ショートカットの作り方は大翔に聞いてください。
+          ショートカットから「スクショ読取→記録→スクショ削除」を一気に実行するための鍵（連携キー）です。使い方は
+          <Link href="/help/shortcut" className="underline underline-offset-2">
+            ヘルプ
+          </Link>
+          を参照してください。
         </p>
         <div className="mt-2 flex gap-2">
           <input
@@ -765,6 +885,39 @@ export default function SettingsPage() {
         ログアウト
       </button>
       <p className="dot pb-2 text-center text-[10px] text-ink-faint">CashSync v0.1</p>
+
+      {/* B7: 編集シート（バイト先・カテゴリ・かんたん入力ボタン） */}
+      {editJob && (
+        <JobEditSheet
+          job={editJob}
+          onClose={() => setEditJob(null)}
+          onSaved={() => {
+            setEditJob(null);
+            load();
+          }}
+        />
+      )}
+      {editCategory && (
+        <CategoryEditSheet
+          category={editCategory}
+          onClose={() => setEditCategory(null)}
+          onSaved={() => {
+            setEditCategory(null);
+            load();
+          }}
+        />
+      )}
+      {editPreset && (
+        <PresetEditSheet
+          preset={editPreset}
+          categories={categories}
+          onClose={() => setEditPreset(null)}
+          onSaved={() => {
+            setEditPreset(null);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }
