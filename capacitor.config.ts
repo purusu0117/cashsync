@@ -20,6 +20,12 @@ const config: CapacitorConfig = {
     AdMob: {
       // AdMob 初期化はアプリ側（src/lib/native.ts）で行う。ここは予約領域。
     },
+    PushNotifications: {
+      // アプリを前面で開いている間もバナー＋音で通知を表示する。
+      // これが無いと iOS 既定で「使用中アプリ自身の通知」は画面に出ない（背面/ロック時のみ表示）。
+      // テスト通知が前面で出なかった原因（2026-07-28・APNsは200で届いていた）。
+      presentationOptions: ["badge", "sound", "alert"],
+    },
   },
 };
 
