@@ -44,6 +44,16 @@ platform :ios do
       keychain_password: "",
     )
 
+    # Bundle ID（Developer Portal）とアプリ（App Store Connect）を必要なら作成する。
+    # 既にあれば何もしない（冪等）ので、大翔が手で作っていても問題ない。
+    produce(
+      api_key: api_key,
+      app_identifier: APP_ID,
+      app_name: "CashSync 家計簿・バイト給料計算",
+      language: "Japanese",
+      sku: "cashsync-ios",
+    )
+
     # App Store 用プロビジョニングプロファイル（無ければ作成される）
     get_provisioning_profile(
       api_key: api_key,
