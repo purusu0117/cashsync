@@ -7,8 +7,16 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const user = await requireUser();
+    // used: 手入力フォームの「よく使うカテゴリ上位6個」用の使用回数（C6）
     const categories = db()
-      .prepare("SELECT id, name, icon, sort FROM categories WHERE user_id = ? ORDER BY sort")
+      .prepare(
+        `SELECT c.id, c.name, c.icon, c.sort, COUNT(e.id) AS used
+         FROM categories c
+         LEFT JOIN expenses e ON e.category_id = c.id AND e.user_id = c.user_id
+         WHERE c.user_id = ?
+         GROUP BY c.id, c.name, c.icon, c.sort
+         ORDER BY c.sort`,
+      )
       .all(user.id);
     return Response.json({ categories });
   } catch (e) {

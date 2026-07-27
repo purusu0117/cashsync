@@ -2,14 +2,16 @@
 
 // 手入力 ＋ 自然文/音声入力（「昨日セブンで昼飯650円」→AIパース→確認→保存）
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CategoryIcon, MicIcon, StopIcon } from "@/components/Icons";
+import { netFetch } from "@/lib/clientApi";
 import { fmtYen, todayLocal } from "@/lib/format";
 
 interface Category {
   id: string;
   name: string;
   icon: string;
+  used?: number; // 使用回数（よく使う上位6個の判定用）
 }
 
 // Web Speech API（iOS Safariは不安定なので progressive enhancement）
@@ -41,6 +43,7 @@ export default function AddPage() {
   const [memo, setMemo] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showAllCats, setShowAllCats] = useState(false); // C6: カテゴリは上位6個＋折りたたみ
 
   const [text, setText] = useState("");
   const [parsing, setParsing] = useState(false);
@@ -135,7 +138,7 @@ export default function AddPage() {
     setError("");
     setParsedNote("");
     try {
-      const res = await fetch("/api/parse-entry", {
+      const res = await netFetch("/api/parse-entry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: t }),
@@ -165,7 +168,7 @@ export default function AddPage() {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/expenses", {
+      const res = await netFetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: n, date, categoryId, memo, source: text ? "text" : "manual" }),
@@ -180,6 +183,20 @@ export default function AddPage() {
       setBusy(false);
     }
   }
+
+  // C6: 使用頻度の上位6個だけ見せる（選択中のカテゴリは圏外でも必ず見せる）
+  const topIds = useMemo(
+    () =>
+      [...categories]
+        .sort((a, b) => (b.used ?? 0) - (a.used ?? 0))
+        .slice(0, 6)
+        .map((c) => c.id),
+    [categories],
+  );
+  const visibleCategories =
+    showAllCats || categories.length <= 6
+      ? categories
+      : categories.filter((c) => topIds.includes(c.id) || c.id === categoryId);
 
   return (
     <div className="space-y-4">
@@ -272,8 +289,11 @@ export default function AddPage() {
         </label>
         <div>
           <span className="dot text-xs text-ink-faint">カテゴリ</span>
+          {!showAllCats && categories.length > 6 && (
+            <span className="ml-1.5 text-[10px] text-ink-faint">よく使う順</span>
+          )}
           <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {categories.map((c) => (
+            {visibleCategories.map((c) => (
               <button
                 key={c.id}
                 onClick={() => setCategoryId(c.id)}
@@ -286,6 +306,14 @@ export default function AddPage() {
                 <CategoryIcon icon={c.icon} className="h-4 w-4" /> {c.name}
               </button>
             ))}
+            {categories.length > 6 && (
+              <button
+                onClick={() => setShowAllCats(!showAllCats)}
+                className="rounded-full border border-dashed border-rule bg-paper px-3 py-1.5 text-sm text-ink-faint"
+              >
+                {showAllCats ? "たたむ" : `すべて表示（${categories.length}）`}
+              </button>
+            )}
           </div>
         </div>
         <label className="block">
@@ -298,13 +326,16 @@ export default function AddPage() {
           />
         </label>
         {error && <p className="text-sm text-vermilion">{error}</p>}
-        <button
-          onClick={save}
-          disabled={busy}
-          className="dot w-full rounded-md bg-vermilion py-3 text-lg text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none disabled:opacity-50"
-        >
-          {busy ? "保存中・・・" : amount ? `${fmtYen(Number(amount))} で記録` : "記録する"}
-        </button>
+        {/* C6: 保存ボタンは下タブの上に固定（スクロールしても常に押せる） */}
+        <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30">
+          <button
+            onClick={save}
+            disabled={busy}
+            className="dot w-full rounded-md bg-vermilion py-3 text-lg text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none disabled:opacity-50"
+          >
+            {busy ? "保存中・・・" : amount ? `${fmtYen(Number(amount))} で記録` : "記録する"}
+          </button>
+        </div>
       </section>
     </div>
   );

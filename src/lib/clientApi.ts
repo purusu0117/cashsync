@@ -2,13 +2,16 @@
 
 // 書き込み系 fetch の共通ラッパー：401はログインへ、エラーは throw して呼び出し元で表示する。
 // （以前は res.ok を見ずに成功扱いしてサイレント失敗していたバグの対策）
-import { clearApiCache } from "./cachedFetch";
+// A5: 通信断は netFetch が1回だけ自動リトライ→日本語の案内文で throw する。
+import { clearApiCache, netFetch } from "./cachedFetch";
+
+export { netFetch, NETWORK_ERROR_MESSAGE } from "./cachedFetch";
 
 export async function apiCall<T = Record<string, unknown>>(
   url: string,
   init?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(url, init);
+  const res = await netFetch(url, init);
   if (res.status === 401) {
     clearApiCache(); // セッション切れ：別ユーザーで再ログインしてもキャッシュが混ざらないように
     location.href = "/login";

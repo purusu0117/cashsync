@@ -57,6 +57,32 @@ export async function POST(request: Request) {
   }
 }
 
+// C8: 収入の編集（金額・日付・メモ）。支出の編集シートと同等の操作を提供する
+export async function PUT(request: Request) {
+  try {
+    const user = await requireUser();
+    const body = (await request.json()) as {
+      id?: string;
+      date?: string;
+      amount?: number;
+      memo?: string;
+    };
+    if (!body.id) return Response.json({ error: "id required" }, { status: 400 });
+    const amount = Math.round(Number(body.amount));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return Response.json({ error: "金額を入力してください。" }, { status: 400 });
+    }
+    const date = body.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : todayStr();
+    db()
+      .prepare("UPDATE incomes SET date = ?, amount = ?, memo = ? WHERE id = ? AND user_id = ?")
+      .run(date, amount, (body.memo ?? "").trim(), body.id, user.id);
+    return Response.json({ ok: true });
+  } catch (e) {
+    if (e instanceof AuthError) return unauthorized();
+    return Response.json({ error: String(e) }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: Request) {
   try {
     const user = await requireUser();

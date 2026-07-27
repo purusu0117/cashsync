@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     const d = db();
     const expenses = d
       .prepare(
-        `SELECT e.id, e.date, e.amount, e.memo, e.source, c.name AS category, c.icon
+        `SELECT e.id, e.date, e.amount, e.memo, e.source, e.category_id, e.receipt_id, c.name AS category, c.icon
          FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
          WHERE e.user_id = ? AND e.date LIKE ? ORDER BY e.date, e.created_at`,
       )

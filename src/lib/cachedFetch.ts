@@ -9,6 +9,29 @@
 
 const PREFIX = "cashsync-api:";
 
+// A5: 通信断のエラー文言（"Failed to fetch" 等の英語をユーザーに見せない）
+export const NETWORK_ERROR_MESSAGE =
+  "通信できませんでした。電波の良い場所でもう一度お試しください。";
+
+/**
+ * fetch の共通ラッパー（A5）：ネットワーク断（Failed to fetch / Load failed 等）を
+ * 1回だけ自動リトライし、それでもダメなら日本語の案内文で throw する。
+ * HTTPエラー（4xx/5xx）はレスポンスが返っているのでそのまま返す（呼び出し元で処理）。
+ */
+export async function netFetch(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch {
+    // 電波の谷間などの一時的な断は、1秒おいて1回だけ静かにやり直す
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      return await fetch(url, init);
+    } catch {
+      throw new Error(NETWORK_ERROR_MESSAGE);
+    }
+  }
+}
+
 // クリア世代カウンタ：clearApiCache() より前に始まった fetch が
 // あとから古いユーザーのデータをキャッシュへ書き戻すのを防ぐ
 let epoch = 0;
@@ -54,7 +77,7 @@ export async function cachedFetch<T>(url: string, apply: (data: T) => void): Pro
   const cached = readCache<T>(url);
   if (cached !== null) apply(cached);
   try {
-    const res = await fetch(url);
+    const res = await netFetch(url);
     if (res.status === 401) {
       clearApiCache();
       location.href = "/login";

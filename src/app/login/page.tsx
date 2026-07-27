@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { NETWORK_ERROR_MESSAGE, netFetch } from "@/lib/cachedFetch";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -14,10 +15,15 @@ export default function LoginPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    // A7: 新規登録は8文字以上（既存ユーザーのログインはチェックしない）
+    if (mode === "register" && password.length < 8) {
+      setError("パスワードは8文字以上にしてください。");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/auth", {
+      const res = await netFetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: mode, name, email, password }),
@@ -29,8 +35,8 @@ export default function LoginPage() {
       }
       router.replace("/");
       router.refresh();
-    } catch {
-      setError("通信に失敗しました。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : NETWORK_ERROR_MESSAGE);
     } finally {
       setBusy(false);
     }
@@ -78,6 +84,9 @@ export default function LoginPage() {
               className="mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
               autoComplete={mode === "login" ? "current-password" : "new-password"}
             />
+            {mode === "register" && (
+              <span className="mt-1 block text-[11px] text-ink-faint">8文字以上で設定してください</span>
+            )}
           </label>
           {error && <p className="text-sm text-vermilion">{error}</p>}
           <button

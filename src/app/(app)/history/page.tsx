@@ -1,11 +1,12 @@
 "use client";
 
 // 履歴：月切替＋日別グルーピング。タップで編集/削除/複製（「もう一度」）。
+// C7: 行の✕は廃止し、削除は編集シート内から（削除後はUndoつきトースト）。
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CategoryIcon } from "@/components/Icons";
+import { ExpenseEditSheet, IncomeEditSheet } from "@/components/EditSheets";
 import Loading from "@/components/Loading";
+import { Toast, useToast } from "@/components/Toast";
 import { cachedFetch } from "@/lib/cachedFetch";
-import { apiCall, apiJson } from "@/lib/clientApi";
 import { fmtDateJa, fmtMonthJa, fmtYen, todayLocal } from "@/lib/format";
 
 interface Expense {
@@ -15,6 +16,7 @@ interface Expense {
   memo: string;
   source: string;
   category_id: string | null;
+  receipt_id?: string | null;
   category: string | null;
   icon: string | null;
 }
@@ -43,9 +45,9 @@ export default function HistoryPage() {
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [editing, setEditing] = useState<Expense | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [editError, setEditError] = useState("");
+  const [editingIncome, setEditingIncome] = useState<Income | null>(null); // C8: 収入の編集
   const [ready, setReady] = useState(false); // 初回データ（キャッシュ含む）が来るまでスケルトン表示
+  const { toast, show, hide } = useToast(); // A6: 保存・削除・複製の完了フィードバック
 
   // 月切替の連打時に古い月のレスポンスで上書きされないよう、最新リクエストだけ反映する
   const reqRef = useRef(0);
@@ -88,80 +90,17 @@ export default function HistoryPage() {
     byDate.set(e.date, arr);
   }
 
-  async function saveEdit() {
-    if (!editing) return;
-    setBusy(true);
-    setEditError("");
-    try {
-      await apiCall(
-        "/api/expenses",
-        apiJson(
-          {
-            id: editing.id,
-            date: editing.date,
-            amount: editing.amount,
-            categoryId: editing.category_id,
-            memo: editing.memo,
-          },
-          "PUT",
-        ),
-      );
-      setEditing(null);
-      load(month);
-    } catch (e) {
-      setEditError(e instanceof Error ? e.message : "保存に失敗しました。");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove() {
-    if (!editing) return;
-    setBusy(true);
-    setEditError("");
-    try {
-      await apiCall(`/api/expenses?id=${editing.id}`, { method: "DELETE" });
-      setEditing(null);
-      load(month);
-    } catch (e) {
-      setEditError(e instanceof Error ? e.message : "削除に失敗しました。");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removeRow(e: Expense) {
-    if (!confirm(`「${e.memo || e.category || "支出"} ${fmtYen(e.amount)}」を削除しますか？`)) return;
-    try {
-      await apiCall(`/api/expenses?id=${e.id}`, { method: "DELETE" });
-      load(month);
-    } catch {
-      /* apiCall内で401はログインへ */
-    }
-  }
-
-  async function duplicate() {
-    if (!editing) return;
-    setBusy(true);
-    setEditError("");
-    try {
-      await apiCall(
-        "/api/expenses",
-        apiJson({
-          amount: editing.amount,
-          categoryId: editing.category_id,
-          memo: editing.memo,
-          source: "manual",
-        }),
-      );
-      setEditing(null);
-      setMonth(todayLocal().slice(0, 7));
-      load(todayLocal().slice(0, 7));
-    } catch (e) {
-      setEditError(e instanceof Error ? e.message : "登録に失敗しました。");
-    } finally {
-      setBusy(false);
-    }
+  // C7: 削除のUndo（8秒間「元に戻す」）。undo() は削除前の内容で復元する
+  function afterDelete(kind: "支出" | "収入", undo: () => Promise<unknown>) {
+    show(`${kind}を削除しました`, async () => {
+      try {
+        await undo();
+        load(month);
+        show("元に戻しました");
+      } catch (e) {
+        show(e instanceof Error ? e.message : "元に戻せませんでした。");
+      }
+    });
   }
 
   if (!ready) return <Loading />;
@@ -196,22 +135,16 @@ export default function HistoryPage() {
             <h2 className="dot text-xs tracking-[0.1em] text-sage">収入（バイト給与を除く）</h2>
             <ul className="mt-0.5">
               {incomes.map((i) => (
-                <li key={i.id} className="flex items-baseline gap-1 py-1.5 text-sm">
-                  <span className="shrink-0 text-ink-faint">{fmtDateJa(i.date)}</span>
-                  <span className="ml-1 truncate">{i.memo || "収入"}</span>
-                  <span className="leader" />
-                  <span className="dot tabular-nums text-sage">+{fmtYen(i.amount)}</span>
+                <li key={i.id}>
+                  {/* C8: 行タップで支出と同等の編集シート（金額・日付・メモ。削除もシート内から） */}
                   <button
-                    onClick={async () => {
-                      if (!confirm(`収入「${i.memo || ""} ${fmtYen(i.amount)}」を削除しますか？`))
-                        return;
-                      await fetch(`/api/incomes?id=${i.id}`, { method: "DELETE" });
-                      load(month);
-                    }}
-                    className="shrink-0 px-1 text-xs text-ink-faint"
-                    aria-label="削除"
+                    onClick={() => setEditingIncome({ ...i })}
+                    className="flex w-full items-baseline gap-1 py-1.5 text-left text-sm"
                   >
-                    ✕
+                    <span className="shrink-0 text-ink-faint">{fmtDateJa(i.date)}</span>
+                    <span className="ml-1 truncate">{i.memo || "収入"}</span>
+                    <span className="leader" />
+                    <span className="dot tabular-nums text-sage">+{fmtYen(i.amount)}</span>
                   </button>
                 </li>
               ))}
@@ -232,31 +165,21 @@ export default function HistoryPage() {
               </h2>
               <div>
                 {list.map((e) => (
-                  <div key={e.id} className="flex items-baseline gap-1 py-1.5 text-sm">
-                    <button
-                      onClick={() => {
-                        setEditError("");
-                        setEditing({ ...e });
-                      }}
-                      className="flex min-w-0 flex-1 items-baseline text-left"
-                    >
-                      <span className="truncate">{e.memo || e.category || "支出"}</span>
-                      <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">
-                        {e.category}
-                        {e.source === "receipt" && "・自動"}
-                        {e.source === "recurring" && "・定期"}
-                      </span>
-                      <span className="leader" />
-                      <span className="dot text-[15px] tabular-nums">{fmtYen(e.amount)}</span>
-                    </button>
-                    <button
-                      onClick={() => removeRow(e)}
-                      className="shrink-0 px-1 text-xs text-ink-faint"
-                      aria-label="削除"
-                    >
-                      ✕
-                    </button>
-                  </div>
+                  /* C7: 行の✕は廃止（誤タップ対策）。タップ→編集シート内から削除する */
+                  <button
+                    key={e.id}
+                    onClick={() => setEditing({ ...e })}
+                    className="flex w-full items-baseline py-1.5 text-left text-sm"
+                  >
+                    <span className="truncate">{e.memo || e.category || "支出"}</span>
+                    <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">
+                      {e.category}
+                      {e.source === "receipt" && "・自動"}
+                      {e.source === "recurring" && "・定期"}
+                    </span>
+                    <span className="leader" />
+                    <span className="dot text-[15px] tabular-nums">{fmtYen(e.amount)}</span>
+                  </button>
                 ))}
               </div>
             </section>
@@ -272,78 +195,60 @@ export default function HistoryPage() {
         </p>
       </div>
 
-      {/* 編集シート */}
+      {/* 編集シート（支出） */}
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-end bg-ink/40" onClick={() => setEditing(null)}>
-          <div
-            className="zig zig-t w-full max-w-md mx-auto px-5 pb-8 pt-5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p className="dot text-center text-xs text-ink-faint">＊ 編集 ＊</p>
-            <div className="mt-3 space-y-3">
-              <input
-                type="number"
-                inputMode="numeric"
-                value={editing.amount || ""}
-                onChange={(e) => setEditing({ ...editing, amount: Number(e.target.value) })}
-                className="dot w-full rounded-md border border-rule bg-paper px-3 py-2 text-2xl tabular-nums outline-none focus:border-ink"
-              />
-              <input
-                type="date"
-                value={editing.date}
-                onChange={(e) => setEditing({ ...editing, date: e.target.value })}
-                className="w-full rounded-md border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
-              />
-              <div className="flex flex-wrap gap-1.5">
-                {categories.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => setEditing({ ...editing, category_id: c.id })}
-                    className={`flex items-center gap-1 rounded-full border px-3 py-1 text-sm ${
-                      editing.category_id === c.id
-                        ? "border-vermilion bg-vermilion text-card"
-                        : "border-rule bg-paper"
-                    }`}
-                  >
-                    <CategoryIcon icon={c.icon} className="h-4 w-4" /> {c.name}
-                  </button>
-                ))}
-              </div>
-              <input
-                value={editing.memo}
-                onChange={(e) => setEditing({ ...editing, memo: e.target.value })}
-                placeholder="メモ"
-                className="w-full rounded-md border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
-              />
-            </div>
-            {editError && <p className="mt-2 text-sm text-vermilion">{editError}</p>}
-            <div className="mt-4 flex gap-2">
-              <button
-                onClick={remove}
-                disabled={busy}
-                className="rounded-md border border-vermilion px-4 py-3 text-sm text-vermilion"
-              >
-                削除
-              </button>
-              <button
-                onClick={duplicate}
-                disabled={busy}
-                className="flex-1 rounded-md border border-rule py-3 text-sm"
-                title="同じ内容で今日の日付で記録"
-              >
-                もう一度
-              </button>
-              <button
-                onClick={saveEdit}
-                disabled={busy}
-                className="dot flex-1 rounded-md bg-vermilion py-3 text-base text-card shadow-[0_2px_0_var(--vermilion-deep)]"
-              >
-                保存
-              </button>
-            </div>
-          </div>
-        </div>
+        <ExpenseEditSheet
+          expense={editing}
+          categories={categories}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            load(month);
+            show("保存しました");
+          }}
+          onDeleted={(undo) => {
+            setEditing(null);
+            load(month);
+            afterDelete("支出", undo);
+          }}
+          onDuplicated={(undo) => {
+            const amount = editing.amount;
+            setEditing(null);
+            const now = todayLocal().slice(0, 7);
+            setMonth(now);
+            load(now);
+            show(`今日の日付で記録しました ${fmtYen(amount)}`, async () => {
+              try {
+                await undo();
+                load(now);
+                show("記録を取り消しました");
+              } catch (e) {
+                show(e instanceof Error ? e.message : "取り消しに失敗しました。");
+              }
+            });
+          }}
+        />
       )}
+
+      {/* 編集シート（収入）C8 */}
+      {editingIncome && (
+        <IncomeEditSheet
+          income={editingIncome}
+          onClose={() => setEditingIncome(null)}
+          onSaved={() => {
+            setEditingIncome(null);
+            load(month);
+            show("保存しました");
+          }}
+          onDeleted={(undo) => {
+            setEditingIncome(null);
+            load(month);
+            afterDelete("収入", undo);
+          }}
+        />
+      )}
+
+      <Toast toast={toast} hide={hide} />
     </div>
   );
 }

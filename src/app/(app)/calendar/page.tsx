@@ -3,8 +3,10 @@
 // お金カレンダー：日付ごとの−支出/+収入と給料日を月表示。タップで詳細。
 // 上部に「今日使えるお金」の計算内訳（何がいくらで、どう割られているか）を表示。
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ExpenseEditSheet } from "@/components/EditSheets";
 import { CategoryIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
+import { Toast, useToast } from "@/components/Toast";
 import { cachedFetch } from "@/lib/cachedFetch";
 import { fmtDateJa, fmtMonthJa, fmtYen, todayLocal } from "@/lib/format";
 
@@ -14,8 +16,15 @@ interface CalExpense {
   amount: number;
   memo: string;
   source: string;
+  category_id?: string | null;
+  receipt_id?: string | null;
   category: string | null;
   icon: string | null;
+}
+interface Category {
+  id: string;
+  name: string;
+  icon: string;
 }
 interface CalIncome {
   id: string;
@@ -94,6 +103,10 @@ export default function CalendarPage() {
   const [data, setData] = useState<CalData | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [showCalc, setShowCalc] = useState(false);
+  // C10: 日付シートの支出行タップ→履歴と同じ編集シートを開く
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [editing, setEditing] = useState<CalExpense | null>(null);
+  const { toast, show, hide } = useToast();
 
   // 月切替の連打時に古い月のレスポンスで上書きされないよう、最新リクエストだけ反映する
   const reqRef = useRef(0);
@@ -107,6 +120,12 @@ export default function CalendarPage() {
     } catch {
       /* 初回読み込み失敗時はスケルトンのまま（復帰時の visibilitychange で再試行される） */
     }
+  }, []);
+
+  useEffect(() => {
+    cachedFetch<{ categories?: Category[] }>("/api/categories", (d) =>
+      setCategories(d.categories ?? []),
+    ).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -173,12 +192,6 @@ export default function CalendarPage() {
   const selPlanExp = selected ? (planExpByDate.get(selected) ?? []) : [];
   const selPlanInc = selected ? (planIncByDate.get(selected) ?? []) : [];
   const selPlanPd = selected ? (planPdByDate.get(selected) ?? []) : [];
-
-  async function removeExpense(e: CalExpense) {
-    if (!confirm(`「${e.memo || e.category || "支出"} ${fmtYen(e.amount)}」を削除しますか？`)) return;
-    await fetch(`/api/expenses?id=${e.id}`, { method: "DELETE" });
-    load(month);
-  }
 
   return (
     <div className="space-y-4">
@@ -446,19 +459,18 @@ export default function CalendarPage() {
             {selExp.length > 0 && (
               <ul className="mt-3 cutline pt-2">
                 {selExp.map((e) => (
-                  <li key={e.id} className="flex items-baseline gap-1 py-1 text-sm">
-                    {e.category && (
-                      <CategoryIcon icon={e.icon} className="h-4 w-4 shrink-0 self-center text-ink-faint" />
-                    )}
-                    <span className="truncate">{e.memo || e.category || "支出"}</span>
-                    <span className="leader" />
-                    <span className="dot tabular-nums text-vermilion">−{fmtYen(e.amount)}</span>
+                  <li key={e.id}>
+                    {/* C10: 行タップで履歴と同じ編集シート（削除もシート内から） */}
                     <button
-                      onClick={() => removeExpense(e)}
-                      className="shrink-0 px-1 text-xs text-vermilion"
-                      aria-label="削除"
+                      onClick={() => setEditing({ ...e })}
+                      className="flex w-full items-baseline gap-1 py-1 text-left text-sm"
                     >
-                      ✕
+                      {e.category && (
+                        <CategoryIcon icon={e.icon} className="h-4 w-4 shrink-0 self-center text-ink-faint" />
+                      )}
+                      <span className="truncate">{e.memo || e.category || "支出"}</span>
+                      <span className="leader" />
+                      <span className="dot tabular-nums text-vermilion">−{fmtYen(e.amount)}</span>
                     </button>
                   </li>
                 ))}
@@ -540,6 +552,43 @@ export default function CalendarPage() {
           </div>
         </div>
       )}
+
+      {/* C10: 履歴と同じ編集シート */}
+      {editing && (
+        <ExpenseEditSheet
+          expense={{
+            id: editing.id,
+            date: editing.date,
+            amount: editing.amount,
+            memo: editing.memo,
+            category_id: editing.category_id ?? null,
+            source: editing.source,
+            receipt_id: editing.receipt_id ?? null,
+          }}
+          categories={categories}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            load(month);
+            show("保存しました");
+          }}
+          onDeleted={(undo) => {
+            setEditing(null);
+            load(month);
+            show("支出を削除しました", async () => {
+              try {
+                await undo();
+                load(month);
+                show("元に戻しました");
+              } catch (e) {
+                show(e instanceof Error ? e.message : "元に戻せませんでした。");
+              }
+            });
+          }}
+        />
+      )}
+
+      <Toast toast={toast} hide={hide} />
     </div>
   );
 }
