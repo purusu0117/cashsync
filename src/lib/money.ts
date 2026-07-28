@@ -895,3 +895,97 @@ export async function categoryBreakdown(userId: string, month: string): Promise<
     range.end,
   );
 }
+
+// ---------------------------------------------------------------------------
+// 前月比・前年同月比の比較（グラフ画面の「月」ビュー用）。
+// 集計は既存の monthSummary / breakdown を再利用し、差分計算だけを純関数化する。
+// prev / prevYear が null の月（記録が1件も無い月）は「比較データなし」として扱えるよう
+// null を保持する。0（収支どちらかが0）は有効なデータなので null とは区別する。
+// ---------------------------------------------------------------------------
+
+export interface MonthTotals {
+  income: number;
+  expense: number;
+}
+
+export interface CompareMetric {
+  current: number;
+  prev: number | null; // null＝前月にデータなし
+  prevYear: number | null; // null＝前年同月にデータなし
+}
+
+export interface CategoryDelta {
+  category: string;
+  icon: string;
+  current: number; // 今月の支出
+  prev: number; // 前月の支出
+  delta: number; // current − prev（＋＝増加）
+}
+
+export interface MonthComparison {
+  expense: CompareMetric;
+  income: CompareMetric;
+  increased: CategoryDelta[]; // 今月 vs 前月で増えたカテゴリ Top3
+  decreased: CategoryDelta[]; // 今月 vs 前月で減ったカテゴリ Top3
+}
+
+interface BreakdownLite {
+  category: string;
+  icon: string;
+  amount: number;
+}
+
+/**
+ * 今月・前月・前年同月の合計とカテゴリ内訳から比較サマリーを組み立てる純関数。
+ * カテゴリ増減は今月・前月の内訳を突き合わせて delta（今月−前月）を出し、
+ * 増加・減少をそれぞれ絶対額の大きい順に Top3 返す。
+ */
+export function buildMonthComparison(
+  current: MonthTotals,
+  prev: MonthTotals | null,
+  prevYear: MonthTotals | null,
+  currentBreakdown: BreakdownLite[],
+  prevBreakdown: BreakdownLite[],
+): MonthComparison {
+  // 前月に記録が無い（prev=null）月は、全カテゴリが「増加」に見えて誤読を招くので増減は出さない。
+  const map = new Map<string, CategoryDelta>();
+  const put = (b: BreakdownLite, key: "current" | "prev") => {
+    const row = map.get(b.category) ?? {
+      category: b.category,
+      icon: b.icon,
+      current: 0,
+      prev: 0,
+      delta: 0,
+    };
+    row[key] = b.amount;
+    if (b.icon) row.icon = b.icon; // icon が付いている側を優先
+    map.set(b.category, row);
+  };
+  if (prev) {
+    for (const b of currentBreakdown) put(b, "current");
+    for (const b of prevBreakdown) put(b, "prev");
+  }
+  const deltas = [...map.values()].map((r) => ({ ...r, delta: r.current - r.prev }));
+  const increased = deltas
+    .filter((d) => d.delta > 0)
+    .sort((a, b) => b.delta - a.delta)
+    .slice(0, 3);
+  const decreased = deltas
+    .filter((d) => d.delta < 0)
+    .sort((a, b) => a.delta - b.delta)
+    .slice(0, 3);
+  return {
+    expense: {
+      current: current.expense,
+      prev: prev ? prev.expense : null,
+      prevYear: prevYear ? prevYear.expense : null,
+    },
+    income: {
+      current: current.income,
+      prev: prev ? prev.income : null,
+      prevYear: prevYear ? prevYear.income : null,
+    },
+    increased,
+    decreased,
+  };
+}

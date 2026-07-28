@@ -30,6 +30,19 @@ interface Breakdown {
   amount: number;
   fixedAmount?: number; // C12: うち固定費（旧キャッシュには無いので optional）
 }
+interface CategoryDelta {
+  category: string;
+  icon: string;
+  current: number;
+  prev: number;
+  delta: number;
+}
+interface Compare {
+  expense: { current: number; prev: number | null; prevYear: number | null };
+  income: { current: number; prev: number | null; prevYear: number | null };
+  increased: CategoryDelta[];
+  decreased: CategoryDelta[];
+}
 interface Pocket {
   id: string;
   name: string;
@@ -63,6 +76,7 @@ export default function StatsPage() {
   const [selected, setSelected] = useState(todayLocal().slice(0, 7));
   const [series, setSeries] = useState<Point[]>([]);
   const [breakdown, setBreakdown] = useState<Breakdown[]>([]);
+  const [compare, setCompare] = useState<Compare | null>(null); // 前月比・前年同月比
   const [review, setReview] = useState<Review | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState("");
@@ -106,12 +120,13 @@ export default function StatsPage() {
   const load = useCallback(async (b: string, sel: string) => {
     const req = ++reqRef.current;
     // キャッシュファースト：前回のデータを即表示→裏で最新に差し替え
-    await cachedFetch<{ series?: Point[]; breakdown?: Breakdown[] }>(
-      `/api/stats?months=${WINDOW}&before=${b}&month=${sel}`,
+    await cachedFetch<{ series?: Point[]; breakdown?: Breakdown[]; compare?: Compare | null }>(
+      `/api/stats?months=${WINDOW}&before=${b}&month=${sel}&compare=1`,
       (d) => {
         if (reqRef.current !== req) return;
         setSeries(d.series ?? []);
         setBreakdown(d.breakdown ?? []);
+        setCompare(d.compare ?? null);
         setReady(true);
       },
     ).catch(() => {
@@ -169,6 +184,37 @@ export default function StatsPage() {
   const maxBd = Math.max(1, ...breakdown.map((b) => b.amount));
 
   if (!ready) return <Loading label="集計中・・・" />;
+
+  // 比較1行：base=null は「比較データなし」。支出は増＝悪化(朱赤)、収入は増＝改善(緑)。
+  const cmpLine = (label: string, current: number, base: number | null, higherIsGood: boolean) => {
+    if (base === null) {
+      return (
+        <div className="flex items-baseline text-xs">
+          <span className="text-ink-faint">{label}</span>
+          <span className="leader" />
+          <span className="dot text-ink-faint">比較データなし</span>
+        </div>
+      );
+    }
+    const diff = current - base;
+    const good = diff === 0 ? null : higherIsGood ? diff > 0 : diff < 0;
+    const color = good === null ? "text-ink-faint" : good ? "text-sage" : "text-vermilion";
+    const sign = diff > 0 ? "+" : diff < 0 ? "−" : "±";
+    const pct = base !== 0 ? Math.round((Math.abs(diff) / base) * 100) : null;
+    return (
+      <div className="flex items-baseline text-xs">
+        <span className="text-ink-faint">
+          {label} {fmtYen(base)}
+        </span>
+        <span className="leader" />
+        <span className={`dot tabular-nums ${color}`}>
+          {sign}
+          {fmtYen(Math.abs(diff))}
+          {pct !== null ? `・${sign}${pct}%` : ""}
+        </span>
+      </div>
+    );
+  };
 
   const segBtn = (v: "month" | "week" | "year" | "assets", label: string) => (
     <button
@@ -473,6 +519,66 @@ export default function StatsPage() {
         })()}
         <div className="barcode mt-5" />
       </section>
+
+      {/* 前月比・前年同月比（マネフォのマンスリーレポート的な定型比較。選択月に対して算出） */}
+      {compare && (
+        <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
+          <h2 className="dot text-sm tracking-[0.1em]">前月比・前年同月比</h2>
+          {/* 支出（増＝悪化を朱赤で） */}
+          <div className="mt-3">
+            <div className="flex items-baseline text-sm">
+              <span className="dot">支出</span>
+              <span className="leader" />
+              <span className="dot text-lg tabular-nums">{fmtYen(compare.expense.current)}</span>
+            </div>
+            <div className="mt-1 space-y-0.5 pl-1">
+              {cmpLine("前月", compare.expense.current, compare.expense.prev, false)}
+              {cmpLine("前年同月", compare.expense.current, compare.expense.prevYear, false)}
+            </div>
+          </div>
+          {/* 収入（増＝改善を緑で） */}
+          <div className="mt-3">
+            <div className="flex items-baseline text-sm">
+              <span className="dot">収入</span>
+              <span className="leader" />
+              <span className="dot text-lg tabular-nums">{fmtYen(compare.income.current)}</span>
+            </div>
+            <div className="mt-1 space-y-0.5 pl-1">
+              {cmpLine("前月", compare.income.current, compare.income.prev, true)}
+              {cmpLine("前年同月", compare.income.current, compare.income.prevYear, true)}
+            </div>
+          </div>
+          {/* カテゴリの増減（今月 vs 前月・上位3件ずつ） */}
+          {(compare.increased.length > 0 || compare.decreased.length > 0) && (
+            <div className="cutline mt-3 pt-3">
+              <p className="dot text-xs text-ink-faint">前月比 カテゴリの増減</p>
+              <ul className="mt-2 space-y-1.5">
+                {compare.increased.map((c) => (
+                  <li key={`inc-${c.category}`} className="flex items-baseline text-sm">
+                    {c.category !== "未分類" && (
+                      <CategoryIcon icon={c.icon} className="mr-1 h-4 w-4 shrink-0 self-center text-ink-faint" />
+                    )}
+                    <span>{c.category}</span>
+                    <span className="leader" />
+                    <span className="dot tabular-nums text-vermilion">▲ +{fmtYen(c.delta)}</span>
+                  </li>
+                ))}
+                {compare.decreased.map((c) => (
+                  <li key={`dec-${c.category}`} className="flex items-baseline text-sm">
+                    {c.category !== "未分類" && (
+                      <CategoryIcon icon={c.icon} className="mr-1 h-4 w-4 shrink-0 self-center text-ink-faint" />
+                    )}
+                    <span>{c.category}</span>
+                    <span className="leader" />
+                    <span className="dot tabular-nums text-sage">▼ −{fmtYen(-c.delta)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="barcode mt-5" />
+        </section>
+      )}
 
       {/* 袋分けポケット：カテゴリ別の今月予算と残り */}
       <section className="zig zig-t zig-b px-5 py-4 shadow-sm">

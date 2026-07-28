@@ -4,9 +4,11 @@ import { db } from "@/lib/db";
 import {
   FIXED_EXPENSE_COND,
   accountingMonth,
+  buildMonthComparison,
   currentMonth,
   monthRange,
   monthShiftIncome,
+  monthSummary,
   postRecurringForMonth,
 } from "@/lib/money";
 
@@ -76,7 +78,41 @@ export async function GET(request: Request) {
       amount: Number(r.amount),
       fixedAmount: Number(r.fixedAmount ?? r.fixedamount ?? 0),
     }));
-    return Response.json({ series, breakdown, breakdownMonth: bdMonth });
+    // 前月比・前年同月比の比較（?compare=1。選択月＝bdMonth に対して算出）。
+    // 既存の monthSummary / 内訳クエリを再利用するだけの軽い再集計。
+    let compare;
+    if (params.get("compare")) {
+      const prevMonth = shiftMonth(bdMonth, -1);
+      const prevYearMonth = shiftMonth(bdMonth, -12);
+      const curSum = await monthSummary(user.id, bdMonth);
+      const prevSum = await monthSummary(user.id, prevMonth);
+      const prevYearSum = await monthSummary(user.id, prevYearMonth);
+      const prevRange = await monthRange(user.id, prevMonth);
+      const prevBreakdown = (
+        await d.all<{ category: string; icon: string; amount: number }>(
+          `SELECT COALESCE(c.name, '未分類') AS category, COALESCE(c.icon, '') AS icon, SUM(e.amount) AS amount
+           FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
+           WHERE e.user_id = ? AND e.date >= ? AND e.date <= ?
+           GROUP BY e.category_id, c.name, c.icon ORDER BY amount DESC`,
+          user.id,
+          prevRange.start,
+          prevRange.end,
+        )
+      ).map((r) => ({ category: r.category, icon: r.icon, amount: Number(r.amount) }));
+      // 記録が1件も無い月は「比較データなし」（収支どちらも0）
+      const hasData = (s: { incomeTotal: number; expenseTotal: number }) =>
+        s.incomeTotal > 0 || s.expenseTotal > 0;
+      compare = buildMonthComparison(
+        { income: curSum.incomeTotal, expense: curSum.expenseTotal },
+        hasData(prevSum) ? { income: prevSum.incomeTotal, expense: prevSum.expenseTotal } : null,
+        hasData(prevYearSum)
+          ? { income: prevYearSum.incomeTotal, expense: prevYearSum.expenseTotal }
+          : null,
+        breakdown.map((b) => ({ category: b.category, icon: b.icon, amount: b.amount })),
+        prevBreakdown,
+      );
+    }
+    return Response.json({ series, breakdown, breakdownMonth: bdMonth, compare });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
     return Response.json({ error: String(e) }, { status: 500 });

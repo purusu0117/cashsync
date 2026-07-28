@@ -23,6 +23,7 @@ import {
 } from "../src/lib/merchant";
 import {
   accountingMonthFor,
+  buildMonthComparison,
   calendarPaydays,
   categoryBreakdown,
   currentMonth,
@@ -2290,6 +2291,76 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
     splitExpenses.reduce((a, x) => a + Number(x.amount), 0) === 1500,
     splitExpenses,
   );
+
+  // --- 20. 前月比・前年同月比（buildMonthComparison 純関数） ---
+  console.log("[20] 前月比・前年同月比（buildMonthComparison）");
+  {
+    const cur = { income: 200000, expense: 150000 };
+    const prevT = { income: 180000, expense: 120000 };
+    const prevYearT = { income: 160000, expense: 100000 };
+    const curBd = [
+      { category: "食費", icon: "food", amount: 50000 },
+      { category: "娯楽", icon: "game", amount: 30000 },
+      { category: "交通", icon: "transport", amount: 10000 },
+      { category: "日用品", icon: "daily", amount: 5000 }, // 前月0（新規）
+    ];
+    const prevBd = [
+      { category: "食費", icon: "food", amount: 40000 }, // +10,000
+      { category: "娯楽", icon: "game", amount: 45000 }, // −15,000
+      { category: "交通", icon: "transport", amount: 3000 }, // +7,000
+      { category: "美容", icon: "beauty", amount: 8000 }, // 今月0（−8,000）
+    ];
+    const cmp = buildMonthComparison(cur, prevT, prevYearT, curBd, prevBd);
+    check(
+      "支出 current/prev/prevYear が入る",
+      cmp.expense.current === 150000 && cmp.expense.prev === 120000 && cmp.expense.prevYear === 100000,
+      cmp.expense,
+    );
+    check(
+      "収入 current/prev/prevYear が入る",
+      cmp.income.current === 200000 && cmp.income.prev === 180000 && cmp.income.prevYear === 160000,
+      cmp.income,
+    );
+    check(
+      "増加カテゴリは delta 降順 Top3（食費・交通・日用品）",
+      cmp.increased.map((c) => c.category).join(",") === "食費,交通,日用品",
+      cmp.increased,
+    );
+    check("食費の増加額 +10,000", cmp.increased[0].delta === 10000, cmp.increased[0]);
+    check(
+      "前月0の新規カテゴリも current 実額・prev 0 で扱う（日用品）",
+      cmp.increased[2].current === 5000 && cmp.increased[2].prev === 0,
+      cmp.increased[2],
+    );
+    check(
+      "減少カテゴリは delta 昇順 Top3（娯楽・美容）",
+      cmp.decreased.map((c) => c.category).join(",") === "娯楽,美容",
+      cmp.decreased,
+    );
+    check("娯楽の減少額 −15,000", cmp.decreased[0].delta === -15000, cmp.decreased[0]);
+    check(
+      "今月消えたカテゴリ(美容)は current 0・prev 実額・icon 保持",
+      cmp.decreased[1].current === 0 && cmp.decreased[1].prev === 8000 && cmp.decreased[1].icon === "beauty",
+      cmp.decreased[1],
+    );
+  }
+  {
+    // 前月・前年に記録が無い月は null（UIは「比較データなし」表示）
+    const cmp = buildMonthComparison(
+      { income: 5000, expense: 3000 },
+      null,
+      null,
+      [{ category: "食費", icon: "food", amount: 3000 }],
+      [],
+    );
+    check("前月データなし → prev は null", cmp.expense.prev === null && cmp.income.prev === null, cmp.expense);
+    check(
+      "前年データなし → prevYear は null",
+      cmp.expense.prevYear === null && cmp.income.prevYear === null,
+      cmp.expense,
+    );
+    check("前月内訳が空なら増減カテゴリも空", cmp.increased.length === 0 && cmp.decreased.length === 0, cmp);
+  }
 
   console.log(`\n結果: ${passed} passed / ${failed} failed`);
   return { passed, failed };
