@@ -357,6 +357,24 @@ function migrateSqlite(d: DatabaseSync) {
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_push_devices_user ON push_devices(user_id);
+    -- 資産・口座残高の手動管理（銀行連携なし）。既存の支出フロー計算とは独立。
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'bank',    -- 'bank'|'cash'|'emoney'|'securities'|'debt'
+      balance INTEGER NOT NULL DEFAULT 0,   -- 円。debt は「借りている額」を正で保持し純資産計算で減算
+      sort INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id, sort);
+    -- 純資産推移用の月次スナップショット（残高変更時に当月をupsert）
+    CREATE TABLE IF NOT EXISTS account_snapshots (
+      account_id TEXT NOT NULL,
+      month TEXT NOT NULL,                  -- 'YYYY-MM'
+      balance INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (account_id, month)
+    );
   `);
   // 追加カラムのマイグレーション（既存DBにも効くよう ALTER を冪等に流す）
   addColumn(d, "categories", "icon TEXT NOT NULL DEFAULT ''"); // 旧DB（icon列なし）向け

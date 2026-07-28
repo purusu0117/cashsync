@@ -55,6 +55,18 @@ import {
   deleteAccountWithPassword,
   isResetTokenValid,
 } from "../src/lib/account";
+import {
+  accountsOverview,
+  createAccount,
+  deleteAccount,
+  listAccounts,
+  netWorthOf,
+  netWorthTrend,
+  normalizeBalance,
+  normalizeKind,
+  snapshotNetWorth,
+  updateAccount,
+} from "../src/lib/accounts";
 import { verifyPassword } from "../src/lib/password";
 
 /** 'YYYY-MM' に delta ヶ月足す（テスト用） */
@@ -2098,6 +2110,98 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
     // 記録できたら通知フラグ（既定ON）
     const rp = await d.get<{ record_push: number }>("SELECT record_push FROM users WHERE id = ?", uH);
     check("record_push の既定は1（通知ON）", Number(rp?.record_push) === 1, rp);
+  }
+
+  // ---------------------------------------------------------------------------
+  // 資産・口座残高の手動管理＋純資産＋推移（accounts / account_snapshots）
+  // ---------------------------------------------------------------------------
+  {
+    console.log("\n[資産] 口座残高・純資産・推移");
+    // 純粋関数
+    check("normalizeKind: 既知はそのまま", normalizeKind("securities") === "securities");
+    check("normalizeKind: 未知は bank", normalizeKind("crypto") === "bank");
+    check("normalizeBalance: 小数は丸め", normalizeBalance("bank", 1234.6) === 1235);
+    check("normalizeBalance: debt はマイナス入力でも正で保持", normalizeBalance("debt", -5000) === 5000);
+    check(
+      "netWorthOf: 資産−負債",
+      netWorthOf([
+        { kind: "bank", balance: 100000 },
+        { kind: "cash", balance: 5000 },
+        { kind: "debt", balance: 30000 },
+      ]) === 75000,
+    );
+
+    const uA = uid();
+    await d.run(
+      "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+      uA,
+      `assets-${uA}@example.com`,
+      "資産太郎",
+      "x",
+      Date.now(),
+    );
+    const cm = currentMonth();
+    const prev = addMonths(cm, -1);
+
+    const bankId = await createAccount(uA, { name: "三井住友銀行", kind: "bank", balance: 200000 });
+    await createAccount(uA, { name: "財布", kind: "cash", balance: 8000 });
+    const debtId = await createAccount(uA, { name: "カードローン", kind: "debt", balance: -50000 });
+
+    const list = await listAccounts(uA);
+    check("口座は sort順で3件", list.length === 3 && list[0].name === "三井住友銀行", list.map((a) => a.name));
+    check("debt はマイナス入力でも残高は正で保存", list[2].balance === 50000, list[2]);
+
+    const ov1 = await accountsOverview(uA);
+    check("純資産 = 200000+8000-50000", ov1.netWorth === 158000, ov1.netWorth);
+    check("前月スナップショットが無いので prevNetWorth は null", ov1.prevNetWorth === null, ov1.prevNetWorth);
+    check("推移は当月1点（作成/同期でupsert済み）", ov1.trend.length === 1 && ov1.trend[0].month === cm, ov1.trend);
+    check("当月推移点 = 現在純資産", ov1.trend[0].netWorth === 158000, ov1.trend[0]);
+
+    // 前月末スナップショットを直接入れて前月比を検証（銀行が前月末15万だった等）
+    await d.run(
+      "INSERT INTO account_snapshots (account_id, month, balance) VALUES (?, ?, ?)",
+      bankId,
+      prev,
+      150000,
+    );
+    await d.run(
+      "INSERT INTO account_snapshots (account_id, month, balance) VALUES (?, ?, ?)",
+      debtId,
+      prev,
+      50000,
+    );
+    const prevNw = await snapshotNetWorth(uA, prev);
+    check("前月純資産 = 150000-50000", prevNw === 100000, prevNw);
+    const ov2 = await accountsOverview(uA);
+    check("prevNetWorth が前月スナップショットから出る", ov2.prevNetWorth === 100000, ov2.prevNetWorth);
+    const trend2 = await netWorthTrend(uA, 12);
+    check("推移は前月・当月の2点（古い順）", trend2.length === 2 && trend2[0].month === prev, trend2);
+
+    // 残高更新 → 当月スナップショットが最新化される
+    await updateAccount(uA, bankId, { balance: 250000 });
+    const ov3 = await accountsOverview(uA);
+    check("残高更新後の純資産 = 250000+8000-50000", ov3.netWorth === 208000, ov3.netWorth);
+    check("当月推移点も最新残高を反映", ov3.trend.at(-1)?.netWorth === 208000, ov3.trend.at(-1));
+
+    // 種別変更（bank→securities）は純資産の符号に影響しない
+    await updateAccount(uA, bankId, { kind: "securities" });
+    check("種別変更後も listable", (await listAccounts(uA))[0].kind === "securities");
+
+    // 他ユーザーのは更新・削除できない
+    check("他人の口座は更新不可", (await updateAccount(userId, bankId, { balance: 1 })) === false);
+    check("他人の口座は削除不可", (await deleteAccount(userId, bankId)) === false);
+
+    // 削除するとスナップショットも消える
+    const ok = await deleteAccount(uA, bankId);
+    check("自分の口座は削除できる", ok === true);
+    const snapLeft = Number(
+      (await d.get<{ c: number }>(
+        "SELECT COUNT(*) AS c FROM account_snapshots WHERE account_id = ?",
+        bankId,
+      ))!.c,
+    );
+    check("削除した口座のスナップショットも消える", snapLeft === 0, snapLeft);
+    check("残る口座は2件", (await listAccounts(uA)).length === 2);
   }
 
   console.log(`\n結果: ${passed} passed / ${failed} failed`);

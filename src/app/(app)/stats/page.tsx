@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import Assets from "@/components/Assets";
 import { CategoryIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
 import WeeklyReview from "@/components/WeeklyReview";
@@ -56,8 +57,8 @@ function shiftMonth(month: string, delta: number): string {
 }
 
 export default function StatsPage() {
-  // C9: 週次振り返りをグラフ画面に常設（「週/月/年」切替。既定は月。C14: 年間ビュー追加）
-  const [view, setView] = useState<"month" | "week" | "year">("month");
+  // C9: 週次振り返りをグラフ画面に常設（「週/月/年/資産」切替。既定は月。C14: 年間ビュー・資産ビュー追加）
+  const [view, setView] = useState<"month" | "week" | "year" | "assets">("month");
   const [before, setBefore] = useState(todayLocal().slice(0, 7));
   const [selected, setSelected] = useState(todayLocal().slice(0, 7));
   const [series, setSeries] = useState<Point[]>([]);
@@ -169,7 +170,7 @@ export default function StatsPage() {
 
   if (!ready) return <Loading label="集計中・・・" />;
 
-  const segBtn = (v: "month" | "week" | "year", label: string) => (
+  const segBtn = (v: "month" | "week" | "year" | "assets", label: string) => (
     <button
       onClick={() => setView(v)}
       aria-pressed={view === v}
@@ -185,15 +186,24 @@ export default function StatsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="dot text-lg">
-          {view === "week" ? "週の振り返り" : view === "year" ? "年間の収支" : "収支グラフ"}
+          {view === "week"
+            ? "週の振り返り"
+            : view === "year"
+              ? "年間の収支"
+              : view === "assets"
+                ? "資産・純資産"
+                : "収支グラフ"}
         </h1>
-        {/* C9: 週/月/年切替（週＝先週の振り返り・月＝従来のグラフと内訳・年＝C14年間ビュー） */}
-        <div className="flex w-44 shrink-0 rounded-md border border-rule bg-paper p-0.5">
+        {/* C9: 週/月/年/資産切替（週＝先週の振り返り・月＝従来のグラフと内訳・年＝C14年間ビュー・資産＝口座残高と純資産推移） */}
+        <div className="flex w-60 shrink-0 rounded-md border border-rule bg-paper p-0.5">
           {segBtn("week", "週")}
           {segBtn("month", "月")}
           {segBtn("year", "年")}
+          {segBtn("assets", "資産")}
         </div>
       </div>
+
+      {view === "assets" && <Assets />}
 
       {view === "week" && <WeeklyReview />}
 

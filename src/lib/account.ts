@@ -23,7 +23,13 @@ export async function deleteUserData(userId: string): Promise<void> {
       "DELETE FROM recurring_posts WHERE recurring_id IN (SELECT id FROM recurring_items WHERE user_id = ?)",
       userId,
     );
+    // account_snapshots は user_id を持たないので accounts 経由で先に消す
+    await tx.run(
+      "DELETE FROM account_snapshots WHERE account_id IN (SELECT id FROM accounts WHERE user_id = ?)",
+      userId,
+    );
     const tables = [
+      "accounts",
       "expenses",
       "incomes",
       "receipts",

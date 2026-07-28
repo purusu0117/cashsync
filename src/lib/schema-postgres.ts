@@ -217,6 +217,24 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     expires_at BIGINT NOT NULL,
     used_at BIGINT
   )`,
+  // 資産・口座残高の手動管理（銀行連携なし）。既存の支出フロー計算とは独立。created_at はエポックms → BIGINT
+  `CREATE TABLE IF NOT EXISTS accounts (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'bank',
+    balance INTEGER NOT NULL DEFAULT 0,
+    sort INTEGER NOT NULL DEFAULT 0,
+    created_at BIGINT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id, sort)`,
+  // 純資産推移用の月次スナップショット（残高変更時に当月をupsert）
+  `CREATE TABLE IF NOT EXISTS account_snapshots (
+    account_id TEXT NOT NULL,
+    month TEXT NOT NULL,
+    balance INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (account_id, month)
+  )`,
 ];
 
 /** 移行スクリプト用：sqlite→postgresでコピーするテーブル一覧（依存の無い順） */
@@ -239,4 +257,6 @@ export const MIGRATION_TABLES: string[] = [
   "ai_reward_days",
   "merchant_categories",
   "password_resets",
+  "accounts",
+  "account_snapshots",
 ];
