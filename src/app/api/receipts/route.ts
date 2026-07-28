@@ -1,4 +1,6 @@
-// 確認シートで確定したレシートを保存：receipts 1件 ＋ expenses 1件（レシート1枚=支出1レコード）。
+// 確認シートで確定したレシートを保存：
+//  - 通常：receipts 1件 ＋ expenses 1件（レシート1枚=支出1レコード）
+//  - 分割：receipts 1件 ＋ expenses 複数件（品目ごとにカテゴリを分ける／同一 receipt_id で紐付け）
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 import { fmtYen } from "@/lib/format";
@@ -9,6 +11,7 @@ import {
   learnMerchantCategory,
 } from "@/lib/merchant";
 import { todayStr } from "@/lib/money";
+import { buildReceiptSplits, type SplitAssignment } from "@/lib/receiptSplit";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +25,9 @@ export async function POST(request: Request) {
       categoryId?: string | null;
       suggestedCategoryId?: string | null; // 確認シートに最初に表示した提案（AI or 学習値）
       items?: { name: string; price: number }[];
+      // レシート内分割：品目ごとにカテゴリを割り当てた行（金額＋カテゴリ）。
+      // 2行以上あれば分割保存（categoryId 単位でまとめて複数 expense を作る）。無ければ従来どおり1件保存。
+      splits?: SplitAssignment[];
       allowDuplicate?: boolean; // 409後にユーザーが「本当に別の支払い」と確認した再送信のみ true
       imageHash?: string; // 読み取った画像のsha256（同じ画像の二度読み判定用）
     };
@@ -39,6 +45,9 @@ export async function POST(request: Request) {
     if (!body.allowDuplicate && (await duplicateExpenseExists(user.id, date, total, store))) {
       return Response.json({ error: DUPLICATE_MESSAGE, duplicate: true }, { status: 409 });
     }
+    // 分割行：2行以上まとめられたら分割保存。1行以下に潰れたら従来どおり単一保存にフォールバック。
+    const splitLines = Array.isArray(body.splits) ? buildReceiptSplits(total, body.splits) : [];
+    const useSplit = splitLines.length >= 2;
     const d = await db();
     const receiptId = uid();
     const expenseId = uid();
@@ -56,24 +65,43 @@ export async function POST(request: Request) {
           (body.imageHash ?? "").trim() || null,
           Date.now(),
         );
-        await tx.run(
-          "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'receipt', ?, ?)",
-          expenseId,
-          user.id,
-          date,
-          total,
-          body.categoryId ?? null,
-          store,
-          receiptId,
-          Date.now(),
-        );
+        if (useSplit) {
+          // カテゴリごとに1件ずつ。合計は buildReceiptSplits でレシート合計に一致させてある（未割当は「その他」）。
+          for (const line of splitLines) {
+            await tx.run(
+              "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'receipt', ?, ?)",
+              uid(),
+              user.id,
+              date,
+              line.amount,
+              line.categoryId,
+              store,
+              receiptId,
+              Date.now(),
+            );
+          }
+        } else {
+          await tx.run(
+            "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'receipt', ?, ?)",
+            expenseId,
+            user.id,
+            date,
+            total,
+            body.categoryId ?? null,
+            store,
+            receiptId,
+            Date.now(),
+          );
+        }
       });
     } catch (e) {
       console.error("[receipts] save failed:", e);
       throw e;
     }
-    // マーチャント学習の入口①：確認シートで提案と違うカテゴリに変えて保存した＝この店の正解を教えてもらった
+    // マーチャント学習の入口①：確認シートで提案と違うカテゴリに変えて保存した＝この店の正解を教えてもらった。
+    // 分割時は1店＝複数カテゴリで正解が定まらないため学習しない。
     if (
+      !useSplit &&
       "suggestedCategoryId" in body &&
       body.categoryId &&
       body.categoryId !== (body.suggestedCategoryId ?? null) &&
@@ -87,7 +115,13 @@ export async function POST(request: Request) {
       "CashSync 記録しました",
       `✅${fmtYen(total)}（${store || "店名なし"}）を記録しました`,
     ).catch(() => {});
-    return Response.json({ ok: true, receiptId, expenseId });
+    return Response.json({
+      ok: true,
+      receiptId,
+      expenseId: useSplit ? undefined : expenseId,
+      split: useSplit,
+      count: useSplit ? splitLines.length : 1,
+    });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
     return Response.json({ error: String(e) }, { status: 500 });

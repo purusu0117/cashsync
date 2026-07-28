@@ -68,6 +68,7 @@ import {
   updateAccount,
 } from "../src/lib/accounts";
 import { verifyPassword } from "../src/lib/password";
+import { buildReceiptSplits } from "../src/lib/receiptSplit";
 
 /** 'YYYY-MM' に delta ヶ月足す（テスト用） */
 function addMonths(month: string, delta: number): string {
@@ -2203,6 +2204,92 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
     check("削除した口座のスナップショットも消える", snapLeft === 0, snapLeft);
     check("残る口座は2件", (await listAccounts(uA)).length === 2);
   }
+
+  // --- レシート内分割（buildReceiptSplits 純関数＋DBへの複数expense保存） ---
+  console.log("[split] レシート内分割");
+  const dailyCat = cats.find((c) => c.name === "日用品")!;
+  // 品目→カテゴリ割当を合算：同一カテゴリはまとめて1行になる
+  const s1 = buildReceiptSplits(1000, [
+    { categoryId: foodCat.id, amount: 300 },
+    { categoryId: dailyCat.id, amount: 500 },
+    { categoryId: foodCat.id, amount: 200 },
+  ]);
+  check("同一カテゴリは合算され2行になる", s1.length === 2, s1);
+  check(
+    "食費300+200=500・日用品500",
+    s1.find((x) => x.categoryId === foodCat.id)?.amount === 500 &&
+      s1.find((x) => x.categoryId === dailyCat.id)?.amount === 500,
+    s1,
+  );
+  check("分割合計=レシート合計1000", s1.reduce((a, x) => a + x.amount, 0) === 1000, s1);
+
+  // 未割当（合計に満たない分）は categoryId=null の「その他」行に寄って合計が一致する
+  const s2 = buildReceiptSplits(1000, [{ categoryId: foodCat.id, amount: 600 }]);
+  check("未割当はnull行に寄り合計一致", s2.reduce((a, x) => a + x.amount, 0) === 1000, s2);
+  check(
+    "未割当分400がnullカテゴリに入る",
+    s2.find((x) => x.categoryId === null)?.amount === 400,
+    s2,
+  );
+
+  // 0以下の行は捨てる／過割当はユーザー入力を尊重してそのまま
+  const s3 = buildReceiptSplits(500, [
+    { categoryId: foodCat.id, amount: 0 },
+    { categoryId: dailyCat.id, amount: -10 },
+    { categoryId: gameCat.id, amount: 800 },
+  ]);
+  check("0・負の行は除外され1行だけ残る", s3.length === 1 && s3[0].categoryId === gameCat.id, s3);
+  check("過割当はそのまま（800）", s3[0].amount === 800, s3);
+
+  // 端数：小数は四捨五入される
+  const s4 = buildReceiptSplits(300, [
+    { categoryId: foodCat.id, amount: 100.4 },
+    { categoryId: dailyCat.id, amount: 99.6 },
+  ]);
+  check("小数は四捨五入（100・100）", s4[0].amount === 100 && s4[1].amount === 100, s4);
+
+  // DB：1 receipt に複数 expense をトランザクションで保存（receipt_id で紐付く）
+  const splitReceiptId = uid();
+  const splitLines = buildReceiptSplits(1500, [
+    { categoryId: foodCat.id, amount: 900 },
+    { categoryId: dailyCat.id, amount: 600 },
+  ]);
+  await d.transaction(async (tx) => {
+    await tx.run(
+      "INSERT INTO receipts (id, user_id, store, taken_date, total, items_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      splitReceiptId,
+      userId,
+      "スーパー分割",
+      today,
+      1500,
+      "[]",
+      Date.now(),
+    );
+    for (const line of splitLines) {
+      await tx.run(
+        "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'receipt', ?, ?)",
+        uid(),
+        userId,
+        today,
+        line.amount,
+        line.categoryId,
+        "スーパー分割",
+        splitReceiptId,
+        Date.now(),
+      );
+    }
+  });
+  const splitExpenses = await d.all<{ amount: number; category_id: string }>(
+    "SELECT amount, category_id FROM expenses WHERE receipt_id = ? AND user_id = ?",
+    splitReceiptId,
+    userId,
+  );
+  check("1レシートに2つのexpenseが紐づく", splitExpenses.length === 2, splitExpenses.length);
+  check(
+    "分割expenseの合計=レシート合計1500",
+    splitExpenses.reduce((a, x) => a + Number(x.amount), 0) === 1500,
+    splitExpenses,
+  );
 
   console.log(`\n結果: ${passed} passed / ${failed} failed`);
   return { passed, failed };

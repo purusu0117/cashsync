@@ -65,6 +65,12 @@ export default function ScanPage() {
   const [cleanState, setCleanState] = useState<
     "idle" | "busy" | "done" | "cancelled" | "notfound" | "error"
   >("idle");
+  // レシート内分割：1枚のレシートを品目ごとに複数カテゴリへ按分して保存するモード。
+  // 既定はOFF（従来どおり1件保存）。ONのときだけ splitRows を使って複数 expense を作る。
+  const [splitMode, setSplitMode] = useState(false);
+  const [splitRows, setSplitRows] = useState<
+    { name: string; amount: number; categoryId: string | null }[]
+  >([]);
 
   useEffect(() => {
     setNative(isNativePlatform());
@@ -124,6 +130,8 @@ export default function ScanPage() {
   async function scanFile(file: File, lib = false) {
     setError("");
     setDupConfirm(false);
+    setSplitMode(false); // 新しい読み取りのたびに分割モードは初期化
+    setSplitRows([]);
     setLimitHit(false);
     setFromLibrary(lib);
     setSourceTakenAt(lib ? file.lastModified : 0);
@@ -219,6 +227,33 @@ export default function ScanPage() {
     if (file) scanFile(file, lib);
   }
 
+  // 「品目ごとにカテゴリを分ける」をON：AIが読んだ品目があればそれを初期行にする。
+  // 品目が無い/読めないときは手動で分けられるよう、空の2行（合計を1行目に仮置き）を用意する。
+  function enableSplit() {
+    if (!scan) return;
+    const rows =
+      scan.items.length > 0
+        ? scan.items.map((it) => ({
+            name: it.name,
+            amount: Math.round(it.price) || 0,
+            categoryId,
+          }))
+        : [
+            { name: "", amount: scan.total, categoryId },
+            { name: "", amount: 0, categoryId: null },
+          ];
+    setSplitRows(rows);
+    setSplitMode(true);
+  }
+
+  const splitAssigned = splitRows.reduce(
+    (s, r) => s + (Number.isFinite(r.amount) && r.amount > 0 ? Math.round(r.amount) : 0),
+    0,
+  );
+  // 未割当（レシート合計に満たない分）。保存時は「その他」に寄せて合計を一致させる
+  const splitRemainder = (scan?.total ?? 0) - splitAssigned;
+  const splitReady = splitRows.filter((r) => r.amount > 0).length >= 2;
+
   async function save(allowDuplicate = false) {
     if (!scan) return;
     setError("");
@@ -249,6 +284,11 @@ export default function ScanPage() {
                 categoryId,
                 suggestedCategoryId, // 提案から変更されていたらサーバーが店名→カテゴリを学習する
                 items: scan.items,
+                // 分割モードON時のみ：カテゴリ単位でまとめて複数 expense を作る（合計はサーバーで一致補正）
+                splits:
+                  splitMode && splitReady
+                    ? splitRows.map((r) => ({ categoryId: r.categoryId, amount: r.amount }))
+                    : undefined,
                 allowDuplicate, // 「本当に別の支払い」と確認済みの再送信のみ true
                 imageHash,
               }),
@@ -499,7 +539,7 @@ export default function ScanPage() {
                 />
               </label>
             </div>
-            {scan.kind === "expense" && (
+            {scan.kind === "expense" && !splitMode && (
             <div>
               <span className="dot text-xs text-ink-faint">カテゴリ</span>
               {learned && (
@@ -528,7 +568,7 @@ export default function ScanPage() {
               </div>
             </div>
             )}
-            {scan.kind === "expense" && scan.items.length > 0 && (
+            {scan.kind === "expense" && !splitMode && scan.items.length > 0 && (
               <div>
                 <p className="dot text-xs text-ink-faint">品目（明細として保存されます）</p>
                 <ul className="mt-1">
@@ -540,6 +580,118 @@ export default function ScanPage() {
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+            {/* レシート内分割：食費＋日用品など1枚を複数カテゴリに按分して保存する */}
+            {scan.kind === "expense" && !splitMode && (
+              <button
+                onClick={enableSplit}
+                className="dot w-full rounded-md border border-dashed border-rule py-2.5 text-sm text-ink-faint active:translate-y-0.5"
+              >
+                ＋ 品目ごとにカテゴリを分ける
+              </button>
+            )}
+            {scan.kind === "expense" && splitMode && (
+              <div>
+                <div className="flex items-baseline justify-between">
+                  <span className="dot text-xs text-ink-faint">品目ごとにカテゴリを分ける</span>
+                  <button
+                    onClick={() => setSplitMode(false)}
+                    className="text-[11px] text-ink-faint underline underline-offset-2"
+                  >
+                    分割をやめる
+                  </button>
+                </div>
+                <ul className="mt-2 space-y-2">
+                  {splitRows.map((r, i) => (
+                    <li key={i} className="rounded-md border border-rule bg-paper px-2.5 py-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={r.name}
+                          onChange={(e) =>
+                            setSplitRows((rows) =>
+                              rows.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)),
+                            )
+                          }
+                          placeholder="品目名（任意）"
+                          className="min-w-0 flex-1 border-b border-rule bg-transparent px-0.5 py-1 text-sm outline-none focus:border-ink"
+                        />
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          value={r.amount || ""}
+                          onChange={(e) =>
+                            setSplitRows((rows) =>
+                              rows.map((x, j) =>
+                                j === i ? { ...x, amount: Number(e.target.value) } : x,
+                              ),
+                            )
+                          }
+                          placeholder="0"
+                          className="dot w-20 shrink-0 border-b border-rule bg-transparent px-0.5 py-1 text-right text-base tabular-nums outline-none focus:border-ink"
+                        />
+                        <span className="shrink-0 text-xs text-ink-faint">円</span>
+                        <button
+                          onClick={() => setSplitRows((rows) => rows.filter((_, j) => j !== i))}
+                          className="shrink-0 text-ink-faint"
+                          aria-label="この行を削除"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {categories.map((c) => (
+                          <button
+                            key={c.id}
+                            onClick={() =>
+                              setSplitRows((rows) =>
+                                rows.map((x, j) => (j === i ? { ...x, categoryId: c.id } : x)),
+                              )
+                            }
+                            className={`flex items-center gap-1 rounded-full border px-2 py-1 text-xs ${
+                              r.categoryId === c.id
+                                ? "border-vermilion bg-vermilion text-card"
+                                : "border-rule bg-card text-ink"
+                            }`}
+                          >
+                            <CategoryIcon icon={c.icon} className="h-3 w-3" /> {c.name}
+                          </button>
+                        ))}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  onClick={() =>
+                    setSplitRows((rows) => [...rows, { name: "", amount: 0, categoryId }])
+                  }
+                  className="dot mt-2 w-full rounded-md border border-dashed border-rule py-2 text-xs text-ink-faint active:translate-y-0.5"
+                >
+                  ＋ 行を追加
+                </button>
+                {/* 割当状況：合計はレシート合計に一致するのが基本。未割当は保存時に「その他」に寄る */}
+                <div className="mt-2 flex items-baseline text-xs">
+                  <span className="text-ink-faint">割当合計</span>
+                  <span className="leader" />
+                  <span className="dot tabular-nums">
+                    {fmtYen(splitAssigned)} / {fmtYen(scan.total)}
+                  </span>
+                </div>
+                {splitRemainder > 0 && (
+                  <p className="mt-1 text-[11px] text-caution">
+                    未割当 {fmtYen(splitRemainder)} は「その他」として記録されます
+                  </p>
+                )}
+                {splitRemainder < 0 && (
+                  <p className="mt-1 text-[11px] text-vermilion">
+                    割当が合計を {fmtYen(-splitRemainder)} 超えています（この金額で記録します）
+                  </p>
+                )}
+                {!splitReady && (
+                  <p className="mt-1 text-[11px] text-ink-faint">
+                    金額のある行が2つ以上必要です（1つのときは通常保存になります）
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -592,7 +744,9 @@ export default function ScanPage() {
             >
               {phase === "saving"
                 ? "保存中・・・"
-                : `${fmtYen(scan.total)} を${scan.kind === "income" ? "収入として" : ""}記録`}
+                : splitMode && splitReady && scan.kind === "expense"
+                  ? `${fmtYen(scan.total)} を分けて記録`
+                  : `${fmtYen(scan.total)} を${scan.kind === "income" ? "収入として" : ""}記録`}
             </button>
           </div>
           )}
