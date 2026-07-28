@@ -67,5 +67,8 @@
 	     方針を変えてATTを出す場合は、このキーと src/lib/native.ts の requestTrackingAuthorization を両方戻すこと。 -->
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>記録済みのスクリーンショットを端末から削除するために写真ライブラリへアクセスします。</string>
+	<!-- カメラ利用の説明。これが無いと「撮る」でカメラ起動時にiOSがアプリを強制終了する（2026-07-28 クラッシュの原因）。 -->
+	<key>NSCameraUsageDescription</key>
+	<string>レシートを撮影してAIで読み取るためにカメラを使用します。</string>
 </dict>
 </plist>
