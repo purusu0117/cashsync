@@ -723,17 +723,25 @@ export default function HomePage() {
         <div className="cutline my-4" />
 
         {/* 月末予測 ＋ 判子（黒字/注意/赤字）：署名要素はここに1つだけ。
-            B3: 支出0件の間は判子・達成ペース文言を出さない（記録していないだけの虚偽の称賛になるため） */}
-        <div className={`relative ${hasExpenses ? "pr-16" : ""}`}>
+            B3: 支出0件の間は判子・達成ペース文言を出さない（記録していないだけの虚偽の称賛になるため）
+            C3: 収入源が未登録だと予測は必ず赤字になり「赤字」判子＋挽回文言が
+                「まず収入を登録」と矛盾するので、収入登録を促す文言に寄せる */}
+        <div className={`relative ${hasExpenses && !noIncomeSource ? "pr-16" : ""}`}>
           <div className="flex items-baseline text-sm">
             <span className="text-ink-faint">月末までの予測</span>
             <span className="leader" />
-            <span className={`dot text-xl tabular-nums ${hasExpenses ? signalColor : ""}`}>
-              {forecast.forecast >= 0 ? "+" : ""}
-              {fmtYen(forecast.forecast)}
-            </span>
+            {noIncomeSource ? (
+              <span className="dot text-sm text-ink-faint">未定</span>
+            ) : (
+              <span className={`dot text-xl tabular-nums ${hasExpenses ? signalColor : ""}`}>
+                {forecast.forecast >= 0 ? "+" : ""}
+                {fmtYen(forecast.forecast)}
+              </span>
+            )}
           </div>
-          {hasExpenses ? (
+          {noIncomeSource ? (
+            <p className="mt-0.5 text-[11px] text-ink-faint">収入を登録すると予測が出ます</p>
+          ) : hasExpenses ? (
             <p className={`mt-0.5 text-[11px] ${signal === "red" ? "text-vermilion" : "text-ink-faint"}`}>
               {signal === "green" && "貯金目標を達成するペースです"}
               {/* 赤=月末赤字ペースなら挽回額、今日の超過だけ（月は黒字ペース）ならその旨 */}
@@ -748,7 +756,7 @@ export default function HomePage() {
               支出を記録すると予測とペース判定が動き出します
             </p>
           )}
-          {hasExpenses && (
+          {hasExpenses && !noIncomeSource && (
             <span
               className={`stamp dot absolute right-0 top-1/2 -translate-y-1/2 px-2 py-1 text-sm ${signalColor}`}
               style={{ borderColor: "currentColor" }}

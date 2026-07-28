@@ -93,6 +93,14 @@ export default function AddPage() {
   const micDeniedRef = useRef(false);
   const [liveText, setLiveText] = useState("");
 
+  // 別タブへ遷移したらマイクを止める（onend→rec.start()の自動再開で録音が生き続けるのを防ぐ）
+  useEffect(() => {
+    return () => {
+      stopRequestedRef.current = true;
+      recRef.current?.stop();
+    };
+  }, []);
+
   function toggleVoice() {
     const w = window as unknown as {
       SpeechRecognition?: new () => SpeechRecognitionLike;
@@ -271,6 +279,9 @@ export default function AddPage() {
 
       {/* 音声/文章で入力（マイクが主役：話す→自動でフォームに反映） */}
       <section className="zig zig-t zig-b px-4 py-4 shadow-sm">
+        <h2 className="dot mb-2 text-xs text-ink-faint">
+          {speechOk ? "話す・書くで自動入力" : "文章から自動入力"}
+        </h2>
         {speechOk && (
           <button
             onClick={toggleVoice}

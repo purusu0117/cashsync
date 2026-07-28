@@ -159,7 +159,7 @@ interface SpeechRecognitionLike {
   interimResults: boolean;
   onresult: ((e: SpeechResultEvent) => void) | null;
   onend: (() => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((e: { error?: string }) => void) | null;
   start: () => void;
   stop: () => void;
 }
@@ -184,6 +184,7 @@ export default function CalendarPage() {
   const [tags, setTags] = useState<{ id: string; name: string }[]>([]);
   const [editing, setEditing] = useState<CalExpense | null>(null);
   const [loadStalled, setLoadStalled] = useState(false); // 初回読み込みが失敗して固まったまま
+  const [monthLoadFailed, setMonthLoadFailed] = useState(false); // 月切替後のfetchが全滅（前月データのまま空月に見える）
   const { toast, show, hide } = useToast();
 
   // --- シフト系 state（旧 /shifts から移植） ---
@@ -242,10 +243,15 @@ export default function CalendarPage() {
     try {
       // キャッシュファースト：見たことのある月は即表示→裏で最新に差し替え
       await cachedFetch<CalData>(`/api/calendar?month=${m}`, (d) => {
-        if (reqRef.current === req) setData(d);
+        if (reqRef.current === req) {
+          setData(d);
+          setMonthLoadFailed(false);
+        }
       });
     } catch {
-      /* 初回読み込み失敗時はスケルトンのまま（復帰時の visibilitychange で再試行される） */
+      // キャッシュが無い月（＝初めて開く月）でfetchが全滅したときだけ throw される。
+      // data は前月のまま残り空月に見えるので、再試行UIを出すためにフラグを立てる。
+      if (reqRef.current === req) setMonthLoadFailed(true);
     }
   }, []);
 
@@ -496,23 +502,6 @@ export default function CalendarPage() {
     }
   }
 
-  async function removeShift() {
-    if (!editDate) return;
-    try {
-      if (editShiftId) {
-        setEditBusy(true);
-        await apiCall(`/api/shifts?id=${editShiftId}`, { method: "DELETE" });
-      }
-      setEditDate(null);
-      setEditShiftId(null);
-      reload(month);
-    } catch (e) {
-      show(e instanceof Error ? e.message : "削除に失敗しました。");
-    } finally {
-      setEditBusy(false);
-    }
-  }
-
   // シフト削除はUndoつき（給料データを誤タップで消しやすいため）。
   // 復元は削除前のシフト内容を再POSTする（source は既定の manual に戻る）。
   async function removeShiftWithUndo(s: Shift) {
@@ -608,7 +597,17 @@ export default function CalendarPage() {
   // 止めた時点の全文をまとめてAI解析に渡す。
   const finalTextRef = useRef("");
   const stopRequestedRef = useRef(false);
+  // マイク権限拒否（not-allowed / service-not-allowed）を検知したら自動再開を止める
+  const micDeniedRef = useRef(false);
   const [liveText, setLiveText] = useState("");
+
+  // 別タブへ遷移したらマイクを止める（onend→rec.start()の自動再開で録音が生き続けるのを防ぐ）
+  useEffect(() => {
+    return () => {
+      stopRequestedRef.current = true;
+      recRef.current?.stop();
+    };
+  }, []);
 
   function toggleVoice() {
     const w = window as unknown as {
@@ -632,6 +631,7 @@ export default function CalendarPage() {
     rec.interimResults = true;
     finalTextRef.current = "";
     stopRequestedRef.current = false;
+    micDeniedRef.current = false;
     setLiveText("");
     rec.onresult = (e) => {
       let interim = "";
@@ -643,7 +643,8 @@ export default function CalendarPage() {
       setLiveText(finalTextRef.current + interim);
     };
     rec.onend = () => {
-      if (!stopRequestedRef.current) {
+      // 権限拒否のときは再startすると無限ループになるので、文章入力にフォールバックする
+      if (!stopRequestedRef.current && !micDeniedRef.current) {
         // 無音などでOSに切られた → ユーザーが止めるまで録音を続ける
         try {
           rec.start();
@@ -655,13 +656,20 @@ export default function CalendarPage() {
       setListening(false);
       const t = finalTextRef.current.trim();
       setLiveText("");
+      if (micDeniedRef.current) {
+        setShowTextInput(true);
+        show("マイクを使えませんでした。文章で入力してください。");
+        return;
+      }
       if (t) {
         setText(t);
         parseShiftText(t);
       }
     };
-    rec.onerror = () => {
-      /* onendが必ず来るのでそちらで処理 */
+    rec.onerror = (e) => {
+      if (e?.error === "not-allowed" || e?.error === "service-not-allowed") {
+        micDeniedRef.current = true;
+      }
     };
     recRef.current = rec;
     setListening(true);
@@ -939,6 +947,23 @@ export default function CalendarPage() {
           </div>
         )}
       </section>
+
+      {/* 月切替後のfetchが全滅したとき：前月データのまま「空の月」に見えるので、
+          本物のノーマネーデー月と区別できるエラー＋再試行を出す（初回読み込みの再試行UIと同トーン）。 */}
+      {monthLoadFailed && data.month !== month && (
+        <div className="zig zig-t zig-b px-5 py-6 text-center shadow-sm">
+          <p className="dot text-sm text-vermilion">{fmtMonthJa(month)}を読み込めませんでした</p>
+          <button
+            onClick={() => {
+              setMonthLoadFailed(false);
+              reload(month);
+            }}
+            className="dot mt-3 rounded-md border border-ink px-6 py-2.5 text-sm active:translate-y-0.5"
+          >
+            再試行
+          </button>
+        </div>
+      )}
 
       {/* 3) 大きいカレンダー：箱を並べず、印字だけで組む（データのない日は静かに、使った日は濃く） */}
       <div className="zig zig-t zig-b px-2 py-4 shadow-sm">
@@ -1695,7 +1720,13 @@ export default function CalendarPage() {
             <div className="mt-4 flex gap-2">
               {editShiftId && (
                 <button
-                  onClick={removeShift}
+                  onClick={() => {
+                    // 一覧の✕と同じUndoつき削除に統一（誤タップで給料データを失わない）
+                    const s = shifts.find((x) => x.id === editShiftId);
+                    setEditDate(null);
+                    setEditShiftId(null);
+                    if (s) removeShiftWithUndo(s);
+                  }}
                   disabled={editBusy}
                   className="rounded-md border border-vermilion px-4 py-3 text-sm text-vermilion"
                 >
