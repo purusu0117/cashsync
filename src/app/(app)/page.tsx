@@ -570,7 +570,7 @@ export default function HomePage() {
               localStorage.setItem(`cashsync-review-note-${reviewMonth}`, "1");
               setReviewMonth(null);
             }}
-            className="shrink-0 text-ink-faint"
+            className="shrink-0 -my-1 -mr-1 px-2.5 py-1.5 text-ink-faint"
             aria-label="閉じる"
           >
             ✕
@@ -594,7 +594,7 @@ export default function HomePage() {
               localStorage.setItem(`cashsync-weekly-note-${weeklyKey}`, "1");
               setWeeklyKey(null);
             }}
-            className="shrink-0 text-ink-faint"
+            className="shrink-0 -my-1 -mr-1 px-2.5 py-1.5 text-ink-faint"
             aria-label="閉じる"
           >
             ✕
