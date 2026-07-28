@@ -789,17 +789,25 @@ export default function SettingsPage() {
         <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
           給料日に合わせると管理しやすい設定です。例えば25日開始なら、7/25〜8/24が「8月」として集計されます（カレンダーの見た目は変わりません）。
         </p>
-        <select
-          value={monthStart}
-          onChange={(e) => saveMonthStart(e.target.value)}
-          className={`${input} mt-2 w-full`}
-        >
-          {["1", "5", "10", "15", "20", "25", "27", ...(["1", "5", "10", "15", "20", "25", "27"].includes(monthStart) ? [] : [monthStart])].map((d) => (
-            <option key={d} value={d}>
-              {d === "1" ? "1日（カレンダー通り・標準）" : `${d}日はじまり`}
-            </option>
-          ))}
-        </select>
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-sm text-ink-faint">毎月</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={28}
+            value={monthStart}
+            onChange={(e) => setMonthStart(e.target.value)}
+            onBlur={() => {
+              // 1〜28にクランプ（29〜31は月によって存在しないため不可）してから保存
+              const n = Math.min(28, Math.max(1, Math.round(Number(monthStart) || 1)));
+              setMonthStart(String(n));
+              saveMonthStart(String(n));
+            }}
+            className={`${input} w-20 text-center tabular-nums`}
+          />
+          <span className="text-sm text-ink-faint">日はじまり（1〜28で自由に）</span>
+        </div>
       </section>
 
       <section id="jobs" className="zig zig-t zig-b px-4 py-4 shadow-sm">
@@ -889,13 +897,17 @@ export default function SettingsPage() {
             <option value="same">当日払い</option>
           </select>
           {payOffset !== "same" && (
-            <select value={payDay} onChange={(e) => setPayDay(e.target.value)} className={`${input} col-span-2`}>
-              <option value="10">支払日：10日</option>
-              <option value="15">支払日：15日</option>
-              <option value="20">支払日：20日</option>
-              <option value="25">支払日：25日</option>
-              <option value="31">支払日：末日</option>
-            </select>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={31}
+              value={payDay}
+              onChange={(e) => setPayDay(e.target.value)}
+              placeholder="支払日（1〜31）"
+              title="給料日を1〜31で入力（31=末日）"
+              className={`${input} col-span-2`}
+            />
           )}
         </div>
         <button onClick={addJob} disabled={!jobName || !wdRate} className={`${addBtn} mt-2 w-full`}>
@@ -1024,13 +1036,16 @@ export default function SettingsPage() {
         )}
         <div className="mt-2 flex gap-2">
           <input type="number" inputMode="numeric" value={recAmount} onChange={(e) => setRecAmount(e.target.value)} placeholder="金額" className={`${input} flex-1 min-w-0`} />
-          <select value={recDay} onChange={(e) => setRecDay(e.target.value)} className={input}>
-            {["1", "5", "10", "15", "20", "25", "27", "31"].map((d) => (
-              <option key={d} value={d}>
-                {d === "31" ? "末日" : `${d}日`}
-              </option>
-            ))}
-          </select>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={31}
+            value={recDay}
+            onChange={(e) => setRecDay(e.target.value)}
+            title="計上日を1〜31で入力（31=末日）"
+            className={`${input} w-20 shrink-0 text-center tabular-nums`}
+          />
           <button onClick={addRecurring} disabled={!recName || !recAmount} className={addBtn}>
             ＋ 追加
           </button>
@@ -1097,13 +1112,17 @@ export default function SettingsPage() {
               <span className="shrink-0 text-sm text-ink-faint">回払い</span>
             </div>
             <input type="month" value={spStart} onChange={(e) => setSpStart(e.target.value)} className={`${input} w-full min-w-0`} />
-            <select value={spDay} onChange={(e) => setSpDay(e.target.value)} className={input}>
-              {["1", "5", "10", "15", "20", "25", "27", "31"].map((d) => (
-                <option key={d} value={d}>
-                  {d === "31" ? "末日" : `${d}日`}払い
-                </option>
-              ))}
-            </select>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={31}
+              value={spDay}
+              onChange={(e) => setSpDay(e.target.value)}
+              placeholder="支払日（1〜31）"
+              title="支払日を1〜31で入力（31=末日）"
+              className={`${input} w-full min-w-0`}
+            />
           </div>
           <button
             onClick={addSplit}
