@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CategoryIcon, MicIcon, StopIcon } from "@/components/Icons";
 import RewardCredit from "@/components/RewardCredit";
-import { netFetch } from "@/lib/clientApi";
+import { apiCall, apiJson, netFetch } from "@/lib/clientApi";
 import { fmtYen, todayLocal } from "@/lib/format";
 
 interface Category {
@@ -13,6 +13,10 @@ interface Category {
   name: string;
   icon: string;
   used?: number; // 使用回数（よく使う上位6個の判定用）
+}
+interface Tag {
+  id: string;
+  name: string;
 }
 
 // Web Speech API（iOS Safariは不安定なので progressive enhancement）
@@ -47,6 +51,11 @@ export default function AddPage() {
   // AI解析の無料枠超過（429 limit）のとき、ネイティブでは「動画を見て+3回」を出す
   const [limitHit, setLimitHit] = useState(false);
   const [showAllCats, setShowAllCats] = useState(false); // C6: カテゴリは上位6個＋折りたたみ
+  // 横断タグ（任意）。カテゴリとは別に複数付けられる
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
+  const [newTag, setNewTag] = useState("");
+  const [tagBusy, setTagBusy] = useState(false);
 
   const [text, setText] = useState("");
   const [parsing, setParsing] = useState(false);
@@ -66,6 +75,10 @@ export default function AddPage() {
         setCategories(d.categories ?? []);
         if (d.categories?.[0]) setCategoryId(d.categories[0].id);
       });
+    fetch("/api/tags")
+      .then((r) => r.json())
+      .then((d) => setTags(d.tags ?? []))
+      .catch(() => {});
     const w = window as unknown as {
       SpeechRecognition?: new () => SpeechRecognitionLike;
       webkitSpeechRecognition?: new () => SpeechRecognitionLike;
@@ -177,7 +190,15 @@ export default function AddPage() {
       const res = await netFetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: n, date, categoryId, memo, source: text ? "text" : "manual" }),
+        body: JSON.stringify({
+          amount: n,
+          date,
+          categoryId,
+          memo,
+          source: text ? "text" : "manual",
+          // 横断タグ：選択が無ければ空配列（従来と同じ支出が保存されるだけ）
+          tagIds: [...selectedTags],
+        }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "保存に失敗しました。");
@@ -187,6 +208,31 @@ export default function AddPage() {
       setError(e instanceof Error ? e.message : "保存に失敗しました。");
     } finally {
       setBusy(false);
+    }
+  }
+
+  function toggleTag(id: string) {
+    setSelectedTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function addTag() {
+    const name = newTag.trim();
+    if (!name || tagBusy) return;
+    setTagBusy(true);
+    try {
+      const d = await apiCall<{ id: string }>("/api/tags", apiJson({ name }));
+      setTags((prev) => (prev.some((t) => t.id === d.id) ? prev : [...prev, { id: d.id, name }]));
+      setSelectedTags((prev) => new Set(prev).add(d.id));
+      setNewTag("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "タグを追加できませんでした。");
+    } finally {
+      setTagBusy(false);
     }
   }
 
@@ -331,6 +377,41 @@ export default function AddPage() {
                 {showAllCats ? "たたむ" : `すべて表示（${categories.length}）`}
               </button>
             )}
+          </div>
+        </div>
+        {/* 横断タグ（任意）：カテゴリとは別に複数付けて後でまとめて集計できる */}
+        <div>
+          <span className="dot text-xs text-ink-faint">タグ（任意・複数可）</span>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {tags.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => toggleTag(t.id)}
+                className={`rounded-full border px-3 py-1.5 text-sm ${
+                  selectedTags.has(t.id)
+                    ? "border-sage bg-sage text-card"
+                    : "border-rule bg-paper text-ink"
+                }`}
+              >
+                #{t.name}
+              </button>
+            ))}
+          </div>
+          <div className="mt-1.5 flex gap-2">
+            <input
+              value={newTag}
+              onChange={(e) => setNewTag(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTag())}
+              placeholder="新しいタグ（例：旅行・推し活）"
+              className="min-w-0 flex-1 rounded-md border border-rule bg-paper px-3 py-1.5 text-sm outline-none focus:border-ink"
+            />
+            <button
+              onClick={addTag}
+              disabled={!newTag.trim() || tagBusy}
+              className="dot shrink-0 rounded-md border border-ink px-3 text-sm disabled:opacity-40"
+            >
+              ＋ 追加
+            </button>
           </div>
         </div>
         <label className="block">

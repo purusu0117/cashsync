@@ -404,6 +404,44 @@ export default function SettingsPage() {
     });
   }
 
+  // --- 横断タグ（カテゴリとは別軸で複数付けられるラベル） ---
+  const [tags, setTags] = useState<{ id: string; name: string; count: number }[]>([]);
+  const [tName, setTName] = useState("");
+  const [editTagId, setEditTagId] = useState<string | null>(null);
+  const [editTagName, setEditTagName] = useState("");
+  const loadTags = useCallback(async () => {
+    await cachedFetch<{ tags?: { id: string; name: string; count: number }[] }>(
+      "/api/tags",
+      (d) => setTags(d.tags ?? []),
+    ).catch(() => {});
+  }, []);
+  useEffect(() => {
+    loadTags();
+  }, [loadTags]);
+  async function addTag() {
+    if (!tName.trim()) return;
+    await tryApi(async () => {
+      await apiCall("/api/tags", apiJson({ name: tName }));
+      setTName("");
+      loadTags();
+    });
+  }
+  async function saveTagName(id: string) {
+    if (!editTagName.trim()) return;
+    await tryApi(async () => {
+      await apiCall("/api/tags", apiJson({ id, name: editTagName }, "PUT"));
+      setEditTagId(null);
+      setEditTagName("");
+      loadTags();
+    });
+  }
+  async function delTag(id: string) {
+    await tryApi(async () => {
+      await apiCall(`/api/tags?id=${id}`, { method: "DELETE" });
+      loadTags();
+    });
+  }
+
   // --- 使いすぎ通知（Web Push） ---
   const [pushOn, setPushOn] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
@@ -1184,6 +1222,67 @@ export default function SettingsPage() {
               ))}
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* 横断タグ：カテゴリ（1支出＝1軸）とは別に、複数付けてまたぎ集計するラベル */}
+      <section id="tags" className="zig zig-t zig-b px-4 py-4 shadow-sm">
+        <h2 className="dot text-sm">タグ</h2>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
+          カテゴリとは別に、1つの支出へ複数付けられるラベルです（例：旅行・推し活・こだわり買い）。記録の編集画面から付けて、グラフの「タグ別の支出」でまとめて集計できます。
+        </p>
+        <Fold summary={`${tags.length}件`}>
+          <div className="flex flex-wrap gap-1.5">
+            {tags.length === 0 && <p className="text-[11px] text-ink-faint">まだ登録がありません</p>}
+            {tags.map((t) =>
+              editTagId === t.id ? (
+                <span key={t.id} className="flex items-center gap-1">
+                  <input
+                    value={editTagName}
+                    onChange={(e) => setEditTagName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && saveTagName(t.id)}
+                    className={`${input} w-32 py-1 text-sm`}
+                  />
+                  <button onClick={() => saveTagName(t.id)} className="dot text-xs text-ink underline underline-offset-2">
+                    保存
+                  </button>
+                  <button onClick={() => setEditTagId(null)} className="text-xs text-ink-faint">
+                    取消
+                  </button>
+                </span>
+              ) : (
+                <span key={t.id} className="flex items-center gap-1 rounded-full border border-rule bg-paper px-3 py-1 text-sm">
+                  <span className="text-sage">#</span>
+                  {t.name}
+                  {t.count > 0 && <span className="text-[10px] text-ink-faint">{t.count}</span>}
+                  <button
+                    onClick={() => {
+                      setEditTagId(t.id);
+                      setEditTagName(t.name);
+                    }}
+                    className="ml-0.5 text-[10px] text-ink-faint underline underline-offset-2"
+                  >
+                    編集
+                  </button>
+                  <button onClick={() => delTag(t.id)} className="text-xs text-vermilion">
+                    ✕
+                  </button>
+                </span>
+              ),
+            )}
+          </div>
+        </Fold>
+        <div className="mt-3 flex gap-2">
+          <input
+            value={tName}
+            onChange={(e) => setTName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addTag()}
+            placeholder="タグ名（例：旅行）"
+            className={`${input} flex-1 min-w-0`}
+          />
+          <button onClick={addTag} disabled={!tName.trim()} className={addBtn}>
+            ＋ 追加
+          </button>
         </div>
       </section>
 

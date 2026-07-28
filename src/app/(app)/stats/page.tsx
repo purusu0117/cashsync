@@ -52,6 +52,12 @@ interface Pocket {
   carryover?: number; // C13: 1=繰り越しON（旧キャッシュには無いので optional）
   carryoverAmount?: number; // C13: 前月の余り（0下限）
 }
+interface TagStat {
+  id: string;
+  name: string;
+  amount: number;
+  count: number;
+}
 interface Review {
   headline: string;
   overspend: { category: string; amount: number; prevAmount: number; comment: string }[];
@@ -81,6 +87,7 @@ export default function StatsPage() {
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState("");
   const [pockets, setPockets] = useState<Pocket[]>([]);
+  const [tagStats, setTagStats] = useState<TagStat[]>([]); // 選択月のタグ別支出
   const [editPocket, setEditPocket] = useState<string | null>(null);
   const [pocketAmount, setPocketAmount] = useState("");
   const [pocketCarry, setPocketCarry] = useState(false); // C13: 繰り越しトグル
@@ -142,6 +149,13 @@ export default function StatsPage() {
       setBefore(m < todayLocal().slice(0, 7) ? todayLocal().slice(0, 7) : m);
     }
   }, []);
+
+  // 選択月のタグ別支出（横断タグ）。カテゴリ内訳とは別軸で今月の内訳を見る
+  useEffect(() => {
+    cachedFetch<{ stats?: TagStat[] }>(`/api/tags?stats=${selected}`, (d) =>
+      setTagStats(d.stats ?? []),
+    ).catch(() => {});
+  }, [selected]);
 
   useEffect(() => {
     load(before, selected);
@@ -579,6 +593,44 @@ export default function StatsPage() {
           <div className="barcode mt-5" />
         </section>
       )}
+
+      {/* 横断タグ別の支出（カテゴリとは別軸。旅行・推し活など複数カテゴリをまたぐ集計） */}
+      {(() => {
+        const rows = tagStats.filter((t) => t.amount > 0);
+        const maxTag = Math.max(1, ...rows.map((t) => t.amount));
+        return (
+          <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
+            <h2 className="dot text-sm tracking-[0.1em]">タグ別の支出（{fmtMonthJa(selected)}）</h2>
+            {rows.length === 0 ? (
+              <p className="cutline mt-3 py-4 pt-3 text-center text-xs text-ink-faint">
+                {tagStats.length === 0
+                  ? "タグはまだありません。記録の編集画面からタグを付けられます。"
+                  : "この月はタグ付きの支出がありません。"}
+              </p>
+            ) : (
+              <ul className="cutline mt-3 space-y-2.5 pt-3">
+                {rows.map((t) => (
+                  <li key={t.id}>
+                    <div className="flex items-baseline text-sm">
+                      <span className="text-sage">#{t.name}</span>
+                      <span className="ml-1.5 text-[10px] text-ink-faint">{t.count}件</span>
+                      <span className="leader" />
+                      <span className="dot text-[15px] tabular-nums">{fmtYen(t.amount)}</span>
+                    </div>
+                    <div className="mt-1 h-1 rounded-full bg-paper">
+                      <div
+                        className="h-full rounded-full bg-sage/60"
+                        style={{ width: `${(t.amount / maxTag) * 100}%` }}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="barcode mt-5" />
+          </section>
+        );
+      })()}
 
       {/* 袋分けポケット：カテゴリ別の今月予算と残り */}
       <section className="zig zig-t zig-b px-5 py-4 shadow-sm">

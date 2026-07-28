@@ -181,6 +181,7 @@ export default function CalendarPage() {
   const [showCalc, setShowCalc] = useState(false);
   // C10: 日付シートの支出行タップ→履歴と同じ編集シートを開く
   const [categories, setCategories] = useState<Category[]>([]);
+  const [tags, setTags] = useState<{ id: string; name: string }[]>([]);
   const [editing, setEditing] = useState<CalExpense | null>(null);
   const { toast, show, hide } = useToast();
 
@@ -322,6 +323,9 @@ export default function CalendarPage() {
   useEffect(() => {
     cachedFetch<{ categories?: Category[] }>("/api/categories", (d) =>
       setCategories(d.categories ?? []),
+    ).catch(() => {});
+    cachedFetch<{ tags?: { id: string; name: string }[] }>("/api/tags", (d) =>
+      setTags(d.tags ?? []),
     ).catch(() => {});
     setAutoOn(isAutoSyncOn());
     const w = window as unknown as {
@@ -1741,6 +1745,12 @@ export default function CalendarPage() {
             receipt_id: editing.receipt_id ?? null,
           }}
           categories={categories}
+          tags={tags}
+          onTagsChanged={() =>
+            cachedFetch<{ tags?: { id: string; name: string }[] }>("/api/tags", (d) =>
+              setTags(d.tags ?? []),
+            ).catch(() => {})
+          }
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);

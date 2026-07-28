@@ -70,6 +70,18 @@ import {
 } from "../src/lib/accounts";
 import { verifyPassword } from "../src/lib/password";
 import { buildReceiptSplits } from "../src/lib/receiptSplit";
+import {
+  createTag,
+  deleteTag,
+  getExpenseTagIds,
+  listTags,
+  normalizeTagName,
+  ownTagIds,
+  renameTag,
+  reorderTags,
+  setExpenseTags,
+  tagSpend,
+} from "../src/lib/tags";
 
 /** 'YYYY-MM' に delta ヶ月足す（テスト用） */
 function addMonths(month: string, delta: number): string {
@@ -2361,6 +2373,86 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
     );
     check("前月内訳が空なら増減カテゴリも空", cmp.increased.length === 0 && cmp.decreased.length === 0, cmp);
   }
+
+  // --- 21. 横断タグ（カテゴリとは別軸の多対多ラベルと集計） ---
+  console.log("[21] 横断タグ（tags / expense_tags）");
+  check("normalizeTagName（前後空白除去・連続空白を1つに）", normalizeTagName("  旅行  行き  ") === "旅行 行き");
+  const tagUser = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    tagUser,
+    "tag@example.com",
+    "タグ太郎",
+    hashPassword("password123"),
+    Date.now(),
+  );
+  const t1 = (await createTag(tagUser, "  旅行 "))!;
+  const t2 = (await createTag(tagUser, "推し活"))!;
+  check("タグ作成（前後空白除去して保存）", t1 !== null && t2 !== null);
+  const t1dup = await createTag(tagUser, "旅行");
+  check("同名タグは作成せず既存を返す（重複しない）", t1dup?.id === t1.id);
+  check("空名タグは作成できない", (await createTag(tagUser, "   ")) === null);
+  let tagList = await listTags(tagUser);
+  check("タグ一覧が2件・sort順（旅行→推し活）", tagList.length === 2 && tagList[0].name === "旅行" && tagList[1].name === "推し活", tagList);
+
+  // タグを付ける支出（当月）
+  const te1 = uid();
+  const te2 = uid();
+  for (const [eid, amt] of [
+    [te1, 1000],
+    [te2, 500],
+  ] as [string, number][]) {
+    await d.run(
+      "INSERT INTO expenses (id, user_id, date, amount, category_id, memo, source, receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?)",
+      eid,
+      tagUser,
+      today,
+      amt,
+      null,
+      "",
+      null,
+      Date.now(),
+    );
+  }
+  await setExpenseTags(tagUser, te1, [t1.id, t2.id]);
+  await setExpenseTags(tagUser, te2, [t1.id]);
+  check("支出にタグを複数付与できる（te1=2件）", (await getExpenseTagIds(tagUser, te1)).length === 2);
+  check("張り替えは完全置換（再送信で件数が正しい）", (await getExpenseTagIds(tagUser, te2)).length === 1);
+
+  // 他人のタグIDは弾く（張り替え時に本人所有のみ残る）
+  const foreignTag = (await createTag(userId, "他人タグ"))!;
+  await setExpenseTags(tagUser, te1, [t1.id, foreignTag.id]);
+  const te1Tags = await getExpenseTagIds(tagUser, te1);
+  check("他人のタグIDは無視され本人のタグだけ張られる", te1Tags.length === 1 && te1Tags[0] === t1.id, te1Tags);
+  check("ownTagIds は重複除去＋他人/不明IDを除外", (await ownTagIds(tagUser, [t1.id, t1.id, t2.id, foreignTag.id, "nope"])).length === 2);
+  check("他人の支出にはタグを張れない（false）", (await setExpenseTags(uid(), te1, [t1.id])) === false);
+
+  // タグ別集計（締め日基準の当月）
+  let stats = (await tagSpend(tagUser, month)).stats;
+  const t1Stat = stats.find((s) => s.id === t1.id)!;
+  const t2Stat = stats.find((s) => s.id === t2.id)!;
+  check("tagSpend: 旅行=te1(1000)+te2(500)=1500・2件", t1Stat.amount === 1500 && t1Stat.count === 2, t1Stat);
+  check("tagSpend: 推し活は現在紐付け0（amount 0・count 0）", t2Stat.amount === 0 && t2Stat.count === 0, t2Stat);
+  check("tagSpend は number で返る（方言差なし）", typeof t1Stat.amount === "number" && typeof t1Stat.count === "number");
+
+  // 改名・並べ替え（本人のみ）
+  check("タグ改名（本人）", await renameTag(tagUser, t2.id, "趣味"));
+  check("他人はタグを改名できない", (await renameTag(uid(), t2.id, "乗っ取り")) === false);
+  await reorderTags(tagUser, [t2.id, t1.id]);
+  tagList = await listTags(tagUser);
+  check("並べ替えで sort が入れ替わる（趣味→旅行）", tagList[0].id === t2.id && tagList[1].id === t1.id, tagList);
+  check("改名が一覧に反映（推し活→趣味）", tagList[0].name === "趣味", tagList);
+
+  // 削除＝expense_tags も掃除
+  check("タグ削除（本人）", await deleteTag(tagUser, t1.id));
+  check("削除後は一覧から消える", (await listTags(tagUser)).every((t) => t.id !== t1.id));
+  check("削除で支出側の紐付けも消える（te1・te2が空に）", (await getExpenseTagIds(tagUser, te1)).length === 0 && (await getExpenseTagIds(tagUser, te2)).length === 0);
+  const orphan = (await d.get<{ c: number | string }>(
+    "SELECT COUNT(*) AS c FROM expense_tags WHERE tag_id = ?",
+    t1.id,
+  ))!;
+  check("expense_tags に孤児行が残らない", Number(orphan.c) === 0, orphan);
+  check("他人はタグを削除できない（false）", (await deleteTag(uid(), t2.id)) === false);
 
   console.log(`\n結果: ${passed} passed / ${failed} failed`);
   return { passed, failed };

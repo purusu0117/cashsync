@@ -235,6 +235,22 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     balance INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (account_id, month)
   )`,
+  // 横断タグ：カテゴリ（単軸）とは別に、1支出へ複数タグを付けて集計する。created_at はエポックms → BIGINT
+  `CREATE TABLE IF NOT EXISTS tags (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    sort INTEGER NOT NULL DEFAULT 0,
+    created_at BIGINT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_tags_user ON tags(user_id, sort)`,
+  // 支出↔タグの多対多（タグ未使用の支出には行が生えない＝既存動作は不変）
+  `CREATE TABLE IF NOT EXISTS expense_tags (
+    expense_id TEXT NOT NULL,
+    tag_id TEXT NOT NULL,
+    PRIMARY KEY (expense_id, tag_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_expense_tags_tag ON expense_tags(tag_id)`,
 ];
 
 /** 移行スクリプト用：sqlite→postgresでコピーするテーブル一覧（依存の無い順） */
@@ -259,4 +275,6 @@ export const MIGRATION_TABLES: string[] = [
   "password_resets",
   "accounts",
   "account_snapshots",
+  "tags",
+  "expense_tags",
 ];

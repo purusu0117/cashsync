@@ -27,6 +27,10 @@ interface Category {
   name: string;
   icon: string;
 }
+interface Tag {
+  id: string;
+  name: string;
+}
 interface Income {
   id: string;
   date: string;
@@ -69,6 +73,7 @@ export default function HistoryPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
   const [editing, setEditing] = useState<Expense | null>(null);
   const [editingIncome, setEditingIncome] = useState<Income | null>(null); // C8: 収入の編集
   // B9: 集計期間（締め日基準。開始日1なら実カレンダー月と同じ）
@@ -167,6 +172,7 @@ export default function HistoryPage() {
     cachedFetch<{ categories?: Category[] }>("/api/categories", (d) =>
       setCategories(d.categories ?? []),
     ).catch(() => {});
+    cachedFetch<{ tags?: Tag[] }>("/api/tags", (d) => setTags(d.tags ?? [])).catch(() => {});
     // アプリに戻ってきたら最新化
     const onVisible = () => {
       if (document.visibilityState === "visible") load(month);
@@ -448,6 +454,13 @@ export default function HistoryPage() {
         <ExpenseEditSheet
           expense={editing}
           categories={categories}
+          tags={tags}
+          onTagsChanged={() =>
+            netFetch("/api/tags")
+              .then((r) => r.json())
+              .then((d: { tags?: Tag[] }) => setTags(d.tags ?? []))
+              .catch(() => {})
+          }
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);

@@ -375,6 +375,22 @@ function migrateSqlite(d: DatabaseSync) {
       balance INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (account_id, month)
     );
+    -- 横断タグ：カテゴリ（単軸）とは別に、1支出へ複数タグを付けて集計する（新テーブルのみ・既存フローに影響なし）
+    CREATE TABLE IF NOT EXISTS tags (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      sort INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_tags_user ON tags(user_id, sort);
+    -- 支出↔タグの多対多。タグを1つも使わない支出には行が生えないので既存動作は不変
+    CREATE TABLE IF NOT EXISTS expense_tags (
+      expense_id TEXT NOT NULL,
+      tag_id TEXT NOT NULL,
+      PRIMARY KEY (expense_id, tag_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_expense_tags_tag ON expense_tags(tag_id);
   `);
   // 追加カラムのマイグレーション（既存DBにも効くよう ALTER を冪等に流す）
   addColumn(d, "categories", "icon TEXT NOT NULL DEFAULT ''"); // 旧DB（icon列なし）向け

@@ -3,9 +3,10 @@
 // 記録の編集シート（履歴・カレンダーで共有）。
 // C7: 削除はこのシート内から行い、削除後は親がUndoつきトーストを出す（undo は削除前の内容で復元）。
 // C8: 収入にも支出と同等の編集シート（金額・日付・メモ）。
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CategoryIcon } from "@/components/Icons";
 import { apiCall, apiJson } from "@/lib/clientApi";
+import { netFetch } from "@/lib/cachedFetch";
 import { todayLocal } from "@/lib/format";
 
 export interface EditableExpense {
@@ -16,6 +17,12 @@ export interface EditableExpense {
   category_id: string | null;
   source?: string;
   receipt_id?: string | null;
+  tag_ids?: string[]; // 横断タグ（渡されれば初期選択に使う。無ければシート側でAPI取得）
+}
+
+export interface SheetTag {
+  id: string;
+  name: string;
 }
 
 export interface EditableIncome {
@@ -49,13 +56,17 @@ function restoreExpense(e: EditableExpense): Promise<unknown> {
 export function ExpenseEditSheet({
   expense,
   categories,
+  tags,
   onClose,
   onSaved,
   onDeleted,
   onDuplicated,
+  onTagsChanged,
 }: {
   expense: EditableExpense;
   categories: SheetCategory[];
+  /** 横断タグの一覧。渡された時だけタグ欄を表示し、保存時に tagIds を送る（省略時は従来と完全に同じ） */
+  tags?: SheetTag[];
   onClose: () => void;
   /** PUT成功後（親が再読込＋完了トーストを出す） */
   onSaved: () => void;
@@ -63,10 +74,63 @@ export function ExpenseEditSheet({
   onDeleted: (undo: () => Promise<unknown>) => void;
   /** 「もう一度」（同じ内容を今日の日付で記録）。undo() は作った記録を削除する。省略時はボタン非表示 */
   onDuplicated?: (undo: () => Promise<unknown>) => void;
+  /** タグを新規作成したとき（親のタグ一覧を再取得させる。省略可） */
+  onTagsChanged?: () => void;
 }) {
+  const tagsEnabled = tags !== undefined;
   const [draft, setDraft] = useState<EditableExpense>({ ...expense });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // 横断タグ：親から渡された一覧をローカルにも持ち（新規作成で即反映）、選択集合を管理する
+  const [tagList, setTagList] = useState<SheetTag[]>(tags ?? []);
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set(expense.tag_ids ?? []));
+  const [newTag, setNewTag] = useState("");
+  const [tagBusy, setTagBusy] = useState(false);
+
+  useEffect(() => setTagList(tags ?? []), [tags]);
+
+  // 初期選択：tag_ids が渡っていなければ、この支出の現在のタグをAPIで取得する
+  useEffect(() => {
+    if (!tagsEnabled || expense.tag_ids) return;
+    let alive = true;
+    netFetch(`/api/tags?expenseId=${expense.id}`)
+      .then((r) => r.json())
+      .then((d: { tagIds?: string[] }) => {
+        if (alive) setSelectedTags(new Set(d.tagIds ?? []));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [tagsEnabled, expense.id, expense.tag_ids]);
+
+  function toggleTag(id: string) {
+    setSelectedTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function addTag() {
+    const name = newTag.trim();
+    if (!name || tagBusy) return;
+    setTagBusy(true);
+    try {
+      const d = await apiCall<{ id: string }>("/api/tags", apiJson({ name }));
+      setTagList((prev) =>
+        prev.some((t) => t.id === d.id) ? prev : [...prev, { id: d.id, name }],
+      );
+      setSelectedTags((prev) => new Set(prev).add(d.id));
+      setNewTag("");
+      onTagsChanged?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "タグを追加できませんでした。");
+    } finally {
+      setTagBusy(false);
+    }
+  }
 
   async function save() {
     setBusy(true);
@@ -81,6 +145,8 @@ export function ExpenseEditSheet({
             amount: draft.amount,
             categoryId: draft.category_id,
             memo: draft.memo,
+            // tagIds はタグ欄がある時だけ送る（未指定なら expense_tags を一切触らない後方互換）
+            ...(tagsEnabled ? { tagIds: [...selectedTags] } : {}),
           },
           "PUT",
         ),
@@ -118,6 +184,7 @@ export function ExpenseEditSheet({
           categoryId: draft.category_id,
           memo: draft.memo,
           source: "manual",
+          ...(tagsEnabled ? { tagIds: [...selectedTags] } : {}),
         }),
       );
       onDuplicated?.(() => apiCall(`/api/expenses?id=${d.id}`, { method: "DELETE" }));
@@ -164,6 +231,43 @@ export function ExpenseEditSheet({
               </button>
             ))}
           </div>
+          {/* 横断タグ：カテゴリとは別に複数付けられる（親が tags を渡した時だけ表示） */}
+          {tagsEnabled && (
+            <div>
+              <p className="dot text-[11px] text-ink-faint">タグ（複数可）</p>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {tagList.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => toggleTag(t.id)}
+                    className={`rounded-full border px-3 py-1 text-sm ${
+                      selectedTags.has(t.id)
+                        ? "border-sage bg-sage text-card"
+                        : "border-rule bg-paper text-ink"
+                    }`}
+                  >
+                    #{t.name}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-1.5 flex gap-2">
+                <input
+                  value={newTag}
+                  onChange={(e) => setNewTag(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addTag()}
+                  placeholder="新しいタグ（例：旅行・推し活）"
+                  className="min-w-0 flex-1 rounded-md border border-rule bg-paper px-3 py-1.5 text-sm outline-none focus:border-ink"
+                />
+                <button
+                  onClick={addTag}
+                  disabled={!newTag.trim() || tagBusy}
+                  className="dot shrink-0 rounded-md border border-ink px-3 text-sm disabled:opacity-40"
+                >
+                  ＋ 追加
+                </button>
+              </div>
+            </div>
+          )}
           <input
             value={draft.memo}
             onChange={(e) => setDraft({ ...draft, memo: e.target.value })}
