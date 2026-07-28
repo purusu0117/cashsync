@@ -873,7 +873,7 @@ export default function SettingsPage() {
                 <p className="ml-4 text-[11px] text-ink-faint">
                   {j.pay_same_day
                     ? "当日払い（働いた日にその場で支給）"
-                    : `${j.closing_day >= 28 ? "末日" : `${j.closing_day}日`}締め・${j.pay_month_offset ? "翌月" : "当月"}${j.pay_day >= 28 ? "末日" : `${j.pay_day}日`}払い`}
+                    : `${j.closing_day >= 28 ? "末日" : `${j.closing_day}日`}締め・${j.pay_month_offset ? "翌月" : "当月"}${j.pay_day >= 31 ? "末日" : `${j.pay_day}日`}払い`}
                 </p>
               </li>
             ),
@@ -904,7 +904,10 @@ export default function SettingsPage() {
               max={31}
               value={payDay}
               onChange={(e) => setPayDay(e.target.value)}
-              placeholder="支払日（1〜31）"
+              onBlur={() =>
+                setPayDay(payDay.trim() === "" ? "15" : String(Math.min(31, Math.max(1, Math.round(Number(payDay) || 15)))))
+              }
+              placeholder="給料日（1〜31）"
               title="給料日を1〜31で入力（31=末日）"
               className={`${input} col-span-2`}
             />
@@ -945,8 +948,8 @@ export default function SettingsPage() {
                   </div>
                   <p className="ml-5 text-[11px] text-ink-faint">
                     {r.interval === "yearly"
-                      ? `毎年${Number(r.start_month.slice(5))}月${r.post_day >= 28 ? "末日" : `${r.post_day}日`}`
-                      : `毎月${r.post_day >= 28 ? "末日" : `${r.post_day}日`}`}
+                      ? `毎年${Number(r.start_month.slice(5))}月${r.post_day >= 31 ? "末日" : `${r.post_day}日`}`
+                      : `毎月${r.post_day >= 31 ? "末日" : `${r.post_day}日`}`}
                     ・{fmtYen(r.amount)}
                     {r.end_month && `・${r.end_month.slice(0, 4)}年${Number(r.end_month.slice(5))}月まで`}
                     {r.kind === "expense" && (
@@ -1034,18 +1037,26 @@ export default function SettingsPage() {
             </select>
           </div>
         )}
-        <div className="mt-2 flex gap-2">
+        <div className="mt-2 flex items-stretch gap-2">
           <input type="number" inputMode="numeric" value={recAmount} onChange={(e) => setRecAmount(e.target.value)} placeholder="金額" className={`${input} flex-1 min-w-0`} />
-          <input
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={31}
-            value={recDay}
-            onChange={(e) => setRecDay(e.target.value)}
-            title="計上日を1〜31で入力（31=末日）"
-            className={`${input} w-20 shrink-0 text-center tabular-nums`}
-          />
+          {/* H1: 計上日欄は「毎月◯日」と分かるよう前後にラベルを添える */}
+          <div className={`${input} flex shrink-0 items-center gap-1 py-0`} title="毎月この日に自動で記録されます（31=末日）">
+            <span className="shrink-0 text-xs text-ink-faint">毎月</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={31}
+              value={recDay}
+              onChange={(e) => setRecDay(e.target.value)}
+              onBlur={() =>
+                setRecDay(recDay.trim() === "" ? "1" : String(Math.min(31, Math.max(1, Math.round(Number(recDay) || 1)))))
+              }
+              aria-label="計上日（1〜31）"
+              className="w-8 min-w-0 bg-transparent py-2.5 text-center tabular-nums outline-none"
+            />
+            <span className="shrink-0 text-xs text-ink-faint">日</span>
+          </div>
           <button onClick={addRecurring} disabled={!recName || !recAmount} className={addBtn}>
             ＋ 追加
           </button>
@@ -1083,7 +1094,7 @@ export default function SettingsPage() {
                       </div>
                       <p className="ml-5 text-[11px] text-ink-faint">
                         {rem > 0
-                          ? `毎月${r.post_day >= 28 ? "末日" : `${r.post_day}日`}・残り${rem}回${total > 0 ? `／全${total}回` : ""}（あと${fmtYen(r.amount * rem)}）${r.end_month ? `・${r.end_month.slice(0, 4)}年${Number(r.end_month.slice(5))}月まで` : ""}`
+                          ? `毎月${r.post_day >= 31 ? "末日" : `${r.post_day}日`}・残り${rem}回${total > 0 ? `／全${total}回` : ""}（あと${fmtYen(r.amount * rem)}）${r.end_month ? `・${r.end_month.slice(0, 4)}年${Number(r.end_month.slice(5))}月まで` : ""}`
                           : "支払い完了（消してOK）"}
                       </p>
                     </li>
@@ -1119,8 +1130,11 @@ export default function SettingsPage() {
               max={31}
               value={spDay}
               onChange={(e) => setSpDay(e.target.value)}
-              placeholder="支払日（1〜31）"
-              title="支払日を1〜31で入力（31=末日）"
+              onBlur={() =>
+                setSpDay(spDay.trim() === "" ? "27" : String(Math.min(31, Math.max(1, Math.round(Number(spDay) || 27)))))
+              }
+              placeholder="毎月の支払日（1〜31）"
+              title="毎月この日に支払い計上（1〜31・31=末日）"
               className={`${input} w-full min-w-0`}
             />
           </div>
@@ -1248,7 +1262,7 @@ export default function SettingsPage() {
       <section id="tags" className="zig zig-t zig-b px-4 py-4 shadow-sm">
         <h2 className="dot text-sm">タグ</h2>
         <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
-          カテゴリとは別に、1つの支出へ複数付けられるラベルです（例：旅行・推し活・こだわり買い）。記録の編集画面から付けて、グラフの「タグ別の支出」でまとめて集計できます。
+          カテゴリとは別に、1つの支出へ複数付けられるラベルです（例：旅行・推し活・こだわり買い）。付け方は、<span className="text-ink">「履歴」で支払いをタップ → 開いた画面でタグを選ぶ</span>だけ（記録のあとからでもOK）。付けたタグは <span className="text-ink">グラフの「タグ別の支出」</span> でまとめて見られます。
         </p>
         <Fold summary={`${tags.length}件`}>
           <div className="flex flex-wrap gap-1.5">

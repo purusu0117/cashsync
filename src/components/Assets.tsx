@@ -204,17 +204,23 @@ export default function Assets() {
       <section className="zig zig-t zig-b px-5 py-5 text-center shadow-sm">
         <h2 className="dot text-sm tracking-[0.1em] text-ink-faint">純資産（資産−負債）</h2>
         <p
-          className={`dot mt-1 text-3xl tabular-nums ${netWorth < 0 ? "text-vermilion" : "text-sage"}`}
+          className={`dot mt-1 text-3xl tabular-nums ${
+            netWorth < 0 ? "text-vermilion" : netWorth === 0 ? "text-ink-faint" : "text-sage"
+          }`}
         >
           {fmtYen(netWorth)}
         </p>
         {diff !== null ? (
           <p className="mt-1 text-xs">
             <span className="text-ink-faint">前月比 </span>
-            <span className={`dot tabular-nums ${diff < 0 ? "text-vermilion" : "text-sage"}`}>
-              {diff >= 0 ? "+" : "−"}
-              {fmtYen(Math.abs(diff))}
-            </span>
+            {diff === 0 ? (
+              <span className="dot tabular-nums text-ink-faint">±{fmtYen(0)}</span>
+            ) : (
+              <span className={`dot tabular-nums ${diff < 0 ? "text-vermilion" : "text-sage"}`}>
+                {diff > 0 ? "+" : "−"}
+                {fmtYen(Math.abs(diff))}
+              </span>
+            )}
           </p>
         ) : (
           <p className="mt-1 text-[11px] text-ink-faint">前月の記録がたまると前月比が出ます</p>
@@ -307,11 +313,11 @@ export default function Assets() {
                     className="flex w-full items-baseline text-left text-sm"
                   >
                     <KindIcon kind={a.kind} className="mr-1.5 h-4 w-4 shrink-0 self-center text-ink-faint" />
-                    <span>{a.name}</span>
-                    <span className="ml-1.5 text-[10px] text-ink-faint">{KIND_LABEL[a.kind]}</span>
+                    <span className="min-w-0 truncate">{a.name}</span>
+                    <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">{KIND_LABEL[a.kind]}</span>
                     <span className="leader" />
                     <span
-                      className={`dot text-[15px] tabular-nums ${a.kind === "debt" ? "text-vermilion" : ""}`}
+                      className={`dot shrink-0 text-[15px] tabular-nums ${a.kind === "debt" ? "text-vermilion" : ""}`}
                     >
                       {a.kind === "debt" ? fmtYen(-a.balance) : fmtYen(a.balance)}
                     </span>

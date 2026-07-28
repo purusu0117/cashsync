@@ -351,6 +351,14 @@ export default function CalendarPage() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [month, loadCal, loadShifts, loadJobs, autoSync]);
 
+  // M5: 月を切り替えるときは複数日まとめて登録の選択をクリアする。
+  // （他月で選んだ日付が見えないまま残り、別月のシフトに混入するのを防ぐ）
+  function goMonth(delta: number) {
+    setMultiMode(false);
+    setMultiDates(new Set());
+    setMonth((m) => shiftMonth(m, delta));
+  }
+
   // --- シフト操作（旧 /shifts から移植） ---
   // 同日掛け持ち対応：1日に複数シフトを持てる
   const byDate = new Map<string, Shift[]>();
@@ -743,11 +751,11 @@ export default function CalendarPage() {
     <div className="space-y-4">
       {/* 1) 月ヘッダ */}
       <header className="flex items-center justify-between">
-        <button onClick={() => setMonth(shiftMonth(month, -1))} className="dot px-3 py-1 text-lg">
+        <button onClick={() => goMonth(-1)} className="dot px-3 py-1 text-lg">
           ◀
         </button>
         <h1 className="dot text-lg">{fmtMonthJa(month)}のお金</h1>
-        <button onClick={() => setMonth(shiftMonth(month, 1))} className="dot px-3 py-1 text-lg">
+        <button onClick={() => goMonth(1)} className="dot px-3 py-1 text-lg">
           ▶
         </button>
       </header>
@@ -922,7 +930,7 @@ export default function CalendarPage() {
               <button
                 key={date}
                 onClick={() => openDay(date)}
-                className={`relative flex h-14 flex-col items-center gap-0.5 pt-1 ${
+                className={`relative flex min-h-14 flex-col items-center gap-0.5 pb-1 pt-1 ${
                   picked ? "rounded-md border-2 border-vermilion" : ""
                 }`}
               >
@@ -1126,7 +1134,7 @@ export default function CalendarPage() {
                         disabled={parsing || !text.trim()}
                         className="dot shrink-0 rounded-md border border-ink px-4 text-sm disabled:opacity-40"
                       >
-                        {parsing ? "…" : "解析"}
+                        {parsing ? "…" : "変換"}
                       </button>
                     </div>
                   )}
@@ -1250,6 +1258,7 @@ export default function CalendarPage() {
                     <input
                       type="number"
                       inputMode="numeric"
+                      min={0}
                       value={msBrk}
                       onChange={(e) => setMsBrk(e.target.value)}
                       title="休憩(分)"
@@ -1564,6 +1573,7 @@ export default function CalendarPage() {
                       <input
                         type="number"
                         inputMode="numeric"
+                        min={0}
                         value={shiftBreak}
                         onChange={(e) => setShiftBreak(e.target.value)}
                         className="w-16 rounded-md border border-rule bg-paper px-2 py-1.5 text-right"
@@ -1633,6 +1643,7 @@ export default function CalendarPage() {
                 <input
                   type="number"
                   inputMode="numeric"
+                  min={0}
                   value={eBrk}
                   onChange={(e) => setEBrk(e.target.value)}
                   className="w-20 rounded-md border border-rule bg-paper px-3 py-2 text-base tabular-nums"
@@ -1767,6 +1778,22 @@ export default function CalendarPage() {
                 show("元に戻しました");
               } catch (e) {
                 show(e instanceof Error ? e.message : "元に戻せませんでした。");
+              }
+            });
+          }}
+          onDuplicated={(undo) => {
+            // M6: 履歴の編集シートと揃える。「もう一度」は今日の日付で複製する
+            const amount = editing.amount;
+            setEditing(null);
+            const now = todayLocal().slice(0, 7);
+            setMonth(now);
+            show(`今日の日付で記録しました ${fmtYen(amount)}`, async () => {
+              try {
+                await undo();
+                reload(now);
+                show("記録を取り消しました");
+              } catch (e) {
+                show(e instanceof Error ? e.message : "取り消しに失敗しました。");
               }
             });
           }}

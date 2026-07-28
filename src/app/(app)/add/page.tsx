@@ -34,7 +34,7 @@ interface SpeechRecognitionLike {
   interimResults: boolean;
   onresult: ((e: SpeechResultEvent) => void) | null;
   onend: (() => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((e: { error?: string }) => void) | null;
   start: () => void;
   stop: () => void;
 }
@@ -89,6 +89,8 @@ export default function AddPage() {
   // 録音は「自分でタップして止めるまで」続ける（無音でOSが切っても自動で再開）。止めたら全文を解析。
   const finalTextRef = useRef("");
   const stopRequestedRef = useRef(false);
+  // C5: マイク権限拒否（not-allowed / service-not-allowed）を検知したら自動再開を止める
+  const micDeniedRef = useRef(false);
   const [liveText, setLiveText] = useState("");
 
   function toggleVoice() {
@@ -112,6 +114,7 @@ export default function AddPage() {
     rec.interimResults = true;
     finalTextRef.current = "";
     stopRequestedRef.current = false;
+    micDeniedRef.current = false;
     setLiveText("");
     rec.onresult = (e) => {
       let interim = "";
@@ -123,7 +126,8 @@ export default function AddPage() {
       setLiveText(finalTextRef.current + interim);
     };
     rec.onend = () => {
-      if (!stopRequestedRef.current) {
+      // 権限拒否のときは再startすると無限ループになるので、文章入力にフォールバックする
+      if (!stopRequestedRef.current && !micDeniedRef.current) {
         try {
           rec.start(); // 無音で切られた → ユーザーが止めるまで再開
           return;
@@ -134,13 +138,20 @@ export default function AddPage() {
       setListening(false);
       const t = finalTextRef.current.trim();
       setLiveText("");
+      if (micDeniedRef.current) {
+        setShowTextInput(true);
+        setError("マイクを使えませんでした。文章で入力してください。");
+        return;
+      }
       if (t) {
         setText(t);
         parseText(t);
       }
     };
-    rec.onerror = () => {
-      /* onendで処理 */
+    rec.onerror = (e) => {
+      if (e?.error === "not-allowed" || e?.error === "service-not-allowed") {
+        micDeniedRef.current = true;
+      }
     };
     recRef.current = rec;
     setListening(true);
@@ -293,7 +304,7 @@ export default function AddPage() {
             onClick={() => setShowTextInput(true)}
             className="mt-2 w-full text-center text-[11px] text-ink-faint underline underline-offset-2"
           >
-            文章で書いて変換する（例：昨日セブンで650円）
+            文字で入力する（例：昨日セブンで650円）
           </button>
         ) : (
           <div className="mt-2 flex gap-2">
@@ -336,7 +347,10 @@ export default function AddPage() {
             type="number"
             inputMode="numeric"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => {
+              setAmount(e.target.value);
+              setParsedNote(""); // 手編集したら「変換しました」の✓案内は取り消す
+            }}
             placeholder="0"
             className="dot mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2.5 text-3xl tabular-nums outline-none focus:border-ink"
           />
@@ -346,7 +360,10 @@ export default function AddPage() {
           <input
             type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => {
+              setDate(e.target.value);
+              setParsedNote("");
+            }}
             className="mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
           />
         </label>
@@ -431,7 +448,7 @@ export default function AddPage() {
             disabled={busy}
             className="dot w-full rounded-md bg-vermilion py-3 text-lg text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none disabled:opacity-50"
           >
-            {busy ? "保存中・・・" : amount ? `${fmtYen(Number(amount))} で記録` : "記録する"}
+            {busy ? "保存中・・・" : Number(amount) > 0 ? `${fmtYen(Number(amount))} で記録` : "記録する"}
           </button>
         </div>
       </section>

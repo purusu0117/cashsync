@@ -17,6 +17,7 @@ function ResetPasswordForm() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return; // 連打防止（多重送信ガード）
     if (password.length < 8) {
       setError("パスワードは8文字以上にしてください。");
       return;

@@ -366,7 +366,23 @@ export default function HomePage() {
     }
   }
 
-  if (error && !data) return <p className="mt-10 text-center text-sm text-vermilion">{error}</p>;
+  // C1: 初回読み込み失敗は赤文言だけの行き止まりにせず、その場で再試行できるようにする
+  if (error && !data)
+    return (
+      <div className="mt-16 text-center">
+        <p className="dot text-sm text-vermilion">読み込めませんでした</p>
+        <p className="mt-1 text-xs text-ink-faint">{error}</p>
+        <button
+          onClick={() => {
+            setError("");
+            load();
+          }}
+          className="dot mt-4 rounded-md border border-ink px-6 py-2.5 text-sm active:translate-y-0.5"
+        >
+          もう一度試す
+        </button>
+      </div>
+    );
   if (!data) return <Loading />;
 
   const { summary, forecast, savingsGoal, noMoney } = data;
@@ -391,6 +407,14 @@ export default function HomePage() {
   const fmtMD = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   const goalPct =
     savingsGoal > 0 ? Math.max(0, Math.min(100, Math.round((forecast.forecast / savingsGoal) * 100))) : 0;
+  // C3: 収入源（バイト or 定期収入）が未登録なら、冷たい ¥0 ではなく登録導線を出す
+  const noIncomeSource = data.counts
+    ? data.counts.jobs === 0 && (data.counts.recurringIncome ?? 0) === 0
+    : false;
+  // C4: 桁数に応じて金額の文字サイズを縮小し、64pxの桁あふれ（横スクロール）を防ぐ
+  const allowanceStr = fmtYen(data.allowance);
+  const allowanceSize =
+    allowanceStr.length > 10 ? "text-[40px]" : allowanceStr.length > 8 ? "text-[52px]" : "text-[64px]";
 
   return (
     <div className="space-y-5">
@@ -606,7 +630,31 @@ export default function HomePage() {
 
         <div className="cutline my-3.5" />
 
-        {budgetExhausted ? (
+        {noIncomeSource ? (
+          /* C3: 収入未登録の新規ユーザーに巨大な ¥0 を出さず、収入登録へ導く */
+          <>
+            <p className="dot text-center text-sm tracking-[0.18em] text-ink-faint">＊ 今日あと使える ＊</p>
+            <p className="dot mt-4 text-center text-2xl leading-snug">
+              まず収入を登録すると
+              <br />
+              ここに金額が出ます
+            </p>
+            <div className="mt-4 flex justify-center gap-2">
+              <Link
+                href="/settings#jobs"
+                className="dot rounded border border-ink px-3 py-1.5 text-sm active:translate-y-0.5"
+              >
+                シフトで登録
+              </Link>
+              <Link
+                href="/settings#recurring"
+                className="dot rounded border border-ink px-3 py-1.5 text-sm active:translate-y-0.5"
+              >
+                給料で登録
+              </Link>
+            </div>
+          </>
+        ) : budgetExhausted ? (
           /* B2: 予算の土台がマイナス＝日割りしても意味がないので、数式ではなく文言カードに切り替える */
           <>
             <p className="dot text-center text-sm tracking-[0.18em] text-ink-faint">＊ 今日あと使える ＊</p>
@@ -628,8 +676,10 @@ export default function HomePage() {
         ) : (
           <>
             <p className="dot text-center text-sm tracking-[0.18em] text-ink-faint">＊ 今日あと使える ＊</p>
-            <p className={`dot mt-3 text-center text-[64px] leading-none tabular-nums ${signalColor}`}>
-              {fmtYen(data.allowance)}
+            <p
+              className={`dot mt-3 break-words px-1 text-center leading-none tabular-nums ${allowanceSize} ${signalColor}`}
+            >
+              {allowanceStr}
             </p>
             {data.budget && (
               <p className="mt-2 text-center text-xs text-ink-faint">
@@ -697,7 +747,8 @@ export default function HomePage() {
           <div className="mt-3">
             <div className="flex items-baseline justify-between text-xs text-ink-faint">
               <span>貯金目標 {fmtYen(savingsGoal)}</span>
-              <span className="dot tabular-nums">{goalPct}%</span>
+              {/* C6: forecast/goal は「達成見込み率」。進捗率と誤読されないよう明示する */}
+              <span className="dot tabular-nums">このペースで達成見込み {goalPct}%</span>
             </div>
             <div className="mt-1 h-2 rounded-full bg-paper">
               <div
@@ -860,7 +911,7 @@ export default function HomePage() {
                 <span className="dot text-[15px] tabular-nums">{fmtYen(e.amount)}</span>
                 <button
                   onClick={() => setConfirmId(e.id)}
-                  className="shrink-0 px-1 text-xs text-ink-faint"
+                  className="-my-1.5 shrink-0 px-2.5 py-1.5 text-xs text-ink-faint"
                   aria-label="削除"
                 >
                   ✕

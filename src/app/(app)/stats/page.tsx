@@ -638,6 +638,11 @@ export default function StatsPage() {
         <p className="mt-0.5 text-[11px] text-ink-faint">
           カテゴリごとに月予算を決めて封筒に入れるイメージ。残りが見えると使いすぎが止まります。
         </p>
+        {pockets.length === 0 && (
+          <p className="cutline mt-3 py-4 pt-3 text-center text-xs text-ink-faint">
+            カテゴリを作ると、ここで袋分けの月予算を決められます。
+          </p>
+        )}
         <ul className="mt-3 space-y-2.5">
           {pockets.map((p) => {
             const pct = p.budget > 0 ? Math.min(150, Math.round((p.spent / p.budget) * 100)) : 0;

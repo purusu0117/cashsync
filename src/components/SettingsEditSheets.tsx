@@ -103,7 +103,10 @@ export function JobEditSheet({
   // 追加フォームの選択肢に無い既存値（任意の日）はそのまま選択肢に含めて保持する
   const closingOpts = Array.from(new Set(["31", "10", "15", "20", "25", closing]));
   const payDayOpts = Array.from(new Set(["10", "15", "20", "25", "31", payDay]));
-  const dayLabel = (d: string) => (Number(d) >= 28 ? "末日" : `${d}日`);
+  // 締め日は payPeriodFor が 28以上を月末締め扱いにするため 28〜31 を「末日」表示のまま。
+  // 支払日（給料日）は daysInMonth にクランプされる実挙動なので 31 のときだけ「末日」。
+  const closingLabel = (d: string) => (Number(d) >= 28 ? "末日" : `${d}日`);
+  const payLabel = (d: string) => (Number(d) >= 31 ? "末日" : `${d}日`);
 
   async function save() {
     setBusy(true);
@@ -158,7 +161,7 @@ export function JobEditSheet({
         <select value={closing} onChange={(e) => setClosing(e.target.value)} className={input}>
           {closingOpts.map((d) => (
             <option key={d} value={d}>
-              {dayLabel(d)}締め
+              {closingLabel(d)}締め
             </option>
           ))}
         </select>
@@ -175,7 +178,7 @@ export function JobEditSheet({
           >
             {payDayOpts.map((d) => (
               <option key={d} value={d}>
-                支払日：{dayLabel(d)}
+                支払日：{payLabel(d)}
               </option>
             ))}
           </select>

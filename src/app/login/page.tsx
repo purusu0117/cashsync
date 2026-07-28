@@ -19,6 +19,11 @@ export default function LoginPage() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return; // 連打防止
+    // C7: 新規登録は名前必須（ホーム挨拶の「　さん」表示を防ぐ）
+    if (mode === "register" && !name.trim()) {
+      setError("お名前を入力してください。");
+      return;
+    }
     // A7: 新規登録は8文字以上（既存ユーザーのログインはチェックしない）
     if (mode === "register" && password.length < 8) {
       setError("パスワードは8文字以上にしてください。");

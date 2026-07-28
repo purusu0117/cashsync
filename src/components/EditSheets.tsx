@@ -86,6 +86,7 @@ export function ExpenseEditSheet({
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set(expense.tag_ids ?? []));
   const [newTag, setNewTag] = useState("");
   const [tagBusy, setTagBusy] = useState(false);
+  const [tagLoadError, setTagLoadError] = useState(false); // タグ初期取得の失敗を小さく知らせる
   // 初期タグの取得が終わるまで tagIds を送らない（読込前に保存すると既存タグを全消しするレース対策）。
   // tag_ids が最初から渡っている or タグ機能OFFなら即 ready。
   const [tagsReady, setTagsReady] = useState(!tagsEnabled || expense.tag_ids !== undefined);
@@ -102,10 +103,12 @@ export function ExpenseEditSheet({
         if (alive) {
           setSelectedTags(new Set(d.tagIds ?? []));
           setTagsReady(true); // 取得完了。ここで初めて tagIds を保存に含めてよくなる
+          setTagLoadError(false);
         }
       })
       .catch(() => {
         /* 取得失敗時は tagsReady=false のまま＝保存で tagIds を送らず既存タグを保持する */
+        if (alive) setTagLoadError(true);
       });
     return () => {
       alive = false;
@@ -242,7 +245,12 @@ export function ExpenseEditSheet({
           {/* 横断タグ：カテゴリとは別に複数付けられる（親が tags を渡した時だけ表示） */}
           {tagsEnabled && (
             <div>
-              <p className="dot text-[11px] text-ink-faint">タグ（複数可）</p>
+              <p className="dot text-[11px] text-ink-faint">タグ（任意・複数可）</p>
+              {tagLoadError && (
+                <p className="mt-0.5 text-[11px] text-caution">
+                  タグを読み込めませんでした（このまま保存すると今のタグは保持されます）
+                </p>
+              )}
               <div className="mt-1 flex flex-wrap gap-1.5">
                 {tagList.map((t) => (
                   <button

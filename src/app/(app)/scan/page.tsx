@@ -253,6 +253,8 @@ export default function ScanPage() {
   // 未割当（レシート合計に満たない分）。保存時は「その他」に寄せて合計を一致させる
   const splitRemainder = (scan?.total ?? 0) - splitAssigned;
   const splitReady = splitRows.filter((r) => r.amount > 0).length >= 2;
+  // 実際に保存される合計：未割当は「その他」に寄せてレシート合計に一致／過割当は割当額そのまま。
+  const splitSavedTotal = Math.max(scan?.total ?? 0, splitAssigned);
 
   async function save(allowDuplicate = false) {
     if (!scan) return;
@@ -284,7 +286,9 @@ export default function ScanPage() {
                 categoryId,
                 suggestedCategoryId, // 提案から変更されていたらサーバーが店名→カテゴリを学習する
                 items: scan.items,
-                // 分割モードON時のみ：カテゴリ単位でまとめて複数 expense を作る（合計はサーバーで一致補正）
+                // 分割モードON時のみ：カテゴリ単位でまとめて複数 expense を作る。
+                // 未割当（レシート合計に満たない分）はサーバーで「その他」に寄せて合計一致、
+                // 過割当（合計を超える分）は入力した割当額のまま保存される（receiptSplit の実挙動）。
                 splits:
                   splitMode && splitReady
                     ? splitRows.map((r) => ({ categoryId: r.categoryId, amount: r.amount }))
@@ -398,7 +402,11 @@ export default function ScanPage() {
           )}
           <div className="zig zig-t zig-b px-5 py-6 text-center shadow-sm">
             <p className="dot printing text-lg">＊＊＊ 解析中 ＊＊＊</p>
-            <p className="mt-2 text-xs text-ink-faint">AIが読み取り中です（10〜30秒）</p>
+            <p className="mt-2 text-xs text-ink-faint">
+              {elapsed > 30
+                ? "混雑していて少し時間がかかっています。もう少しお待ちください"
+                : "AIが読み取り中です（通常10〜30秒・混雑時は少しかかります）"}
+            </p>
             {/* C5: サーバー側で処理が続くので、閉じても消えないことを明示する */}
             <p className="mt-1 text-xs text-sage">
               このまま閉じても大丈夫です。終わったら通知でお知らせします
@@ -684,7 +692,7 @@ export default function ScanPage() {
                 )}
                 {splitRemainder < 0 && (
                   <p className="mt-1 text-[11px] text-vermilion">
-                    割当が合計を {fmtYen(-splitRemainder)} 超えています（この金額で記録します）
+                    割当がレシート合計を {fmtYen(-splitRemainder)} 超えています。割当額の {fmtYen(splitAssigned)} で記録します
                   </p>
                 )}
                 {!splitReady && (
@@ -745,7 +753,7 @@ export default function ScanPage() {
               {phase === "saving"
                 ? "保存中・・・"
                 : splitMode && splitReady && scan.kind === "expense"
-                  ? `${fmtYen(scan.total)} を分けて記録`
+                  ? `${fmtYen(splitSavedTotal)} を分けて記録`
                   : `${fmtYen(scan.total)} を${scan.kind === "income" ? "収入として" : ""}記録`}
             </button>
           </div>

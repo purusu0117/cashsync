@@ -4,6 +4,7 @@
 // C7: 行の✕は廃止し、削除は編集シート内から（削除後はUndoつきトースト）。
 // B11: 上部の検索ボックス（店名/メモ部分一致＋カテゴリ＋金額範囲。全期間・サーバー側ページング）。
 // C15: 未来月へも送れる。予定（定期・分割・給料日）はカレンダーと同じ plan API から薄字で表示。
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ExpenseEditSheet, IncomeEditSheet } from "@/components/EditSheets";
 import Loading from "@/components/Loading";
@@ -81,6 +82,7 @@ export default function HistoryPage() {
   // C15: 未来月の予定（カレンダーと同じ plan API）
   const [plan, setPlan] = useState<MonthPlan | null>(null);
   const [ready, setReady] = useState(false); // 初回データ（キャッシュ含む）が来るまでスケルトン表示
+  const [loadStalled, setLoadStalled] = useState(false); // C2: 初回読み込みが失敗して固まったまま
   const { toast, show, hide } = useToast(); // A6: 保存・削除・複製の完了フィードバック
 
   // --- B11: 検索 ---
@@ -181,6 +183,14 @@ export default function HistoryPage() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [month, load]);
 
+  // C2: 初回読み込みが一定時間で来ないなら、Loadingで固まらず「再試行」に切り替える
+  // （ready になれば早期リターンで loadStalled は参照されないため、同期 setState はしない）
+  useEffect(() => {
+    if (ready) return;
+    const t = setTimeout(() => setLoadStalled(true), 8000);
+    return () => clearTimeout(t);
+  }, [ready]);
+
   const total = expenses.reduce((s, e) => s + e.amount, 0);
   const byDate = new Map<string, Expense[]>();
   for (const e of expenses) {
@@ -224,7 +234,23 @@ export default function HistoryPage() {
     });
   }
 
-  if (!ready) return <Loading />;
+  if (!ready)
+    return loadStalled ? (
+      <div className="mt-16 text-center">
+        <p className="dot text-sm text-vermilion">読み込めませんでした</p>
+        <button
+          onClick={() => {
+            setLoadStalled(false);
+            load(month);
+          }}
+          className="dot mt-4 rounded-md border border-ink px-6 py-2.5 text-sm active:translate-y-0.5"
+        >
+          再試行
+        </button>
+      </div>
+    ) : (
+      <Loading />
+    );
 
   const inputCls =
     "rounded-md border border-rule bg-paper px-3 py-2 text-sm outline-none focus:border-ink";
@@ -277,6 +303,11 @@ export default function HistoryPage() {
               placeholder="金額 上限"
               className={`${inputCls} min-w-0 tabular-nums`}
             />
+            {fMin && fMax && Number(fMin) > Number(fMax) && (
+              <p className="col-span-2 text-[11px] text-caution">
+                下限が上限より大きいため、条件に合う記録が出ないことがあります。
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -295,8 +326,8 @@ export default function HistoryPage() {
                 onClick={() => setEditing({ ...e })}
                 className="flex w-full items-baseline py-1.5 text-left text-sm"
               >
-                <span className="shrink-0 text-[11px] text-ink-faint tabular-nums">
-                  {e.date.slice(2).replace(/-/g, "/")}
+                <span className="shrink-0 text-[11px] text-ink-faint">
+                  {fmtDateJa(e.date)}
                 </span>
                 <span className="ml-1.5 truncate">{e.memo || e.category || "支出"}</span>
                 <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">{e.category}</span>
@@ -344,6 +375,10 @@ export default function HistoryPage() {
           <p className="dot text-xs tracking-[0.18em] text-ink-faint">＊ 支出合計 ＊</p>
           <p className="dot mt-1 text-4xl leading-none tabular-nums">{fmtYen(total)}</p>
           <p className="mt-1 text-[11px] text-ink-faint">{expenses.length}件の記録</p>
+          {/* C9: ホームは行末✕、履歴はタップ→編集シート内削除。導線の違いを一言で示す */}
+          {(expenses.length > 0 || incomes.length > 0) && (
+            <p className="text-[10px] text-ink-faint">記録をタップで編集・削除できます</p>
+          )}
           {/* C15: 未来月は予定の合計も添える */}
           {plan && (plan.expenseTotal > 0 || plan.incomeTotal > 0) && (
             <p className="dot mt-1 text-[11px] text-ink-faint">
@@ -355,7 +390,7 @@ export default function HistoryPage() {
         {/* 収入（シフト給与以外：スクショ収入・仕送り等） */}
         {incomes.length > 0 && (
           <section className="cutline mt-3 pt-3">
-            <h2 className="dot text-xs tracking-[0.1em] text-sage">収入（バイト給与を除く）</h2>
+            <h2 className="dot text-xs tracking-[0.1em] text-sage">その他の収入（バイト給与を除く）</h2>
             <ul className="mt-0.5">
               {incomes.map((i) => (
                 <li key={i.id}>
@@ -410,7 +445,15 @@ export default function HistoryPage() {
           );
         })}
         {expenses.length === 0 && incomes.length === 0 && planItems.length === 0 && (
-          <p className="py-8 text-center text-xs text-ink-faint">この月の記録はありません。</p>
+          <div className="cutline mt-3 py-8 pt-6 text-center">
+            <p className="text-xs text-ink-faint">この月の記録はありません。</p>
+            <Link
+              href="/add"
+              className="dot mt-3 inline-block rounded-md border border-ink px-5 py-2 text-sm active:translate-y-0.5"
+            >
+              記録する
+            </Link>
+          </div>
         )}
 
         {/* C15: 予定（定期・分割・給料日）。カレンダーと同じデータを薄字で印字する */}
