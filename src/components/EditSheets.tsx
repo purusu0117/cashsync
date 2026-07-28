@@ -86,6 +86,9 @@ export function ExpenseEditSheet({
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set(expense.tag_ids ?? []));
   const [newTag, setNewTag] = useState("");
   const [tagBusy, setTagBusy] = useState(false);
+  // 初期タグの取得が終わるまで tagIds を送らない（読込前に保存すると既存タグを全消しするレース対策）。
+  // tag_ids が最初から渡っている or タグ機能OFFなら即 ready。
+  const [tagsReady, setTagsReady] = useState(!tagsEnabled || expense.tag_ids !== undefined);
 
   useEffect(() => setTagList(tags ?? []), [tags]);
 
@@ -96,9 +99,14 @@ export function ExpenseEditSheet({
     netFetch(`/api/tags?expenseId=${expense.id}`)
       .then((r) => r.json())
       .then((d: { tagIds?: string[] }) => {
-        if (alive) setSelectedTags(new Set(d.tagIds ?? []));
+        if (alive) {
+          setSelectedTags(new Set(d.tagIds ?? []));
+          setTagsReady(true); // 取得完了。ここで初めて tagIds を保存に含めてよくなる
+        }
       })
-      .catch(() => {});
+      .catch(() => {
+        /* 取得失敗時は tagsReady=false のまま＝保存で tagIds を送らず既存タグを保持する */
+      });
     return () => {
       alive = false;
     };
@@ -145,8 +153,8 @@ export function ExpenseEditSheet({
             amount: draft.amount,
             categoryId: draft.category_id,
             memo: draft.memo,
-            // tagIds はタグ欄がある時だけ送る（未指定なら expense_tags を一切触らない後方互換）
-            ...(tagsEnabled ? { tagIds: [...selectedTags] } : {}),
+            // tagIds はタグ欄があり、かつ初期タグ取得が終わっている時だけ送る（未取得で送ると既存タグを消す）
+            ...(tagsEnabled && tagsReady ? { tagIds: [...selectedTags] } : {}),
           },
           "PUT",
         ),
@@ -184,7 +192,7 @@ export function ExpenseEditSheet({
           categoryId: draft.category_id,
           memo: draft.memo,
           source: "manual",
-          ...(tagsEnabled ? { tagIds: [...selectedTags] } : {}),
+          ...(tagsEnabled && tagsReady ? { tagIds: [...selectedTags] } : {}),
         }),
       );
       onDuplicated?.(() => apiCall(`/api/expenses?id=${d.id}`, { method: "DELETE" }));
