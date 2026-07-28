@@ -18,6 +18,7 @@ import { netFetch } from "@/lib/clientApi";
 import { fmtDateJa, fmtYen, todayLocal } from "@/lib/format";
 import { deletePhotos, isNativePlatform, listRecentScreenshots } from "@/lib/native";
 import { takePendingImage } from "@/lib/pendingImage";
+import { track } from "@/lib/track";
 
 interface Scan {
   kind: "expense" | "income";
@@ -182,6 +183,7 @@ export default function ScanPage() {
         setPhase("failed");
         return;
       }
+      track("scan_used"); // 自前計測：レシートAI読み取りの利用（解析成功）
       setScan({ ...d.scan, date: d.scan.date || todayLocal() });
       setImageHash(d.imageHash ?? ""); // 保存時に渡して「同じ画像の二度読み」を記録に残す
       setCategoryId(d.categoryId);

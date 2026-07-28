@@ -3,6 +3,7 @@
 // 設定：プラン（プレミアム課金）／バイト先（時給）／定期支出・収入／カテゴリ／ログアウト
 import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import AdminAnalytics from "@/components/AdminAnalytics";
 import { CardIcon, CategoryIcon, CoinIcon } from "@/components/Icons";
 import { ExportSection, ImportSection } from "@/components/ImportExport";
 import Loading from "@/components/Loading";
@@ -19,6 +20,7 @@ import { apiCall, apiJson } from "@/lib/clientApi";
 import { fmtYen } from "@/lib/format";
 import { clearWidgetAuth, isNativePlatform, scheduleLocalReminder } from "@/lib/native";
 import { isPurchasesAvailable, purchasePremium, restorePremium } from "@/lib/purchases";
+import { track } from "@/lib/track";
 
 interface Job {
   id: string;
@@ -231,6 +233,7 @@ export default function SettingsPage() {
     try {
       const r = await purchasePremium(); // Appleの購入シートが開く
       if (r.status === "cancelled") return;
+      if (r.active) track("subscribe"); // 自前計測：課金成功
       await syncPlan(r.active);
       setPlanNotice(
         r.active
@@ -689,6 +692,8 @@ export default function SettingsPage() {
   return (
     <div className="space-y-5">
       <h1 className="dot text-lg">設定</h1>
+      {/* 管理者(founder)だけに表示される最小アナリティクス。非管理者では何も出ない */}
+      <AdminAnalytics />
       {pageError && (
         <p className="rounded-md border border-vermilion px-3 py-2 text-sm text-vermilion">
           {pageError}

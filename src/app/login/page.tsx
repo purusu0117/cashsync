@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { NETWORK_ERROR_MESSAGE, clearApiCache, netFetch } from "@/lib/cachedFetch";
+import { track } from "@/lib/track";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -64,6 +65,8 @@ export default function LoginPage() {
         setBusy(false);
         return;
       }
+      // 自前計測：新規登録の成功だけ記録（ログインは対象外）
+      if (mode === "register") track("signup");
       // 前のユーザーのキャッシュが残らないよう、遷移前に全消し
       clearApiCache();
       router.replace("/");

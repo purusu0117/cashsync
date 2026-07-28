@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import AppClientBoot from "@/components/AppClientBoot";
 import AppLock from "@/components/AppLock";
 import BottomNav from "@/components/BottomNav";
 import NativeAds from "@/components/NativeAds";
@@ -21,6 +22,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <NativePurchases userId={user.id} />
       {/* ネイティブ：ウィジェットへトークンを渡す＋記録リマインドをローカル通知として登録 */}
       <NativeWidgetBridge />
+      {/* app_open 計測＋メール未確認バナー（未ログイン/確認済みなら何も出さない） */}
+      <AppClientBoot />
       {children}
       <BottomNav />
       {/* B8: アプリロック（設定でONにした端末のみ。起動時・復帰時に全画面で覆う） */}

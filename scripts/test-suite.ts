@@ -51,11 +51,23 @@ import { collectExportRows, toCsv } from "../src/lib/exportCsv";
 import { decodeCsvBuffer, mapCsv, normalizeDate, parseCsv, resolveCategoryId } from "../src/lib/importCsv";
 import {
   changePassword,
+  consumeEmailVerification,
   consumePasswordReset,
+  createEmailVerification,
+  emailVerificationRequired,
   createPasswordReset,
   deleteAccountWithPassword,
   isResetTokenValid,
+  isUserVerified,
 } from "../src/lib/account";
+import {
+  REWARD_IP_DAILY_MAX,
+  SIGNUP_IP_LIMIT,
+  consumeRewardIp,
+  recentSignupAttempts,
+  recordSignupAttempt,
+} from "../src/lib/abuse";
+import { eventSummary, isKnownEvent, recordEvent } from "../src/lib/events";
 import {
   accountsOverview,
   createAccount,
@@ -2474,6 +2486,133 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
   ))!;
   check("expense_tags に孤児行が残らない", Number(orphan.c) === 0, orphan);
   check("他人はタグを削除できない（false）", (await deleteTag(uid(), t2.id)) === false);
+
+  // --- 22. 公開前の不正対策：メール確認・IPレート制限 ---
+  console.log("[22] 不正対策（メール確認・IP制限）");
+  // 既存ユーザー素通し：email_verified 未指定で作った行はDEFAULT 1 → 確認済み扱い（回帰ガード）
+  const legacyVerifyUser = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    legacyVerifyUser,
+    "legacy-verify@example.com",
+    "既存太郎",
+    hashPassword("password123"),
+    Date.now(),
+  );
+  check("既存ユーザー（email_verified未指定）は確認済み扱い＝素通し", await isUserVerified(legacyVerifyUser));
+
+  // 新規登録相当：email_verified=0 で作る → 未確認
+  const newUser = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at, email_verified) VALUES (?, ?, ?, ?, ?, 0)",
+    newUser,
+    "new-verify@example.com",
+    "新規太郎",
+    hashPassword("password123"),
+    Date.now(),
+  );
+  check("新規ユーザー（email_verified=0）は未確認＝AIコスト系を弾く対象", !(await isUserVerified(newUser)));
+
+  // 確認トークンの発行と消費で verified になる
+  const v = await createEmailVerification(newUser);
+  check("確認トークンが発行される", !!v?.token);
+  check("既に未確認なら別トークン発行できる（既存確認済みユーザーには null）", (await createEmailVerification(legacyVerifyUser)) === null);
+  check("不正なトークンは invalid_token", (await consumeEmailVerification("deadbeef")) === "invalid_token");
+  check("正しいトークンで確認完了（ok）", (await consumeEmailVerification(v!.token)) === "ok");
+  check("確認後は verified になる", await isUserVerified(newUser));
+  check("同じトークンの二度押しは ok 扱い（エラーにしない）", (await consumeEmailVerification(v!.token)) === "ok");
+  check("確認済みユーザーへの再発行は null（重複送信しない）", (await createEmailVerification(newUser)) === null);
+
+  // 環境フラグ REQUIRE_EMAIL_VERIFICATION による ON/OFF 切り替え（既定OFF）。
+  // OFF＝register は email_verified=1 で作成し、未確認でもAIゲートは発動しない。
+  // ON ＝register は email_verified=0 で作成し、未確認をAIゲートで弾く。
+  const savedFlag = process.env.REQUIRE_EMAIL_VERIFICATION;
+  // --- OFF（既定）---
+  delete process.env.REQUIRE_EMAIL_VERIFICATION;
+  check("フラグ未設定なら確認は不要（既定OFF）", emailVerificationRequired() === false);
+  const offUser = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at, email_verified) VALUES (?, ?, ?, ?, ?, ?)",
+    offUser,
+    "off-flag@example.com",
+    "OFF太郎",
+    hashPassword("password123"),
+    Date.now(),
+    emailVerificationRequired() ? 0 : 1, // register と同じ判定＝OFFなら 1（確認済み）
+  );
+  check("OFF時：新規は即確認済みで作られる（摩擦なく全機能）", await isUserVerified(offUser));
+  // 未確認ユーザー（newVerify相当）がいても、OFF時はAIゲート条件が成立しない
+  const offUnverified = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at, email_verified) VALUES (?, ?, ?, ?, ?, 0)",
+    offUnverified,
+    "off-unverified@example.com",
+    "未確認太郎",
+    hashPassword("password123"),
+    Date.now(),
+  );
+  check(
+    "OFF時：未確認でもAIゲートは発動しない（誰でも使える）",
+    !(emailVerificationRequired() && !(await isUserVerified(offUnverified))),
+  );
+  // --- ON ---
+  process.env.REQUIRE_EMAIL_VERIFICATION = "true";
+  check('フラグ "true" なら確認必須（ON）', emailVerificationRequired() === true);
+  const onUser = uid();
+  await d.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at, email_verified) VALUES (?, ?, ?, ?, ?, ?)",
+    onUser,
+    "on-flag@example.com",
+    "ON太郎",
+    hashPassword("password123"),
+    Date.now(),
+    emailVerificationRequired() ? 0 : 1, // register と同じ判定＝ONなら 0（未確認）
+  );
+  check("ON時：新規は未確認で作られる（従来フロー）", !(await isUserVerified(onUser)));
+  check("ON時：未確認ユーザーはAIゲートが発動する", emailVerificationRequired() && !(await isUserVerified(onUser)));
+  check(
+    "ON時：確認済みユーザー（既存）はAIゲートを素通り",
+    !(emailVerificationRequired() && !(await isUserVerified(legacyVerifyUser))),
+  );
+  // フラグを元の値に戻す（後続テスト・並行実行に影響させない）
+  process.env.REQUIRE_EMAIL_VERIFICATION = "false";
+  check('フラグ "false" は OFF 扱い', emailVerificationRequired() === false);
+  if (savedFlag === undefined) delete process.env.REQUIRE_EMAIL_VERIFICATION;
+  else process.env.REQUIRE_EMAIL_VERIFICATION = savedFlag;
+
+  // IPレート制限：同一IPからの新規登録連打
+  const ipA = "203.0.113.10";
+  const ipB = "203.0.113.20";
+  for (let i = 0; i < SIGNUP_IP_LIMIT; i++) await recordSignupAttempt(ipA);
+  check(`同一IPの登録試行が${SIGNUP_IP_LIMIT}件でしきい値に達する（429対象）`, (await recentSignupAttempts(ipA)) >= SIGNUP_IP_LIMIT);
+  check("別IPは0件（連帯で巻き込まない）", (await recentSignupAttempts(ipB)) === 0);
+
+  // リワードのIP日次上限
+  const ipR = "203.0.113.30";
+  let ipGrantOk = true;
+  for (let i = 0; i < REWARD_IP_DAILY_MAX; i++) {
+    const r = await consumeRewardIp(ipR);
+    if (!r.ok) ipGrantOk = false;
+  }
+  check(`リワードはIPあたり${REWARD_IP_DAILY_MAX}回まで許可`, ipGrantOk);
+  check("IP日次上限を超えると拒否（429対象）", !(await consumeRewardIp(ipR)).ok);
+  check("別IPは独立してまだ許可される", (await consumeRewardIp("203.0.113.40")).ok);
+
+  // --- 23. 自前・軽量アナリティクス（events） ---
+  console.log("[23] アナリティクス（events）");
+  check("既知イベント名は受理", isKnownEvent("signup") && isKnownEvent("scan_used"));
+  check("未知イベント名は拒否", !isKnownEvent("evil_event") && !isKnownEvent(123));
+  await recordEvent(newUser, "signup");
+  await recordEvent(newUser, "scan_used", { plan: "free" });
+  await recordEvent(null, "app_open"); // 未ログインでも受ける（user_id null）
+  await recordEvent(newUser, "not_a_real_event"); // 未知は捨てられる（記録されない）
+  const evtSummary = await eventSummary();
+  const signupRow = evtSummary.find((s) => s.name === "signup");
+  const openRow = evtSummary.find((s) => s.name === "app_open");
+  check("signup が1件・ユニーク1人で集計される", signupRow?.count === 1 && signupRow?.users === 1, signupRow);
+  check("app_open は user_id null でも件数に入る", openRow?.count === 1, openRow);
+  check("未知イベントは events に記録されない", evtSummary.every((s) => s.name !== "not_a_real_event"), evtSummary);
+  check("集計の件数・人数は number（方言差なし）", typeof signupRow?.count === "number" && typeof signupRow?.users === "number");
 
   console.log(`\n結果: ${passed} passed / ${failed} failed`);
   return { passed, failed };

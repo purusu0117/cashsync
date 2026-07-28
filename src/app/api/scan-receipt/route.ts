@@ -3,6 +3,7 @@
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
+import { EMAIL_UNVERIFIED_MESSAGE, emailVerificationRequired, isUserVerified } from "@/lib/account";
 import { askClaudeReceipt } from "@/lib/ai";
 import { checkAndCountUsage, getUserPlan, limitResponseBody } from "@/lib/aiUsage";
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
@@ -16,6 +17,10 @@ export async function POST(request: Request) {
   let tmp = "";
   try {
     const user = await requireUser();
+    // 不正対策①（フラグ制御）: 確認必須ON時のみ、未確認ユーザーのAIコスト系を拒否（無料枠farming防止）。
+    if (emailVerificationRequired() && !(await isUserVerified(user.id))) {
+      return Response.json({ error: "unverified", message: EMAIL_UNVERIFIED_MESSAGE }, { status: 403 });
+    }
     const plan = await getUserPlan(user.id);
     const usage = await checkAndCountUsage(user.id, plan, "scans");
     if (!usage.allowed) {

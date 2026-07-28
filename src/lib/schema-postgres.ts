@@ -23,10 +23,14 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     record_push INTEGER NOT NULL DEFAULT 1,
     work_style TEXT NOT NULL DEFAULT 'hourly',
     asset_reminder_day INTEGER NOT NULL DEFAULT -1,
-    last_asset_reminder TEXT
+    last_asset_reminder TEXT,
+    email_verified INTEGER NOT NULL DEFAULT 1
   )`,
   // 記録できたら通知する（既定ON）
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS record_push INTEGER NOT NULL DEFAULT 1`,
+  // 公開前の不正対策①：メール確認済みフラグ。DEFAULT 1 で既存ユーザーは全員「確認済み」に
+  // 自動backfillされる（既存ログインを壊さない）。新規登録だけ 0 で作る。
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified INTEGER NOT NULL DEFAULT 1`,
   // 働き方（収入タイプ）。hourly=時給/シフト制（既定）, salary=月給, daily=日給。レイアウト切替に使う
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS work_style TEXT NOT NULL DEFAULT 'hourly'`,
   // C5: AI読み取りのジョブ化（アプリを閉じても解析が続くように）
@@ -256,6 +260,35 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     PRIMARY KEY (expense_id, tag_id)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_expense_tags_tag ON expense_tags(tag_id)`,
+  // 公開前の不正対策①：新規登録のメール確認トークン（password_resets と同じ作法・24時間・使い捨て）
+  `CREATE TABLE IF NOT EXISTS email_verifications (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    expires_at BIGINT NOT NULL,
+    used_at BIGINT
+  )`,
+  // 公開前の不正対策②：同一IPからの新規登録の連打を弾くための記録。ts はエポックms → BIGINT
+  `CREATE TABLE IF NOT EXISTS signup_attempts (
+    ip TEXT NOT NULL,
+    ts BIGINT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_signup_attempts_ip ON signup_attempts(ip, ts)`,
+  // 公開前の不正対策③：リワード動画ボーナスのIP日次上限
+  `CREATE TABLE IF NOT EXISTS reward_ip_days (
+    ip TEXT NOT NULL,
+    ymd TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (ip, ymd)
+  )`,
+  // 自前・軽量アナリティクス：第三者送信なし・Cookie不要。ts はエポックms → BIGINT
+  `CREATE TABLE IF NOT EXISTS events (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    name TEXT NOT NULL,
+    props_json TEXT NOT NULL DEFAULT '{}',
+    ts BIGINT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_events_name_ts ON events(name, ts)`,
 ];
 
 /** 移行スクリプト用：sqlite→postgresでコピーするテーブル一覧（依存の無い順） */

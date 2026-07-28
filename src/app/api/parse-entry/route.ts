@@ -1,4 +1,5 @@
 // 自然文（「昨日セブンで昼飯650円」）→ 支出レコード案。保存は確認後にクライアントが行う。
+import { EMAIL_UNVERIFIED_MESSAGE, emailVerificationRequired, isUserVerified } from "@/lib/account";
 import { askClaudeParseEntry } from "@/lib/ai";
 import { checkAndCountUsage, getUserPlan, limitResponseBody } from "@/lib/aiUsage";
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
@@ -10,6 +11,10 @@ export const maxDuration = 120;
 export async function POST(request: Request) {
   try {
     const user = await requireUser();
+    // 不正対策①（フラグ制御）: 確認必須ON時のみ、未確認ユーザーのAIコスト系を拒否（無料枠farming防止）。
+    if (emailVerificationRequired() && !(await isUserVerified(user.id))) {
+      return Response.json({ error: "unverified", message: EMAIL_UNVERIFIED_MESSAGE }, { status: 403 });
+    }
     const { text } = (await request.json()) as { text?: string };
     if (!text || !text.trim()) {
       return Response.json({ error: "テキストを入力してください。" }, { status: 400 });

@@ -391,6 +391,35 @@ function migrateSqlite(d: DatabaseSync) {
       PRIMARY KEY (expense_id, tag_id)
     );
     CREATE INDEX IF NOT EXISTS idx_expense_tags_tag ON expense_tags(tag_id);
+    -- 公開前の不正対策①：新規登録のメール確認トークン（password_resets と同じ作法。sha256のみ保存・使い捨て）
+    CREATE TABLE IF NOT EXISTS email_verifications (
+      token_hash TEXT PRIMARY KEY,      -- 確認トークンの sha256（平文はメールリンクにだけ載せる）
+      user_id TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,      -- 有効期限（発行から24時間）
+      used_at INTEGER                   -- 使用済み時刻（NULL=未使用）
+    );
+    -- 公開前の不正対策②：同一IPからの新規登録の連打を弾くための記録（短時間ウィンドウで件数を数える）
+    CREATE TABLE IF NOT EXISTS signup_attempts (
+      ip TEXT NOT NULL,
+      ts INTEGER NOT NULL               -- 登録試行の時刻（エポックms）
+    );
+    CREATE INDEX IF NOT EXISTS idx_signup_attempts_ip ON signup_attempts(ip, ts);
+    -- 公開前の不正対策③：リワード動画ボーナスのIP日次上限（ユーザー単位の上限に加えるIPの歯止め）
+    CREATE TABLE IF NOT EXISTS reward_ip_days (
+      ip TEXT NOT NULL,
+      ymd TEXT NOT NULL,                -- 'YYYY-MM-DD'（JST）
+      count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (ip, ymd)
+    );
+    -- 自前・軽量アナリティクス：第三者送信なし・Cookie不要。user_id は内部IDのみ（未ログインは NULL）
+    CREATE TABLE IF NOT EXISTS events (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,                     -- NULL可（未ログインの app_open 等）
+      name TEXT NOT NULL,
+      props_json TEXT NOT NULL DEFAULT '{}',
+      ts INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_events_name_ts ON events(name, ts);
   `);
   // 追加カラムのマイグレーション（既存DBにも効くよう ALTER を冪等に流す）
   addColumn(d, "categories", "icon TEXT NOT NULL DEFAULT ''"); // 旧DB（icon列なし）向け
@@ -426,6 +455,9 @@ function migrateSqlite(d: DatabaseSync) {
   // 働き方（収入タイプ）。hourly=時給/シフト制（既定・従来挙動）, salary=月給/会社員, daily=日給。
   // これに応じてレイアウト（下タブのシフト表示など）を切り替える。設定でいつでも変更可。
   addColumn(d, "users", "work_style TEXT NOT NULL DEFAULT 'hourly'");
+  // 公開前の不正対策①：メール確認済みフラグ。DEFAULT 1 なので既存ユーザーは全員「確認済み」に
+  // 自動backfillされる（TestFlightユーザーのログイン・利用を一切壊さない）。新規登録だけ 0 で作る。
+  addColumn(d, "users", "email_verified INTEGER NOT NULL DEFAULT 1");
 }
 
 // 掛け持ちバイトの色パレット（紙背景で判別しやすい順）

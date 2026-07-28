@@ -1,5 +1,7 @@
+import { after } from "next/server";
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
+import { recordEvent } from "@/lib/events";
 import { fmtYen } from "@/lib/format";
 import { DUPLICATE_MESSAGE, duplicateIncomeExists } from "@/lib/merchant";
 import { monthRange, todayStr } from "@/lib/money";
@@ -72,6 +74,20 @@ export async function POST(request: Request) {
         `✅${fmtYen(amount)}（${memo || "収入"}）を記録しました`,
       ).catch(() => {});
     }
+    // 自前計測（activated）：初めての記録（支出+収入が1件＝今入れた1件）のときだけ1回。
+    after(async () => {
+      try {
+        const dd = await db();
+        const c = await dd.get<{ c: number }>(
+          "SELECT (SELECT COUNT(*) FROM expenses WHERE user_id = ?) + (SELECT COUNT(*) FROM incomes WHERE user_id = ?) AS c",
+          user.id,
+          user.id,
+        );
+        if (Number(c?.c) === 1) await recordEvent(user.id, "activated", { kind: "income" });
+      } catch {
+        /* 計測失敗は無視 */
+      }
+    });
     return Response.json({ ok: true, id });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();

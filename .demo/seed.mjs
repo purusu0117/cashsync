@@ -10,7 +10,7 @@ if (!user) throw new Error("user not found");
 const U = user.id;
 
 // 名前の文字化け修正＋貯金目標
-db.prepare("UPDATE users SET name = ?, savings_goal = ? WHERE id = ?").run("大翔", 20000, U);
+db.prepare("UPDATE users SET name = ?, savings_goal = ? WHERE id = ?").run("タロー", 20000, U);
 
 // カテゴリID取得
 const cats = {};

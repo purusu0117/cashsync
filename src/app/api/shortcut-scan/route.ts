@@ -5,6 +5,7 @@
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
+import { EMAIL_UNVERIFIED_MESSAGE, emailVerificationRequired, isUserVerified } from "@/lib/account";
 import { askClaudeReceipt } from "@/lib/ai";
 import { checkAndCountUsage, getUserPlan, limitMessage } from "@/lib/aiUsage";
 import { userFromBearer } from "@/lib/auth";
@@ -28,6 +29,10 @@ export async function POST(request: Request) {
         { ok: "false", message: "認証エラー：設定画面のトークンをショートカットに設定してください。" },
         { status: 401 },
       );
+    }
+    // 不正対策①（フラグ制御）: 確認必須ON時のみ、未確認ユーザーのAIコスト系を拒否（既存ユーザーは確認済み扱い）。
+    if (emailVerificationRequired() && !(await isUserVerified(user.id))) {
+      return Response.json({ ok: "false", message: EMAIL_UNVERIFIED_MESSAGE }, { status: 403 });
     }
     const plan = await getUserPlan(user.id);
     const usage = await checkAndCountUsage(user.id, plan, "scans");

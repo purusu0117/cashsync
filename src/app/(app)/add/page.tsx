@@ -7,6 +7,7 @@ import { CategoryIcon, MicIcon, StopIcon } from "@/components/Icons";
 import RewardCredit from "@/components/RewardCredit";
 import { apiCall, apiJson, netFetch } from "@/lib/clientApi";
 import { fmtYen, todayLocal } from "@/lib/format";
+import { track } from "@/lib/track";
 
 interface Category {
   id: string;
@@ -188,6 +189,7 @@ export default function AddPage() {
         if (d.error === "limit") setLimitHit(true);
         throw new Error(d.message ?? d.error ?? "解析に失敗しました。");
       }
+      track("parse_used"); // 自前計測：AI自然文解析の利用
       setAmount(String(d.parsed.amount));
       setDate(d.parsed.date);
       setMemo(d.parsed.memo);
@@ -224,6 +226,7 @@ export default function AddPage() {
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "保存に失敗しました。");
+      track("manual_add", { source: text ? "text" : "manual" }); // 自前計測：手入力/文章からの記録
       // R5: ホームで「記録しました＋元に戻す」トーストを出す（かんたん入力と同じ様式に統一）
       router.push(`/?saved=${n}${d?.id ? `&undo=${d.id}` : ""}`);
       router.refresh();

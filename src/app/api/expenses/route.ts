@@ -1,5 +1,7 @@
+import { after } from "next/server";
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
+import { recordEvent } from "@/lib/events";
 import { learnMerchantCategory } from "@/lib/merchant";
 import { monthRange, postRecurringForMonth, searchExpenses, todayStr } from "@/lib/money";
 import { setExpenseTags } from "@/lib/tags";
@@ -91,6 +93,21 @@ export async function POST(request: Request) {
     );
     // 横断タグは任意。tagIds が配列で来た時だけ張り替える（未指定は expense_tags を一切触らない）
     if (Array.isArray(body.tagIds)) await setExpenseTags(user.id, id, body.tagIds);
+    // 自前計測（activated）：初めての記録（支出+収入が1件＝今入れた1件）のときだけ1回。
+    // レスポンス後に走らせて保存のレイテンシに影響させない。失敗は握り潰す。
+    after(async () => {
+      try {
+        const dd = await db();
+        const c = await dd.get<{ c: number }>(
+          "SELECT (SELECT COUNT(*) FROM expenses WHERE user_id = ?) + (SELECT COUNT(*) FROM incomes WHERE user_id = ?) AS c",
+          user.id,
+          user.id,
+        );
+        if (Number(c?.c) === 1) await recordEvent(user.id, "activated", { kind: "expense" });
+      } catch {
+        /* 計測失敗は無視 */
+      }
+    });
     return Response.json({ ok: true, id });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
