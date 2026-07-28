@@ -1,4 +1,5 @@
 // ユーザー単位の設定（貯金目標・ショートカット連携トークン・AI残量など）
+import { isValidAssetReminderDay } from "@/lib/accounts";
 import { AuthError, ensureApiToken, requireUser, unauthorized } from "@/lib/auth";
 import { getAiUsageDisplay, normalizePlan } from "@/lib/aiUsage";
 import { db } from "@/lib/db";
@@ -16,8 +17,9 @@ export async function GET() {
       reminder_hour: number;
       record_push: number;
       work_style: string | null;
+      asset_reminder_day: number;
     }>(
-      "SELECT savings_goal, plan, month_start_day, reminder_hour, record_push, work_style FROM users WHERE id = ?",
+      "SELECT savings_goal, plan, month_start_day, reminder_hour, record_push, work_style, asset_reminder_day FROM users WHERE id = ?",
       user.id,
     );
     const plan = normalizePlan(row?.plan);
@@ -29,6 +31,8 @@ export async function GET() {
       monthStartDay: row?.month_start_day ?? 1,
       // C3: 記録リマインダーの時刻（0〜23時。-1＝OFF）
       reminderHour: row?.reminder_hour ?? -1,
+      // 資産(口座残高)更新リマインドの日（1〜28。-1＝OFF）
+      assetReminderDay: row?.asset_reminder_day ?? -1,
       // 記録できたら通知する（既定ON）
       recordPush: Number(row?.record_push ?? 1) === 1,
       // 働き方（収入タイプ）。hourly=時給/シフト制, salary=月給, daily=日給
@@ -50,6 +54,7 @@ export async function POST(request: Request) {
       savingsGoal?: number;
       monthStartDay?: number;
       reminderHour?: number; // C3: 0〜23＝その時刻に通知、-1＝OFF
+      assetReminderDay?: number; // 資産更新リマインド: 1〜28＝その日に通知、-1＝OFF
       recordPush?: boolean; // 記録できたら通知する
       workStyle?: string; // 働き方: hourly | salary | daily
     };
@@ -76,6 +81,17 @@ export async function POST(request: Request) {
         return Response.json({ error: "リマインダーの時刻が不正です。" }, { status: 400 });
       }
       await d.run("UPDATE users SET reminder_hour = ? WHERE id = ?", hour, user.id);
+    }
+    // 資産(口座残高)更新リマインドの日（1〜28。-1でOFF。それ以外の値は弾く）
+    if (body.assetReminderDay !== undefined) {
+      const day = Math.round(Number(body.assetReminderDay));
+      if (!Number.isFinite(day) || !isValidAssetReminderDay(day)) {
+        return Response.json(
+          { error: "残高更新リマインドの日は1〜28日で設定してください。" },
+          { status: 400 },
+        );
+      }
+      await d.run("UPDATE users SET asset_reminder_day = ? WHERE id = ?", day, user.id);
     }
     // 記録できたら通知（レシート/スクショの記録完了・スキップ・失敗のお知らせ）
     if (body.recordPush !== undefined) {

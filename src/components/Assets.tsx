@@ -102,6 +102,9 @@ export default function Assets() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // 資産(口座残高)更新リマインド（1〜28＝毎月その日／-1＝しない）。手入力なので任意で促す。
+  const [reminderDay, setReminderDay] = useState(-1);
+  const [reminderSaved, setReminderSaved] = useState(false);
 
   const load = useCallback(async () => {
     await cachedFetch<Overview>("/api/accounts", (d) => {
@@ -112,7 +115,22 @@ export default function Assets() {
 
   useEffect(() => {
     load();
+    cachedFetch<{ assetReminderDay?: number }>("/api/profile", (d) => {
+      setReminderDay(d.assetReminderDay ?? -1);
+    }).catch(() => {});
   }, [load]);
+
+  async function saveReminderDay(day: number) {
+    const prev = reminderDay;
+    setReminderDay(day); // 先に反映して待たせない
+    try {
+      await apiCall("/api/profile", apiJson({ assetReminderDay: day }));
+      setReminderSaved(true);
+      setTimeout(() => setReminderSaved(false), 2500);
+    } catch {
+      setReminderDay(prev);
+    }
+  }
 
   function openAdd() {
     setEditing(null);
@@ -334,6 +352,29 @@ export default function Assets() {
               )}
             </div>
             <div className="barcode mt-5" />
+          </section>
+
+          {/* 残高更新リマインド。資産は手入力なので、任意で毎月の更新日を通知する */}
+          <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <h2 className="dot text-sm tracking-[0.1em]">残高更新リマインド</h2>
+              {reminderSaved && <span className="text-[11px] text-sage">保存しました</span>}
+            </div>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
+              残高は手入力です。毎月この日に「残高を更新しましょう」とお知らせします。通知がONのときに届きます。
+            </p>
+            <select
+              value={String(reminderDay)}
+              onChange={(e) => saveReminderDay(Number(e.target.value))}
+              className="mt-2 w-full rounded-md border border-rule bg-card px-3 py-2.5 text-sm"
+            >
+              <option value="-1">リマインドしない</option>
+              {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                <option key={day} value={day}>
+                  毎月 {day}日
+                </option>
+              ))}
+            </select>
           </section>
         </>
       )}

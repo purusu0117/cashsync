@@ -227,3 +227,29 @@ function prevMonth(month: string): string {
   const d = new Date(y, m - 2, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
+
+/** 資産(口座残高)は手入力なので、任意で「毎月◯日に残高を更新しましょう」の通知を出す。有効な設定値は -1(OFF) と 1〜28。 */
+export function isValidAssetReminderDay(day: number): boolean {
+  return day === -1 || (Number.isInteger(day) && day >= 1 && day <= 28);
+}
+
+/**
+ * 資産更新リマインドを今日送るべきか（純ロジック・DB非依存でテストしやすい形）。
+ *  - assetReminderDay が今日の日（JST・1〜28）に一致
+ *  - lastAssetReminder が当月でない（月1回制限）
+ *  - 口座を1件以上持っている
+ * のすべてを満たすときだけ true。-1(OFF) や口座0件では常に false。
+ */
+export function shouldSendAssetReminder(params: {
+  assetReminderDay: number; // 1〜28＝その日に通知、-1＝OFF
+  todayDay: number; // JSTの今日（1〜31）
+  lastAssetReminder: string | null; // 最終送信月 'YYYY-MM'
+  currentMonth: string; // 当月 'YYYY-MM'
+  accountCount: number; // 保有口座数
+}): boolean {
+  const { assetReminderDay, todayDay, lastAssetReminder, currentMonth, accountCount } = params;
+  if (assetReminderDay < 1 || assetReminderDay > 28) return false; // OFF・不正値
+  if (accountCount <= 0) return false; // 口座がない人には出さない
+  if (lastAssetReminder === currentMonth) return false; // 今月はもう送った
+  return assetReminderDay === todayDay;
+}

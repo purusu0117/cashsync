@@ -60,11 +60,13 @@ import {
   accountsOverview,
   createAccount,
   deleteAccount,
+  isValidAssetReminderDay,
   listAccounts,
   netWorthOf,
   netWorthTrend,
   normalizeBalance,
   normalizeKind,
+  shouldSendAssetReminder,
   snapshotNetWorth,
   updateAccount,
 } from "../src/lib/accounts";
@@ -2217,6 +2219,25 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
     check("削除した口座のスナップショットも消える", snapLeft === 0, snapLeft);
     check("残る口座は2件", (await listAccounts(uA)).length === 2);
   }
+
+  // --- 資産更新リマインドの判定（純ロジック・DB非依存） ---
+  console.log("[資産] 残高更新リマインドの判定");
+  check("有効な設定値は -1 と 1〜28", isValidAssetReminderDay(-1) && isValidAssetReminderDay(1) && isValidAssetReminderDay(28));
+  check("0・29・小数・-2 は無効", !isValidAssetReminderDay(0) && !isValidAssetReminderDay(29) && !isValidAssetReminderDay(15.5) && !isValidAssetReminderDay(-2));
+  const baseAR = { assetReminderDay: 10, todayDay: 10, lastAssetReminder: null as string | null, currentMonth: "2026-07", accountCount: 2 };
+  check("設定日＝今日・未送信・口座あり → 送る", shouldSendAssetReminder(baseAR) === true);
+  check("設定日≠今日 → 送らない", shouldSendAssetReminder({ ...baseAR, todayDay: 11 }) === false);
+  check("OFF(-1) → 送らない", shouldSendAssetReminder({ ...baseAR, assetReminderDay: -1 }) === false);
+  check("口座0件 → 送らない", shouldSendAssetReminder({ ...baseAR, accountCount: 0 }) === false);
+  check("当月すでに送信済み → 送らない", shouldSendAssetReminder({ ...baseAR, lastAssetReminder: "2026-07" }) === false);
+  check("先月送信済みでも当月は送る", shouldSendAssetReminder({ ...baseAR, lastAssetReminder: "2026-06" }) === true);
+  // DBカラムの既定値：新規ユーザーは -1(OFF) で既存挙動を変えない
+  const arCol = await d.get<{ asset_reminder_day: number; last_asset_reminder: string | null }>(
+    "SELECT asset_reminder_day, last_asset_reminder FROM users WHERE id = ?",
+    userId,
+  );
+  check("新規ユーザーの asset_reminder_day 既定は -1(OFF)", Number(arCol?.asset_reminder_day) === -1, arCol);
+  check("新規ユーザーの last_asset_reminder は未設定(null)", (arCol?.last_asset_reminder ?? null) === null, arCol);
 
   // --- レシート内分割（buildReceiptSplits 純関数＋DBへの複数expense保存） ---
   console.log("[split] レシート内分割");

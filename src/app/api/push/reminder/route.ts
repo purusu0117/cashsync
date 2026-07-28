@@ -2,9 +2,10 @@
 // 設定した時刻になっても「今日まだ1件も記録していない」ユーザーにだけ、1日1回通知する。
 // 記録済みの人には送らない（無駄な通知で切られないための最重要ルール）。
 // Vercel は TZ=UTC なので、時刻の判定は jstHour() で日本時間に固定する。
+import { shouldSendAssetReminder } from "@/lib/accounts";
 import { db } from "@/lib/db";
 import { fmtYen } from "@/lib/format";
-import { jstHour } from "@/lib/jst";
+import { jstHour, jstToday } from "@/lib/jst";
 import {
   accountingMonth,
   currentMonth,
@@ -100,5 +101,59 @@ export async function GET(request: Request) {
       notified++;
     }
   }
-  return Response.json({ ok: true, hour, targets: users.length, notified, skippedRecorded });
+  // ── 資産(口座残高)更新リマインド（同じ日次cronに相乗り） ──
+  // 資産は手入力なので、任意で「毎月◯日に残高を更新しましょう」を1回だけ通知する。
+  // 時刻には依存せず「今日の日（JST）」で判定し、月1回制限（last_asset_reminder）で
+  // cronが日に複数回走っても重複送信しない。既定 -1(OFF) の人・口座0件の人には送らない。
+  const { d: todayDay } = jstToday();
+  const month = currentMonth();
+  const assetTargets = await d.all<{
+    id: string;
+    asset_reminder_day: number;
+    last_asset_reminder: string | null;
+  }>(
+    "SELECT id, asset_reminder_day, last_asset_reminder FROM users WHERE asset_reminder_day = ?",
+    todayDay,
+  );
+  let assetNotified = 0;
+  for (const u of assetTargets) {
+    const accountCount = Number(
+      (
+        (await d.get<{ c: number }>(
+          "SELECT COUNT(*) AS c FROM accounts WHERE user_id = ?",
+          u.id,
+        )) as { c: number }
+      ).c,
+    );
+    if (
+      !shouldSendAssetReminder({
+        assetReminderDay: Number(u.asset_reminder_day),
+        todayDay,
+        lastAssetReminder: u.last_asset_reminder,
+        currentMonth: month,
+        accountCount,
+      })
+    ) {
+      continue;
+    }
+    const sent = await pushToUser(
+      u.id,
+      "CashSync 残高の更新",
+      "口座残高を更新して純資産を最新にしましょう",
+    );
+    if (sent > 0) {
+      await d.run("UPDATE users SET last_asset_reminder = ? WHERE id = ?", month, u.id);
+      assetNotified++;
+    }
+  }
+
+  return Response.json({
+    ok: true,
+    hour,
+    targets: users.length,
+    notified,
+    skippedRecorded,
+    assetTargets: assetTargets.length,
+    assetNotified,
+  });
 }

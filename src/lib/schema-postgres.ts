@@ -21,7 +21,9 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
     reminder_hour INTEGER NOT NULL DEFAULT -1,
     last_reminder_push TEXT,
     record_push INTEGER NOT NULL DEFAULT 1,
-    work_style TEXT NOT NULL DEFAULT 'hourly'
+    work_style TEXT NOT NULL DEFAULT 'hourly',
+    asset_reminder_day INTEGER NOT NULL DEFAULT -1,
+    last_asset_reminder TEXT
   )`,
   // 記録できたら通知する（既定ON）
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS record_push INTEGER NOT NULL DEFAULT 1`,
@@ -52,6 +54,9 @@ export const POSTGRES_SCHEMA_STATEMENTS: string[] = [
   // C3: 記録リマインダー（0〜23時。-1=OFF）と最終送信日（1日1回制限）
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS reminder_hour INTEGER NOT NULL DEFAULT -1`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reminder_push TEXT`,
+  // 資産(口座残高)更新リマインド（1〜28日。-1=OFF）と最終送信月（'YYYY-MM'。月1回制限）
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS asset_reminder_day INTEGER NOT NULL DEFAULT -1`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_asset_reminder TEXT`,
   `CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
