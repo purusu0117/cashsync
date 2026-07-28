@@ -144,6 +144,11 @@ export function ExpenseEditSheet({
   }
 
   async function save() {
+    // R6: 空/0での保存を防ぐ（add と同じ文言）
+    if (!(draft.amount > 0)) {
+      setError("金額を入力してください。");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -312,7 +317,7 @@ export function ExpenseEditSheet({
           )}
           <button
             onClick={save}
-            disabled={busy}
+            disabled={busy || !(draft.amount > 0)}
             className="dot flex-1 rounded-md bg-vermilion py-3 text-base text-card shadow-[0_2px_0_var(--vermilion-deep)] disabled:opacity-50"
           >
             保存
@@ -339,6 +344,11 @@ export function IncomeEditSheet({
   const [error, setError] = useState("");
 
   async function save() {
+    // R6: 空/0での保存を防ぐ（add と同じ文言）
+    if (!(draft.amount > 0)) {
+      setError("金額を入力してください。");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -411,7 +421,7 @@ export function IncomeEditSheet({
           </button>
           <button
             onClick={save}
-            disabled={busy}
+            disabled={busy || !(draft.amount > 0)}
             className="dot flex-1 rounded-md bg-sage py-3 text-base text-card shadow-[0_2px_0_#1f6b42] disabled:opacity-50"
           >
             保存

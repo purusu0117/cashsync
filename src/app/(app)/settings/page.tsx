@@ -141,6 +141,7 @@ export default function SettingsPage() {
   }
 
   const [ready, setReady] = useState(false); // 初回データ（キャッシュ含む）が来るまでスケルトン表示
+  const [loadStalled, setLoadStalled] = useState(false); // 初回読み込みが失敗して固まったまま
 
   const load = useCallback(async () => {
     // キャッシュファースト＋並列取得：前回のデータを即表示→裏で最新に差し替え
@@ -197,6 +198,13 @@ export default function SettingsPage() {
       setAiUsage(d.aiUsage ?? null);
     }).catch(() => {});
   }, [load]);
+
+  // 初回読み込みが一定時間で来ないなら、Loadingで固まらず「再試行」に切り替える（履歴と同じ挙動）
+  useEffect(() => {
+    if (ready) return;
+    const t = setTimeout(() => setLoadStalled(true), 8000);
+    return () => clearTimeout(t);
+  }, [ready]);
 
   // B9: 月の開始日の保存。変更後は全集計が新しい期間になるので、キャッシュも消して作り直す
   async function saveMonthStart(v: string) {
@@ -660,7 +668,23 @@ export default function SettingsPage() {
   if (splitMonthlySum > 0) splitSummary += ` ・ 月 ${fmtYen(splitMonthlySum)}`;
   if (splitRemainTotal > 0) splitSummary += ` ・ 残り ${fmtYen(splitRemainTotal)}`;
 
-  if (!ready) return <Loading />;
+  if (!ready)
+    return loadStalled ? (
+      <div className="mt-16 text-center">
+        <p className="dot text-sm text-vermilion">読み込めませんでした</p>
+        <button
+          onClick={() => {
+            setLoadStalled(false);
+            load();
+          }}
+          className="dot mt-4 rounded-md border border-ink px-6 py-2.5 text-sm active:translate-y-0.5"
+        >
+          再試行
+        </button>
+      </div>
+    ) : (
+      <Loading />
+    );
 
   return (
     <div className="space-y-5">

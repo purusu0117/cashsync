@@ -15,7 +15,7 @@ import {
 import RewardCredit from "@/components/RewardCredit";
 import { cachedFetch } from "@/lib/cachedFetch";
 import { netFetch } from "@/lib/clientApi";
-import { fmtYen, todayLocal } from "@/lib/format";
+import { fmtDateJa, fmtYen, todayLocal } from "@/lib/format";
 import { deletePhotos, isNativePlatform, listRecentScreenshots } from "@/lib/native";
 import { takePendingImage } from "@/lib/pendingImage";
 
@@ -317,7 +317,8 @@ export default function ScanPage() {
         // スクショ由来のときは「元画像はもう不要」のリマインドを出してから帰る
         setPhase("done");
       } else {
-        router.push("/");
+        // R5: カメラ読取（非ライブラリ）もホームで成功トーストを出す
+        router.push(`/?saved=${scan.total}`);
         router.refresh();
       }
     } catch (err) {
@@ -708,7 +709,7 @@ export default function ScanPage() {
             // 重複検知：エラーで突き放さず「本当に別の支払いか」を確認してから記録できるようにする
             <div className="mt-4 rounded-md border border-vermilion bg-paper px-4 py-3">
               <p className="text-sm leading-relaxed text-ink">
-                同じ内容（{scan.date}・{fmtYen(scan.total)}・{scan.store || "店名なし"}
+                同じ内容（{fmtDateJa(scan.date)}・{fmtYen(scan.total)}・{scan.store || "店名なし"}
                 ）を今日すでに記録しています。本当に別の{scan.kind === "income" ? "受け取り" : "支払い"}
                 ですか？
               </p>

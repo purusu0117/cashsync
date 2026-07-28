@@ -146,6 +146,9 @@ export default function AddPage() {
       if (t) {
         setText(t);
         parseText(t);
+      } else {
+        // 無音などで何も聞き取れなかった（権限拒否は上で処理済み）
+        setError("うまく聞き取れませんでした。もう一度話すか、文字で入力してください。");
       }
     };
     rec.onerror = (e) => {
@@ -213,7 +216,8 @@ export default function AddPage() {
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "保存に失敗しました。");
-      router.push("/");
+      // R5: ホームで「記録しました＋元に戻す」トーストを出す（かんたん入力と同じ様式に統一）
+      router.push(`/?saved=${n}${d?.id ? `&undo=${d.id}` : ""}`);
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存に失敗しました。");

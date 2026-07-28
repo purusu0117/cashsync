@@ -295,6 +295,22 @@ export default function HomePage() {
     }
   }, [load, autoSync]);
 
+  // R5: 手入力(/add)・カメラ読取(/scan)からの保存後の成功トースト。
+  // ?saved=<金額>（&undo=<expenseId>）で戻ってくるので、かんたん入力と同じ様式で出す。
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const saved = sp.get("saved");
+    if (!saved) return;
+    const amt = Number(saved);
+    const undoId = sp.get("undo");
+    // 再読み込み・戻る操作でトーストが再表示されないよう、URLからパラメータを消す
+    window.history.replaceState(null, "", "/");
+    if (Number.isFinite(amt) && amt > 0) {
+      show(`記録しました ${fmtYen(amt)}`, undoId ? () => undoPreset(undoId) : undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 画像を選んだら /scan に渡して即解析
   function onImage(e: React.ChangeEvent<HTMLInputElement>, fromLibrary: boolean) {
     const f = e.target.files?.[0];

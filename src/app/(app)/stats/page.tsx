@@ -96,6 +96,7 @@ export default function StatsPage() {
   const [yearSeries, setYearSeries] = useState<Point[]>([]);
 
   const [ready, setReady] = useState(false); // 初回データ（キャッシュ含む）が来るまでスケルトン表示
+  const [loadStalled, setLoadStalled] = useState(false); // 初回読み込みが失敗して固まったまま
 
   const loadPockets = useCallback(async () => {
     await cachedFetch<{ pockets?: Pocket[] }>("/api/budgets", (d) =>
@@ -169,6 +170,13 @@ export default function StatsPage() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [before, selected, load]);
 
+  // 初回読み込みが一定時間で来ないなら、Loadingで固まらず「再試行」に切り替える（履歴と同じ挙動）
+  useEffect(() => {
+    if (ready) return;
+    const t = setTimeout(() => setLoadStalled(true), 8000);
+    return () => clearTimeout(t);
+  }, [ready]);
+
   // C14: 年間ビューのデータ（1〜12月）。before=YYYY-12 & months=12 でその年が丸ごと返る
   const yearReq = useRef(0);
   useEffect(() => {
@@ -197,7 +205,23 @@ export default function StatsPage() {
   const sel = series.find((p) => p.month === selected);
   const maxBd = Math.max(1, ...breakdown.map((b) => b.amount));
 
-  if (!ready) return <Loading label="集計中・・・" />;
+  if (!ready)
+    return loadStalled ? (
+      <div className="mt-16 text-center">
+        <p className="dot text-sm text-vermilion">読み込めませんでした</p>
+        <button
+          onClick={() => {
+            setLoadStalled(false);
+            load(before, selected);
+          }}
+          className="dot mt-4 rounded-md border border-ink px-6 py-2.5 text-sm active:translate-y-0.5"
+        >
+          再試行
+        </button>
+      </div>
+    ) : (
+      <Loading label="集計中・・・" />
+    );
 
   // 比較1行：base=null は「比較データなし」。支出は増＝悪化(朱赤)、収入は増＝改善(緑)。
   const cmpLine = (label: string, current: number, base: number | null, higherIsGood: boolean) => {

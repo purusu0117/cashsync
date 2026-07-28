@@ -183,6 +183,7 @@ export default function CalendarPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [tags, setTags] = useState<{ id: string; name: string }[]>([]);
   const [editing, setEditing] = useState<CalExpense | null>(null);
+  const [loadStalled, setLoadStalled] = useState(false); // 初回読み込みが失敗して固まったまま
   const { toast, show, hide } = useToast();
 
   // --- シフト系 state（旧 /shifts から移植） ---
@@ -351,6 +352,13 @@ export default function CalendarPage() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [month, loadCal, loadShifts, loadJobs, autoSync]);
 
+  // 初回読み込みが一定時間で来ないなら、Loadingで固まらず「再試行」に切り替える（履歴と同じ挙動）
+  useEffect(() => {
+    if (data) return;
+    const t = setTimeout(() => setLoadStalled(true), 8000);
+    return () => clearTimeout(t);
+  }, [data]);
+
   // M5: 月を切り替えるときは複数日まとめて登録の選択をクリアする。
   // （他月で選んだ日付が見えないまま残り、別月のシフトに混入するのを防ぐ）
   function goMonth(delta: number) {
@@ -505,10 +513,30 @@ export default function CalendarPage() {
     }
   }
 
-  async function removeById(id: string) {
+  // シフト削除はUndoつき（給料データを誤タップで消しやすいため）。
+  // 復元は削除前のシフト内容を再POSTする（source は既定の manual に戻る）。
+  async function removeShiftWithUndo(s: Shift) {
     try {
-      await apiCall(`/api/shifts?id=${id}`, { method: "DELETE" });
+      await apiCall(`/api/shifts?id=${s.id}`, { method: "DELETE" });
       reload(month);
+      show("シフトを削除しました", async () => {
+        try {
+          await apiCall(
+            "/api/shifts",
+            apiJson({
+              jobId: s.job_id,
+              date: s.date,
+              startMin: s.start_min,
+              endMin: s.end_min,
+              breakMin: s.break_min,
+            }),
+          );
+          reload(month);
+          show("元に戻しました");
+        } catch (e) {
+          show(e instanceof Error ? e.message : "元に戻せませんでした。");
+        }
+      });
     } catch (e) {
       show(e instanceof Error ? e.message : "削除に失敗しました。");
     }
@@ -689,7 +717,23 @@ export default function CalendarPage() {
     }
   }
 
-  if (!data) return <Loading />;
+  if (!data)
+    return loadStalled ? (
+      <div className="mt-16 text-center">
+        <p className="dot text-sm text-vermilion">読み込めませんでした</p>
+        <button
+          onClick={() => {
+            setLoadStalled(false);
+            reload(month);
+          }}
+          className="dot mt-4 rounded-md border border-ink px-6 py-2.5 text-sm active:translate-y-0.5"
+        >
+          再試行
+        </button>
+      </div>
+    ) : (
+      <Loading />
+    );
 
   const [y, m] = month.split("-").map(Number);
   const first = new Date(y, m - 1, 1);
@@ -1325,7 +1369,7 @@ export default function CalendarPage() {
                         <span className="dot ml-2 shrink-0 tabular-nums text-sage">{fmtYen(s.pay)}</span>
                       </button>
                       <button
-                        onClick={() => removeById(s.id)}
+                        onClick={() => removeShiftWithUndo(s)}
                         className="shrink-0 px-1 text-xs text-vermilion"
                         aria-label="削除"
                       >
@@ -1434,9 +1478,7 @@ export default function CalendarPage() {
                       <span className="dot ml-2 shrink-0 tabular-nums text-sage">{fmtYen(s.pay)}</span>
                     </button>
                     <button
-                      onClick={async () => {
-                        await removeById(s.id);
-                      }}
+                      onClick={() => removeShiftWithUndo(s)}
                       className="shrink-0 px-1 text-xs text-vermilion"
                       aria-label="削除"
                     >

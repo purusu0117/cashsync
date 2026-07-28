@@ -94,6 +94,8 @@ export default function HistoryPage() {
   const [results, setResults] = useState<Expense[]>([]);
   const [resultTotal, setResultTotal] = useState(0);
   const [searchBusy, setSearchBusy] = useState(false);
+  const [searchError, setSearchError] = useState(false); // R2: 通信失敗を「0件」と区別する
+  const [appendError, setAppendError] = useState(false); // R3: 「もっと見る」失敗の小さな知らせ
   const searching = q.trim() !== "" || fCat !== "" || fMin !== "" || fMax !== "";
 
   const searchReq = useRef(0);
@@ -101,6 +103,8 @@ export default function HistoryPage() {
     async (offset: number, append: boolean) => {
       const req = ++searchReq.current;
       setSearchBusy(true);
+      if (append) setAppendError(false);
+      else setSearchError(false);
       try {
         const params = new URLSearchParams({ search: "1", offset: String(offset) });
         if (q.trim()) params.set("q", q.trim());
@@ -114,9 +118,15 @@ export default function HistoryPage() {
         setResults((prev) => (append ? [...prev, ...(d.expenses ?? [])] : (d.expenses ?? [])));
         setResultTotal(d.total ?? 0);
       } catch {
-        if (searchReq.current === req && !append) {
-          setResults([]);
-          setResultTotal(0);
+        if (searchReq.current === req) {
+          // 通信失敗：0件（見つからない）ではなく「検索できませんでした」として区別する
+          if (append) {
+            setAppendError(true);
+          } else {
+            setResults([]);
+            setResultTotal(0);
+            setSearchError(true);
+          }
         }
       } finally {
         if (searchReq.current === req) setSearchBusy(false);
@@ -131,6 +141,8 @@ export default function HistoryPage() {
       searchReq.current++;
       setResults([]);
       setResultTotal(0);
+      setSearchError(false);
+      setAppendError(false);
       return;
     }
     const t = setTimeout(() => runSearch(0, false), 300);
@@ -316,8 +328,16 @@ export default function HistoryPage() {
         /* B11: 検索結果（全期間・日付降順・ページング） */
         <div className="zig zig-t zig-b px-5 pt-4 pb-4 shadow-sm">
           <p className="dot text-center text-xs tracking-[0.18em] text-ink-faint">＊ 検索結果 ＊</p>
-          <p className="mt-1 text-center text-[11px] text-ink-faint">
-            {searchBusy && results.length === 0 ? "検索中・・・" : `${resultTotal}件見つかりました`}
+          <p
+            className={`mt-1 text-center text-[11px] ${
+              searchError && results.length === 0 ? "text-vermilion" : "text-ink-faint"
+            }`}
+          >
+            {searchBusy && results.length === 0
+              ? "検索中・・・"
+              : searchError && results.length === 0
+                ? "検索できませんでした"
+                : `${resultTotal}件見つかりました`}
           </p>
           <div className="cutline mt-2 pt-1">
             {results.map((e) => (
@@ -335,9 +355,20 @@ export default function HistoryPage() {
                 <span className="dot text-[15px] tabular-nums">{fmtYen(e.amount)}</span>
               </button>
             ))}
-            {!searchBusy && results.length === 0 && (
-              <p className="py-8 text-center text-xs text-ink-faint">見つかりませんでした。</p>
-            )}
+            {!searchBusy &&
+              results.length === 0 &&
+              (searchError ? (
+                <div className="py-8 text-center">
+                  <button
+                    onClick={() => runSearch(0, false)}
+                    className="dot rounded-md border border-ink px-6 py-2 text-sm active:translate-y-0.5"
+                  >
+                    再試行
+                  </button>
+                </div>
+              ) : (
+                <p className="py-8 text-center text-xs text-ink-faint">見つかりませんでした。</p>
+              ))}
           </div>
           {results.length < resultTotal && (
             <button
@@ -347,6 +378,11 @@ export default function HistoryPage() {
             >
               {searchBusy ? "読み込み中・・・" : `もっと見る（あと${resultTotal - results.length}件）`}
             </button>
+          )}
+          {appendError && (
+            <p className="mt-2 text-center text-[11px] text-vermilion">
+              読み込めませんでした。もう一度お試しください。
+            </p>
           )}
           <div className="barcode mt-4" />
         </div>
