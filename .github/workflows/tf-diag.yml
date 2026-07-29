@@ -1,0 +1,23 @@
+# TestFlight配布の診断（読み取り専用）。手動実行。
+name: tf-diag
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  diag:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+      APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+      APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: 配布診断
+        run: bundle exec fastlane tf_diag

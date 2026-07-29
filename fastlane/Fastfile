@@ -200,6 +200,42 @@ platform :ios do
     UI.user_error!("timeout: まだ処理中です") unless ready
   end
 
+  desc "TestFlight配布診断（読み取り専用）：内部グループ・テスター・各ビルドのグループ割当を出す"
+  lane :tf_diag do
+    issuer = ENV["APPSTORE_ISSUER_ID"].to_s.strip
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APPSTORE_KEY_ID"),
+      issuer_id: issuer.empty? ? nil : issuer,
+      key_content: ENV.fetch("APPSTORE_PRIVATE_KEY"),
+      is_key_content_base64: true,
+      in_house: false,
+    )
+    require "spaceship"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(**api_key)
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    UI.message("APP id=#{app.id} name=#{app.name}")
+
+    groups = (app.get_beta_groups rescue [])
+    UI.message("=== BETA GROUPS (#{groups.size}) ===")
+    groups.each do |g|
+      internal = (g.is_internal_group rescue "?")
+      allb = (g.has_access_to_all_builds rescue "?")
+      testers = (g.get_beta_testers rescue [])
+      UI.message("GROUP name=#{g.name.inspect} id=#{g.id} internal=#{internal} allBuilds=#{allb} testers=#{testers.size}")
+      testers.first(20).each do |t|
+        UI.message("   tester=#{(t.email rescue nil) || t.id} state=#{(t.state rescue '?')}")
+      end
+    end
+
+    UI.message("=== BUILDS (最新) ===")
+    builds = (app.get_builds(limit: 6) rescue [])
+    builds.each do |b|
+      bg = (b.get_beta_groups rescue [])
+      comp = (b.uses_non_exempt_encryption rescue "?")
+      UI.message("BUILD #{b.version} state=#{b.processing_state} compliance=#{comp.inspect} groups=[#{bg.map { |x| (x.name rescue x.id) }.join(', ')}]")
+    end
+  end
+
   desc "署名なしビルド（Secretsが無くても通る確認用）"
   lane :check do
     build_app(
