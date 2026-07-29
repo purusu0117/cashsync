@@ -102,11 +102,12 @@ export async function GET() {
         };
       })(),
       // カテゴリ別の当月支出（ホームの円グラフ用）。集計期間（締め日基準）で合算。
+      // GROUP BY に c.name / c.icon を含める（Postgres の集約規則対応。category_id ごとに一意なので結果は不変）
       d.all(
         `SELECT c.name AS name, c.icon AS icon, SUM(e.amount) AS total
          FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
          WHERE e.user_id = ? AND e.date >= ? AND e.date <= ?
-         GROUP BY e.category_id
+         GROUP BY e.category_id, c.name, c.icon
          ORDER BY total DESC`,
         user.id,
         range.start,
