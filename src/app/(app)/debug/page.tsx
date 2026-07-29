@@ -4,7 +4,7 @@
 // 「ウィジェットに出ない」「通知が来ない」ときに、WebViewから見えている実際の状態を表示する。
 // 推測で往復しないための画面。問題が落ち着いたら削除してよい。
 import { useEffect, useState } from "react";
-import { isNativePlatform, nativePlugin, registerPushDevice, syncWidgetAuth } from "@/lib/native";
+import { isNativePlatform, nativePlugin, registerPushDevice, syncWidgetAuth, visionOcrAvailable } from "@/lib/native";
 
 type Row = { label: string; value: string; ok?: boolean };
 
@@ -37,6 +37,32 @@ export default function DebugPage() {
             .filter((m) => typeof (pc as Record<string, unknown>)[m] === "function")
             .join(", ") || "（無し）",
         );
+      }
+
+      // 端末内OCR（Apple Vision）の実挙動診断。ここが true & recognizeがOKなら、スキャンは端末内で完結しAPIを使わない。
+      const vo = await nativePlugin<{ recognize?: (o: { image: string }) => Promise<{ text: string }> }>(
+        "VisionOcr",
+      );
+      add("VisionOcrプラグイン取得", vo ? "取得できた" : "取得できない", !!vo);
+      add("recognizeメソッド", vo && typeof vo.recognize === "function" ? "あり" : "無し", !!(vo && typeof vo.recognize === "function"));
+      try {
+        const avail = await visionOcrAvailable();
+        add(
+          "端末内OCR判定",
+          avail ? "true（端末内で完結・API不使用）" : "false（サーバーAIに流れる）",
+          avail,
+        );
+      } catch (e) {
+        add("端末内OCR判定", `失敗: ${e instanceof Error ? e.message : e}`, false);
+      }
+      try {
+        const r = await (vo?.recognize?.({
+          image:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        }) ?? Promise.reject(new Error("recognizeメソッドが無い")));
+        add("recognize実行テスト", `OK（text="${r?.text ?? ""}"）`, true);
+      } catch (e) {
+        add("recognize実行テスト", `エラー: ${e instanceof Error ? e.message : String(e)}`, false);
       }
 
       try {
