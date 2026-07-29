@@ -1,0 +1,31 @@
+# TestFlightのビルド処理完了を待つ（通知用）。手動実行。
+# App Store Connect API キーで最新の処理済みビルド番号を1分毎に確認し、
+# BASELINE を超えたら成功終了する（＝新ビルドがTestFlightで入手可能に）。
+name: wait-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: "この番号を超えたら通知（現在の最新ビルド番号）"
+        required: true
+        default: "25"
+
+jobs:
+  wait:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+      APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+      APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+      BASELINE_BUILD: ${{ inputs.baseline }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: 処理完了を待つ
+        run: bundle exec fastlane wait_build

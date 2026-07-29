@@ -139,6 +139,31 @@ platform :ios do
     )
   end
 
+  desc "TestFlightの最新処理済みビルド番号が BASELINE_BUILD を超えるまで待つ（通知用・審査不要）"
+  lane :wait_build do
+    issuer = ENV["APPSTORE_ISSUER_ID"].to_s.strip
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APPSTORE_KEY_ID"),
+      issuer_id: issuer.empty? ? nil : issuer,
+      key_content: ENV.fetch("APPSTORE_PRIVATE_KEY"),
+      is_key_content_base64: true,
+      in_house: false,
+    )
+    baseline = (ENV["BASELINE_BUILD"] || "0").to_i
+    ready = false
+    30.times do
+      n = latest_testflight_build_number(app_identifier: APP_ID, api_key: api_key).to_i
+      UI.message("latest processed build = #{n} (baseline #{baseline})")
+      if n > baseline
+        UI.success("READY: build #{n} が処理完了しました")
+        ready = true
+        break
+      end
+      sleep(60)
+    end
+    UI.user_error!("timeout: まだ処理中です") unless ready
+  end
+
   desc "署名なしビルド（Secretsが無くても通る確認用）"
   lane :check do
     build_app(
