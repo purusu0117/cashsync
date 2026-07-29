@@ -1,7 +1,9 @@
 // 自前（AI API 無し）のレシート/決済スクショ解析。OCRテキスト→ReceiptScan の純関数。
 // OCRエンジン非依存（Tesseract / Apple Vision / ML Kit で共通）。
 //   parseReceiptText(text, categoryNames, today) -> ReceiptScan
-import type { ReceiptScan } from "./ai";
+// 加えて、手入力の自然文→支出案（parseEntryText）／シフトメモ→シフト案（parseShiftText）も
+// AI API 無しのルール解析で提供する（ネイティブ版で askClaude* を呼ばないため）。
+import type { ParsedEntry, ParsedShiftItem, ReceiptScan } from "./ai";
 
 // ---- 前処理 -------------------------------------------------------------
 
@@ -259,4 +261,139 @@ export function parseReceiptText(rawText: string, categoryNames: string[], today
   const items = kind === "income" ? [] : extractItems(lines);
   const category = kind === "income" ? "" : guessCategory(store, items, categoryNames);
   return { kind, store, date, total, category, items };
+}
+
+// =========================================================================
+// 手入力の自然文 / シフトメモ の端末内解析（AI API 無し）
+// =========================================================================
+
+const DOW: Record<string, number> = { 日: 0, 月: 1, 火: 2, 水: 3, 木: 4, 金: 5, 土: 6 };
+
+/** "YYYY-MM-DD" に delta 日を足す（TZ非依存でUTC計算）。 */
+function addDays(today: string, delta: number): string {
+  const [y, m, d] = today.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + delta));
+  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
+}
+
+/** "YYYY-MM-DD" の曜日（0=日）。 */
+function dowOf(dateStr: string): number {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+/**
+ * 相対日付表現（今日/昨日/明日/n日前/来週金曜…）を today 基準で解決。
+ * preferFuture=true（シフト）は曜日を「次に来るその曜日」、false（支出）は「直近の過去のその曜日」に倒す。
+ * 解決できなければ ""（呼び出し側で明示日付 or today にフォールバック）。
+ */
+function resolveRelativeDate(text: string, today: string, preferFuture: boolean): string {
+  if (/(今日|本日|きょう)/.test(text)) return today;
+  if (/(明後日|あさって)/.test(text)) return addDays(today, 2);
+  if (/(明日|あした|あす)/.test(text)) return addDays(today, 1);
+  if (/(一昨日|おととい|おとつい)/.test(text)) return addDays(today, -2);
+  if (/(昨日|きのう|さくじつ)/.test(text)) return addDays(today, -1);
+  let m = text.match(/(\d{1,2})\s*日前/);
+  if (m) return addDays(today, -Number(m[1]));
+  m = text.match(/(\d{1,2})\s*日後/);
+  if (m) return addDays(today, Number(m[1]));
+  // 曜日（来週/今週/先週の修飾つき）
+  m = text.match(/(来週|今週|先週)?\s*[のな]?\s*([日月火水木金土])曜/);
+  if (m) {
+    const target = DOW[m[2]];
+    const base = dowOf(today);
+    let delta: number;
+    if (m[1] === "来週") delta = ((target - base + 7) % 7) + 7;
+    else if (m[1] === "先週") delta = ((target - base + 7) % 7) - 7;
+    else if (preferFuture) delta = (target - base + 7) % 7; // 直近の未来（同曜日は今日）
+    else delta = -((base - target + 7) % 7); // 直近の過去（同曜日は今日）
+    return addDays(today, delta);
+  }
+  return "";
+}
+
+/** テキスト全体からカテゴリを推定（店名/内容キーワード）。 */
+function guessCategoryFromText(text: string, categoryNames: string[]): string {
+  const s = text.toLowerCase().replace(/\s+/g, "");
+  for (const r of CATEGORY_RULES) {
+    if (categoryNames.includes(r.cat) && r.kw.test(s)) return r.cat;
+  }
+  return "";
+}
+
+/**
+ * 自然文の支出メモ（「昨日セブンで昼飯650円」）→ 支出レコード案。AI API 不使用。
+ * amount が取れなければ amount=0 を返す（呼び出し側で「金額を読み取れませんでした」を出す）。
+ */
+export function parseEntryText(rawText: string, categoryNames: string[], today: string): ParsedEntry {
+  const text = normalizeText(rawText);
+  // 金額：通貨マーカー付き優先→無ければ独立した整数の最後
+  let amount = 0;
+  const marked = moneyIn(text);
+  if (marked.length) amount = marked[marked.length - 1];
+  if (!amount) {
+    const bare = text.match(/(?<![\d,:])\d{2,7}(?![\d,:])/g);
+    if (bare) {
+      const nums = bare.map(Number).filter((n) => n >= 10 && n <= 9_999_999 && !/^(19|20)\d{2}$/.test(String(n)));
+      if (nums.length) amount = nums[nums.length - 1];
+    }
+  }
+  const date = resolveRelativeDate(text, today, false) || extractDate(text, today) || today;
+  const category = guessCategoryFromText(text, categoryNames);
+  const memo = text
+    .replace(/¥\s*[\d,]+/g, "")
+    .replace(/[\d,]+\s*円/g, "")
+    .replace(/(?<![\d,:])\d{2,7}(?![\d,:])/g, "")
+    .replace(/(今日|本日|きょう|明後日|あさって|明日|あした|あす|一昨日|おととい|おとつい|昨日|きのう|さくじつ|\d{1,2}日前|\d{1,2}日後)/g, "")
+    .replace(/(来週|今週|先週)?\s*[のな]?\s*[日月火水木金土]曜(日)?/g, "")
+    .replace(/\d{1,2}\s*[月/]\s*\d{1,2}\s*日?/g, "")
+    .replace(/[でにへ、。]/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return { date, amount: Math.round(amount), category, memo };
+}
+
+/** "18時半"/"18:00"/"22時30分" 等の時刻トークンを順に分（0-1439+）で取り出す。 */
+function extractTimeTokens(text: string): number[] {
+  const toks: number[] = [];
+  const re = /(\d{1,2})\s*(?::|：|時)\s*(半|\d{1,2})?\s*分?/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const h = Number(m[1]);
+    let mm = 0;
+    if (m[2] === "半") mm = 30;
+    else if (m[2] != null) mm = Number(m[2]);
+    if (h >= 0 && h <= 28 && mm >= 0 && mm < 60) toks.push(h * 60 + mm);
+  }
+  return toks;
+}
+
+/** メモ内で言及されたバイト先を緩く照合して jobId を返す（不明なら null）。 */
+function matchJob(text: string, jobs: { id: string; name: string }[]): string | null {
+  const t = text.toLowerCase().replace(/\s+/g, "");
+  for (const j of jobs) {
+    const n = j.name.toLowerCase().replace(/\s+/g, "");
+    if (n.length >= 2 && t.includes(n)) return j.id;
+  }
+  return null;
+}
+
+/**
+ * 自然文のシフトメモ（「キミハンで明日18時から22時半」）→ シフト案。AI API 不使用。
+ * 日付＋開始/終了の2時刻が取れた時だけ1件返す。読み取れなければ []（呼び出し側で手動入力を案内）。
+ * ※「毎週」「複数日まとめて」等の複雑な表現は端末内では非対応（AIなしのため）。
+ */
+export function parseShiftText(
+  rawText: string,
+  jobs: { id: string; name: string }[],
+  today: string,
+): ParsedShiftItem[] {
+  const text = normalizeText(rawText);
+  const date = resolveRelativeDate(text, today, true) || extractDate(text, today);
+  const toks = extractTimeTokens(text);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || toks.length < 2) return [];
+  const startMin = toks[0];
+  let endMin = toks[1];
+  if (endMin <= startMin) endMin += 1440; // 日跨ぎ（22時→翌2時）
+  return [{ date, startMin, endMin, jobId: matchJob(text, jobs) }];
 }

@@ -7,6 +7,8 @@ import { CategoryIcon, MicIcon, StopIcon } from "@/components/Icons";
 import RewardCredit from "@/components/RewardCredit";
 import { apiCall, apiJson, netFetch } from "@/lib/clientApi";
 import { fmtYen, todayLocal } from "@/lib/format";
+import { parseEntryText } from "@/lib/localReceipt";
+import { visionOcrAvailable } from "@/lib/native";
 import { track } from "@/lib/track";
 
 interface Category {
@@ -178,6 +180,21 @@ export default function AddPage() {
     setLimitHit(false);
     setParsedNote("");
     try {
+      if (visionOcrAvailable()) {
+        // ネイティブ版（build26+）：端末内ルール解析。AI API もサーバーも一切使わない。
+        const p = parseEntryText(t, categories.map((c) => c.name), todayLocal());
+        if (!p.amount || p.amount <= 0) {
+          throw new Error("金額を読み取れませんでした。文中に金額（例: 650円）を入れてください。");
+        }
+        track("parse_used");
+        setAmount(String(p.amount));
+        setDate(p.date);
+        setMemo(p.memo);
+        const catId = categories.find((c) => c.name === p.category)?.id ?? null;
+        if (catId) setCategoryId(catId);
+        setParsedNote(`「${t}」を下のフォームに入れました。確認して記録ボタンを押してください。`);
+        return;
+      }
       const res = await netFetch("/api/parse-entry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

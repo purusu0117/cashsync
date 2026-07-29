@@ -58,6 +58,18 @@ interface VisionOcrPlugin {
 }
 
 /**
+ * 端末内蔵OCR（Apple Vision）がこのビルドに"搭載されているか"を返す。
+ * remote URL 方式では、ネイティブシェルが window.Capacitor.Plugins に登録済みプラグインの
+ * プロキシを注入する。VisionOcr はビルド26以降のネイティブにだけ入っているため、
+ * この注入の有無で「端末内OCRが使えるビルドか」を確実に判定できる（build25/Webでは false）。
+ * ＝ true のとき、スキャンは端末内だけで完結させ、サーバー(API)へは一切送らない。
+ */
+export function visionOcrAvailable(): boolean {
+  if (!isNativePlatform() || platform() !== "ios") return false;
+  return !!capGlobal()?.Plugins?.["VisionOcr"];
+}
+
+/**
  * iOS 端末内蔵の Apple Vision で画像（dataURL/base64）から日本語テキストを抽出する。
  * AI/サーバー送信なし・端末内で完結。iOS ネイティブ以外、またはプラグイン未搭載/失敗時は null。
  * （Android は将来 ML Kit を同 API で実装予定）

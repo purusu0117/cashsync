@@ -14,6 +14,7 @@ import {
 import Assets from "@/components/Assets";
 import { CategoryIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
+import { isNativePlatform } from "@/lib/native";
 import WeeklyReview from "@/components/WeeklyReview";
 import { cachedFetch } from "@/lib/cachedFetch";
 import { fmtMonthJa, fmtYen, todayLocal } from "@/lib/format";
@@ -188,6 +189,7 @@ export default function StatsPage() {
   }, [view, year]);
 
   async function loadReview() {
+    if (isNativePlatform()) return; // ネイティブ版はAI講評を廃止（API不使用）
     setReviewLoading(true);
     setReviewError("");
     try {
@@ -734,8 +736,8 @@ export default function StatsPage() {
         </ul>
       </section>
 
-      {/* 月次振り返りレポート（終わった月のみ・AIが分析） */}
-      {selected < todayLocal().slice(0, 7) && (
+      {/* 月次振り返りレポート（終わった月のみ・AIが分析）。ネイティブ版はAI講評を廃止＝非表示（API不使用） */}
+      {selected < todayLocal().slice(0, 7) && !isNativePlatform() && (
         <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
           {!review && (
             <>

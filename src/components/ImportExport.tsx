@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { cachedFetch, clearApiCache } from "@/lib/cachedFetch";
 import { netFetch } from "@/lib/clientApi";
 import { fmtYen, todayLocal } from "@/lib/format";
+import { isNativePlatform } from "@/lib/native";
 
 interface Category {
   id: string;
@@ -182,7 +183,9 @@ export function ImportSection() {
     <section id="import" className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
       <h2 className="text-sm font-bold tracking-[0.04em]">他のアプリから引っ越し</h2>
       <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
-        Zaim・マネーフォワードなどのCSV、または他アプリの履歴画面のスクショから記録を取り込めます。登録前に内容を確認できます。
+        {isNativePlatform()
+          ? "Zaim・マネーフォワードなどのCSVから記録を取り込めます。登録前に内容を確認できます。"
+          : "Zaim・マネーフォワードなどのCSV、または他アプリの履歴画面のスクショから記録を取り込めます。登録前に内容を確認できます。"}
       </p>
       <input
         ref={csvRef}
@@ -206,13 +209,16 @@ export function ImportSection() {
         >
           {busy === "csv" ? "読み込み中・・・" : "CSVファイルを取り込む"}
         </button>
-        <button
-          onClick={() => imgRef.current?.click()}
-          disabled={busy !== ""}
-          className={`${addBtn} w-full`}
-        >
-          {busy === "scan" ? `AIが読み取り中・・・（${elapsed}秒）` : "アプリ画面のスクショをAIで読み取る"}
-        </button>
+        {/* スクショのAI読み取りはサーバーのClaudeを使うため、ネイティブ版（API不使用方針）では非表示。CSV取り込みは端末内処理なので残す。 */}
+        {!isNativePlatform() && (
+          <button
+            onClick={() => imgRef.current?.click()}
+            disabled={busy !== ""}
+            className={`${addBtn} w-full`}
+          >
+            {busy === "scan" ? `AIが読み取り中・・・（${elapsed}秒）` : "アプリ画面のスクショをAIで読み取る"}
+          </button>
+        )}
       </div>
       {error && <p className="mt-2 text-xs text-vermilion">{error}</p>}
       {doneMsg && <p className="mt-2 text-xs text-sage">{doneMsg}</p>}

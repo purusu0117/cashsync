@@ -23,7 +23,8 @@ import {
 } from "@/lib/calendarImport";
 import { apiCall, apiJson } from "@/lib/clientApi";
 import { fmtDateJa, fmtMonthJa, fmtYen, hhmmToMin, minToHHMM, todayLocal } from "@/lib/format";
-import { isNativePlatform } from "@/lib/native";
+import { parseShiftText as parseShiftTextLocal } from "@/lib/localReceipt";
+import { isNativePlatform, visionOcrAvailable } from "@/lib/native";
 
 interface CalExpense {
   id: string;
@@ -682,6 +683,20 @@ export default function CalendarPage() {
     setParsing(true);
     setParsed(null);
     try {
+      if (visionOcrAvailable()) {
+        // ネイティブ版（build26+）：端末内ルール解析。AI API もサーバーも一切使わない。
+        const shifts = parseShiftTextLocal(
+          t,
+          jobs.map((j) => ({ id: j.id, name: j.name })),
+          todayLocal(),
+        );
+        if (!shifts.length) {
+          throw new Error("日付と時間を読み取れませんでした。例:「明日 18時から22時半」のように入力してください。");
+        }
+        const fallback = jobId || jobs[0]?.id || null;
+        setParsed(shifts.map((s) => ({ ...s, jobId: s.jobId ?? fallback })));
+        return;
+      }
       const res = await fetch("/api/parse-shift", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

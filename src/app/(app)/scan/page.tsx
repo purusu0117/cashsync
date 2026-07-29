@@ -16,7 +16,7 @@ import RewardCredit from "@/components/RewardCredit";
 import { cachedFetch } from "@/lib/cachedFetch";
 import { netFetch } from "@/lib/clientApi";
 import { fmtDateJa, fmtYen, todayLocal } from "@/lib/format";
-import { deletePhotos, isNativePlatform, listRecentScreenshots, visionOcrRecognize } from "@/lib/native";
+import { deletePhotos, isNativePlatform, listRecentScreenshots, visionOcrAvailable, visionOcrRecognize } from "@/lib/native";
 import { parseReceiptText } from "@/lib/localReceipt";
 import { takePendingImage } from "@/lib/pendingImage";
 import { track } from "@/lib/track";
@@ -153,10 +153,11 @@ export default function ScanPage() {
     setPreview(URL.createObjectURL(file));
     setElapsed(0);
     setPhase("scanning");
-    // 端末内蔵OCR（iOS/Apple Vision）：AI・サーバー送信なしで画像→テキスト→解析し、
-    // 読めたらそのまま確認シートへ。非対応/失敗時は従来のサーバー経路にフォールバック。
-    try {
-      if (isNativePlatform()) {
+    // 端末内蔵OCR搭載ビルド（build26+）：Apple Vision＋自前解析で完結し、
+    // どんな場合もサーバー(API)へは画像・テキストを一切送らない（端末内で完結・費用0・プライバシー◎）。
+    // ※ build25/Web（VisionOcr未搭載）は下の従来サーバー経路をそのまま使う（挙動不変）。
+    if (visionOcrAvailable()) {
+      try {
         const dataUrl = await new Promise<string>((resolve, reject) => {
           const r = new FileReader();
           r.onload = () => resolve(String(r.result));
@@ -164,25 +165,25 @@ export default function ScanPage() {
           r.readAsDataURL(file);
         });
         const text = await visionOcrRecognize(dataUrl);
-        if (text) {
-          const s = parseReceiptText(text, categories.map((c) => c.name), todayLocal());
-          if (s.total > 0 || (s.store ?? "").trim()) {
-            track("scan_used");
-            const catId = categories.find((c) => c.name === s.category)?.id ?? null;
-            setScan({ ...s, date: s.date || todayLocal() });
-            setImageHash(await sha256Hex(dataUrl));
-            setCategoryId(catId);
-            setSuggestedCategoryId(catId);
-            setLearned(false);
-            setPhase("confirm");
-            return;
-          }
-          setPhase("failed");
+        const s = text
+          ? parseReceiptText(text, categories.map((c) => c.name), todayLocal())
+          : null;
+        if (s && (s.total > 0 || (s.store ?? "").trim())) {
+          track("scan_used");
+          const catId = categories.find((c) => c.name === s.category)?.id ?? null;
+          setScan({ ...s, date: s.date || todayLocal() });
+          setImageHash(await sha256Hex(dataUrl));
+          setCategoryId(catId);
+          setSuggestedCategoryId(catId);
+          setLearned(false);
+          setPhase("confirm");
           return;
         }
+      } catch {
+        /* 端末内OCRに失敗しても、サーバー(API)へは送らない */
       }
-    } catch {
-      /* 端末OCR不可 → 従来のサーバー経路へ */
+      setPhase("failed"); // 読めなければ撮り直し/手入力へ（APIは使わない）
+      return;
     }
     try {
       // C5: 解析はサーバー側のジョブとして走らせる（アプリを閉じても中断しない）。
