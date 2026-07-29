@@ -47,6 +47,33 @@ async function sha256Hex(input: string): Promise<string> {
   }
 }
 
+/**
+ * 端末内OCR用に画像を縮小した dataURL(JPEG) を返す。フル解像度のスクショ/写真は
+ * base64がMB級でCapacitorブリッジ転送もVision処理も重く、"解析が終わらない"原因になる。
+ * 失敗時は元の dataURL をそのまま返す（読み取り自体は継続できる）。
+ */
+async function downscaleDataUrl(dataUrl: string, maxDim: number, quality: number): Promise<string> {
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error("image load failed"));
+      im.src = dataUrl;
+    });
+    const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+    if (scale >= 1) return dataUrl; // 既に十分小さい
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return dataUrl;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", quality);
+  } catch {
+    return dataUrl;
+  }
+}
+
 export default function ScanPage() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -89,7 +116,7 @@ export default function ScanPage() {
   const [onDevice, setOnDevice] = useState(false); // 端末内OCR搭載ビルド（build26+）＝AI/通信なし
   useEffect(() => {
     setNative(isNativePlatform());
-    visionOcrAvailable().then(setOnDevice);
+    setOnDevice(visionOcrAvailable());
   }, []);
 
   // B12: 今月のAI読み取り残量（無料プランのみ数値。無制限プランは非表示）
@@ -158,7 +185,7 @@ export default function ScanPage() {
     // 端末内蔵OCR搭載ビルド（build26+）：Apple Vision＋自前解析で完結し、
     // どんな場合もサーバー(API)へは画像・テキストを一切送らない（端末内で完結・費用0・プライバシー◎）。
     // ※ build25/Web（VisionOcr未搭載）は下の従来サーバー経路をそのまま使う（挙動不変）。
-    if (await visionOcrAvailable()) {
+    if (visionOcrAvailable()) {
       try {
         const dataUrl = await new Promise<string>((resolve, reject) => {
           const r = new FileReader();
@@ -166,7 +193,9 @@ export default function ScanPage() {
           r.onerror = () => reject(new Error("read failed"));
           r.readAsDataURL(file);
         });
-        const text = await visionOcrRecognize(dataUrl);
+        // 端末内OCRは縮小画像で十分＆高速（フル解像度はブリッジ転送もVisionも遅く固まる原因）。
+        const small = await downscaleDataUrl(dataUrl, 1600, 0.8);
+        const text = await visionOcrRecognize(small);
         const s = text
           ? parseReceiptText(text, categories.map((c) => c.name), todayLocal())
           : null;

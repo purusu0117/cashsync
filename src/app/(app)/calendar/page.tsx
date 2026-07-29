@@ -194,10 +194,7 @@ export default function CalendarPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobsLoaded, setJobsLoaded] = useState(false);
   const [jobId, setJobId] = useState("");
-  const [onDevice, setOnDevice] = useState(false); // 端末内解析(build26+)＝解析中に「AI」と表示しない
-  useEffect(() => {
-    visionOcrAvailable().then(setOnDevice);
-  }, []);
+  const onDevice = visionOcrAvailable(); // 端末内解析(build31+)＝解析中に「AI」と表示しない
 
   // 日別シートからの単発シフト追加（既存の「＋この日にシフトを追加」を維持）
   const [showShiftAdd, setShowShiftAdd] = useState(false);
@@ -687,8 +684,8 @@ export default function CalendarPage() {
     setParsing(true);
     setParsed(null);
     try {
-      if (await visionOcrAvailable()) {
-        // ネイティブ版（build26+）：端末内ルール解析。AI API もサーバーも一切使わない。
+      if (visionOcrAvailable()) {
+        // ネイティブ版（build31+）：端末内ルール解析。AI API もサーバーも一切使わない。
         const shifts = parseShiftTextLocal(
           t,
           jobs.map((j) => ({ id: j.id, name: j.name })),

@@ -44,10 +44,7 @@ interface SpeechRecognitionLike {
 
 export default function AddPage() {
   const router = useRouter();
-  const [onDevice, setOnDevice] = useState(false); // 端末内解析(build26+)＝解析中に「AI」と表示しない
-  useEffect(() => {
-    visionOcrAvailable().then(setOnDevice);
-  }, []);
+  const onDevice = visionOcrAvailable(); // 端末内解析(build31+)＝解析中に「AI」と表示しない
   const [categories, setCategories] = useState<Category[]>([]);
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayLocal());
@@ -184,8 +181,8 @@ export default function AddPage() {
     setLimitHit(false);
     setParsedNote("");
     try {
-      if (await visionOcrAvailable()) {
-        // ネイティブ版（build26+）：端末内ルール解析。AI API もサーバーも一切使わない。
+      if (visionOcrAvailable()) {
+        // ネイティブ版（build31+）：端末内ルール解析。AI API もサーバーも一切使わない。
         const p = parseEntryText(t, categories.map((c) => c.name), todayLocal());
         if (!p.amount || p.amount <= 0) {
           throw new Error("金額を読み取れませんでした。文中に金額（例: 650円）を入れてください。");
