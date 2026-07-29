@@ -44,7 +44,10 @@ interface SpeechRecognitionLike {
 
 export default function AddPage() {
   const router = useRouter();
-  const onDevice = visionOcrAvailable(); // 端末内解析(build26+)＝解析中に「AI」と表示しない
+  const [onDevice, setOnDevice] = useState(false); // 端末内解析(build26+)＝解析中に「AI」と表示しない
+  useEffect(() => {
+    visionOcrAvailable().then(setOnDevice);
+  }, []);
   const [categories, setCategories] = useState<Category[]>([]);
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayLocal());
@@ -181,7 +184,7 @@ export default function AddPage() {
     setLimitHit(false);
     setParsedNote("");
     try {
-      if (visionOcrAvailable()) {
+      if (await visionOcrAvailable()) {
         // ネイティブ版（build26+）：端末内ルール解析。AI API もサーバーも一切使わない。
         const p = parseEntryText(t, categories.map((c) => c.name), todayLocal());
         if (!p.amount || p.amount <= 0) {

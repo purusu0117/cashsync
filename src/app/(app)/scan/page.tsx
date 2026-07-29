@@ -89,7 +89,7 @@ export default function ScanPage() {
   const [onDevice, setOnDevice] = useState(false); // 端末内OCR搭載ビルド（build26+）＝AI/通信なし
   useEffect(() => {
     setNative(isNativePlatform());
-    setOnDevice(visionOcrAvailable());
+    visionOcrAvailable().then(setOnDevice);
   }, []);
 
   // B12: 今月のAI読み取り残量（無料プランのみ数値。無制限プランは非表示）
@@ -158,7 +158,7 @@ export default function ScanPage() {
     // 端末内蔵OCR搭載ビルド（build26+）：Apple Vision＋自前解析で完結し、
     // どんな場合もサーバー(API)へは画像・テキストを一切送らない（端末内で完結・費用0・プライバシー◎）。
     // ※ build25/Web（VisionOcr未搭載）は下の従来サーバー経路をそのまま使う（挙動不変）。
-    if (visionOcrAvailable()) {
+    if (await visionOcrAvailable()) {
       try {
         const dataUrl = await new Promise<string>((resolve, reject) => {
           const r = new FileReader();

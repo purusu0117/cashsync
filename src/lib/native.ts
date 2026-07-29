@@ -57,16 +57,41 @@ interface VisionOcrPlugin {
   recognize(opts: { image: string }): Promise<{ text: string }>;
 }
 
-/**
- * 端末内蔵OCR（Apple Vision）がこのビルドに"搭載されているか"を返す。
- * remote URL 方式では、ネイティブシェルが window.Capacitor.Plugins に登録済みプラグインの
- * プロキシを注入する。VisionOcr はビルド26以降のネイティブにだけ入っているため、
- * この注入の有無で「端末内OCRが使えるビルドか」を確実に判定できる（build25/Webでは false）。
- * ＝ true のとき、スキャンは端末内だけで完結させ、サーバー(API)へは一切送らない。
- */
-export function visionOcrAvailable(): boolean {
+// 1x1 PNG（プローブ用）。VisionOcr が実装されていれば解決 or 画像エラーで応答し、
+// 未実装(build25/Web)なら「not implemented」で reject される。
+const PROBE_PNG_1x1 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+let _visionProbe: Promise<boolean> | null = null;
+
+async function probeVisionOcr(): Promise<boolean> {
   if (!isNativePlatform() || platform() !== "ios") return false;
-  return !!capGlobal()?.Plugins?.["VisionOcr"];
+  const p = await nativePlugin<VisionOcrPlugin>("VisionOcr");
+  if (!p) return false;
+  try {
+    const r = await p.recognize({ image: PROBE_PNG_1x1 });
+    return typeof r?.text === "string"; // 解決＝実装済み（build26+）
+  } catch (e) {
+    // build26 はプラグインが動くので、画像不正等でも「not implemented」以外のエラーになる。
+    // build25/Web は VisionOcr 未実装なので Capacitor が「not implemented / unimplemented」で reject。
+    const msg = String((e as { message?: string })?.message ?? e ?? "").toLowerCase();
+    if (msg.includes("not implemented") || msg.includes("unimplemented") || msg.includes("not available")) {
+      return false;
+    }
+    return true; // プラグインは存在して実際に動いた（＝搭載ビルド）
+  }
+}
+
+/**
+ * 端末内蔵OCR（Apple Vision）がこのビルドで"実際に動くか"を返す（1回だけ実プローブしてキャッシュ）。
+ * remote URL 方式ではカスタムプラグインは window.Capacitor.Plugins に現れないことがあるため、
+ * 注入の有無ではなく「プラグインを実際に叩いて応答するか」で判定する（これが確実）。
+ * ＝ true のとき、スキャン/手入力/シフトは端末内だけで完結させ、サーバー(API)へは一切送らない。
+ * build25/Web は VisionOcr 未搭載なので false ＝従来のサーバー経路を使う。
+ */
+export function visionOcrAvailable(): Promise<boolean> {
+  if (!_visionProbe) _visionProbe = probeVisionOcr();
+  return _visionProbe;
 }
 
 /**
