@@ -1,0 +1,29 @@
+# 対象ビルドを内部テスターグループに配布する（TestFlightで入手可能にする）。手動実行。
+name: tf-distribute
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "内部テスターに配布するビルド番号"
+        required: true
+        default: "26"
+
+jobs:
+  distribute:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+      APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+      APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+      TARGET_BUILD: ${{ inputs.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: 内部テスターに配布
+        run: bundle exec fastlane tf_distribute
