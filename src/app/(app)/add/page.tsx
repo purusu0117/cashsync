@@ -8,7 +8,7 @@ import RewardCredit from "@/components/RewardCredit";
 import { apiCall, apiJson, netFetch } from "@/lib/clientApi";
 import { fmtYen, todayLocal } from "@/lib/format";
 import { parseEntryText } from "@/lib/localReceipt";
-import { visionOcrAvailable } from "@/lib/native";
+import { isNativePlatform } from "@/lib/native";
 import { track } from "@/lib/track";
 
 interface Category {
@@ -44,7 +44,7 @@ interface SpeechRecognitionLike {
 
 export default function AddPage() {
   const router = useRouter();
-  const onDevice = visionOcrAvailable(); // 端末内解析(build31+)＝解析中に「AI」と表示しない
+  const onDevice = isNativePlatform(); // ネイティブは端末内解析のみ＝解析中に「AI」と表示しない
   const [categories, setCategories] = useState<Category[]>([]);
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayLocal());
@@ -181,8 +181,8 @@ export default function AddPage() {
     setLimitHit(false);
     setParsedNote("");
     try {
-      if (visionOcrAvailable()) {
-        // ネイティブ版（build31+）：端末内ルール解析。AI API もサーバーも一切使わない。
+      if (isNativePlatform()) {
+        // ネイティブは端末内ルール解析のみ。AI API もサーバーも絶対に呼ばない。
         const p = parseEntryText(t, categories.map((c) => c.name), todayLocal());
         if (!p.amount || p.amount <= 0) {
           throw new Error("金額を読み取れませんでした。文中に金額（例: 650円）を入れてください。");
