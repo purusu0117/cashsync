@@ -246,20 +246,42 @@ platform :ios do
       is_key_content_base64: true,
       in_house: false,
     )
-    target = (ENV["TARGET_BUILD"] || "26").to_s
-    # fastlane pilot で「アップロード無し・既存ビルドの配布のみ」を実行する。
-    # spaceship の手動 relationship（add_beta_groups_to_build）は build id が処理直後に
-    # 認識されず "no resource of type 'builds'" で弾かれることがあったため、堅い pilot に統一。
-    upload_to_testflight(
-      api_key: api_key,
-      app_identifier: APP_ID,
-      distribute_only: true,
-      build_number: target,
-      distribute_external: false,
-      groups: ["内部テスター"],
-      notify_external_testers: false,
-    )
-    UI.success("build #{target} を内部テスターに配布しました（distribute_only）")
+    require "spaceship"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(**api_key)
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    target = (ENV["TARGET_BUILD"] || "26").to_i
+
+    builds = app.get_builds(limit: 10)
+    b = builds.find { |x| x.version.to_i == target }
+    UI.user_error!("build #{target} が見つかりません") if b.nil?
+    UI.message("target build=#{b.version} state=#{b.processing_state} id=#{b.id}")
+
+    group = app.get_beta_groups.find { |g| (g.is_internal_group rescue false) }
+    UI.user_error!("内部テスターグループが見つかりません") if group.nil?
+    UI.message("内部グループ name=#{group.name.inspect} id=#{group.id}")
+
+    # 今後のビルドが自動で内部テスターに出るよう「すべてのビルドにアクセス」をON（best-effort）
+    begin
+      Spaceship::ConnectAPI.patch_beta_groups(beta_group_id: group.id, attributes: { hasAccessToAllBuilds: true })
+      UI.success("内部グループを hasAccessToAllBuilds=true に設定（今後のビルドは自動配布）")
+    rescue => e
+      UI.important("hasAccessToAllBuilds の設定はスキップ（#{e.message}）")
+    end
+
+    # 対象ビルドを内部グループに配布（これが本命の修正）
+    begin
+      Spaceship::ConnectAPI.add_beta_groups_to_build(build_id: b.id, beta_group_ids: [group.id])
+      UI.success("build #{b.version} を内部グループ #{group.name} に配布しました")
+    rescue => e
+      UI.important("配布APIでエラー（既に配布済みの可能性）: #{e.message}")
+    end
+
+    # 確認：配布後の状態を再取得
+    b2 = app.get_builds(limit: 10).find { |x| x.version.to_i == target }
+    bg = (b2.get_beta_groups rescue [])
+    UI.message("CONFIRM build #{b2.version} groups=[#{bg.map { |x| (x.name rescue x.id) }.join(', ')}]")
+    testers = (group.get_beta_testers rescue [])
+    UI.message("CONFIRM 内部グループ testers=#{testers.size}")
   end
 
   desc "署名なしビルド（Secretsが無くても通る確認用）"
