@@ -895,7 +895,7 @@ export default function SettingsPage() {
                   >
                     編集
                   </button>
-                  <button onClick={() => setJobConfirmId(j.id)} className="ml-2 shrink-0 text-xs text-vermilion">
+                  <button onClick={() => setJobConfirmId(j.id)} aria-label="このバイト先を削除" className="ml-2 shrink-0 text-xs text-vermilion">
                     ✕
                   </button>
                 </div>
@@ -971,7 +971,7 @@ export default function SettingsPage() {
                     </span>
                     <span className="leader" />
                     <span className={`shrink-0 font-bold tabular-nums ${r.kind === "income" ? "text-sage" : ""}`}>{fmtYen(r.amount)}</span>
-                    <button onClick={() => del(`/api/recurring?id=${r.id}`)} className="ml-2 shrink-0 text-xs text-vermilion">
+                    <button onClick={() => del(`/api/recurring?id=${r.id}`)} aria-label="この定期を削除" className="ml-2 shrink-0 text-xs text-vermilion">
                       ✕
                     </button>
                   </div>
@@ -1117,7 +1117,7 @@ export default function SettingsPage() {
                         </span>
                         <span className="leader" />
                         <span className="shrink-0 font-bold tabular-nums">{fmtYen(r.amount)}/月</span>
-                        <button onClick={() => del(`/api/recurring?id=${r.id}`)} className="ml-2 shrink-0 text-xs text-vermilion">
+                        <button onClick={() => del(`/api/recurring?id=${r.id}`)} aria-label="この定期を削除" className="ml-2 shrink-0 text-xs text-vermilion">
                           ✕
                         </button>
                       </div>
@@ -1198,7 +1198,7 @@ export default function SettingsPage() {
               >
                 編集
               </button>
-              <button onClick={() => del(`/api/presets?id=${p.id}`)} className="ml-2 shrink-0 text-xs text-vermilion">
+              <button onClick={() => del(`/api/presets?id=${p.id}`)} aria-label="このボタンを削除" className="ml-2 shrink-0 text-xs text-vermilion">
                 ✕
               </button>
             </li>
@@ -1253,7 +1253,7 @@ export default function SettingsPage() {
                 >
                   編集
                 </button>
-                <button onClick={() => del(`/api/categories?id=${c.id}`)} className="text-xs text-vermilion">
+                <button onClick={() => del(`/api/categories?id=${c.id}`)} aria-label="このカテゴリを削除" className="text-xs text-vermilion">
                   ✕
                 </button>
               </span>
@@ -1326,7 +1326,7 @@ export default function SettingsPage() {
                   >
                     編集
                   </button>
-                  <button onClick={() => delTag(t.id)} className="text-xs text-vermilion">
+                  <button onClick={() => delTag(t.id)} aria-label="このタグを削除" className="text-xs text-vermilion">
                     ✕
                   </button>
                 </span>

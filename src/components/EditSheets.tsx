@@ -222,12 +222,14 @@ export function ExpenseEditSheet({
           <input
             type="number"
             inputMode="numeric"
+            aria-label="金額"
             value={draft.amount || ""}
             onChange={(e) => setDraft({ ...draft, amount: Number(e.target.value) })}
             className="w-full rounded-xl border border-rule bg-paper px-3 py-2 text-2xl font-black tabular-nums outline-none focus:border-ink"
           />
           <input
             type="date"
+            aria-label="日付"
             value={draft.date}
             onChange={(e) => setDraft({ ...draft, date: e.target.value })}
             className="w-full rounded-xl border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
@@ -393,12 +395,14 @@ export function IncomeEditSheet({
           <input
             type="number"
             inputMode="numeric"
+            aria-label="金額"
             value={draft.amount || ""}
             onChange={(e) => setDraft({ ...draft, amount: Number(e.target.value) })}
             className="w-full rounded-xl border border-rule bg-paper px-3 py-2 text-2xl font-black tabular-nums outline-none focus:border-ink"
           />
           <input
             type="date"
+            aria-label="日付"
             value={draft.date}
             onChange={(e) => setDraft({ ...draft, date: e.target.value })}
             className="w-full rounded-xl border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"

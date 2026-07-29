@@ -296,13 +296,18 @@ export default function StatsPage() {
         <>
           <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between px-1">
-              <button onClick={() => setYear(year - 1)} className="px-2 text-lg">
+              <button
+                onClick={() => setYear(year - 1)}
+                aria-label="前の年"
+                className="px-2 text-lg"
+              >
                 ◀
               </button>
               <p className="text-sm font-bold">{year}年</p>
               <button
                 onClick={() => setYear(year + 1)}
                 disabled={year >= Number(todayLocal().slice(0, 4))}
+                aria-label="次の年"
                 className="px-2 text-lg disabled:opacity-30"
               >
                 ▶
@@ -403,7 +408,11 @@ export default function StatsPage() {
         <>
       <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
         <div className="flex items-center justify-between px-1">
-          <button onClick={() => setBefore(shiftMonth(before, -WINDOW))} className="px-2 text-lg">
+          <button
+            onClick={() => setBefore(shiftMonth(before, -WINDOW))}
+            aria-label="前の6ヶ月"
+            className="px-2 text-lg"
+          >
             ◀
           </button>
           <p className="text-xs text-ink-faint">
@@ -412,6 +421,7 @@ export default function StatsPage() {
           <button
             onClick={() => setBefore(shiftMonth(before, WINDOW))}
             disabled={before >= todayLocal().slice(0, 7)}
+            aria-label="次の6ヶ月"
             className="px-2 text-lg disabled:opacity-30"
           >
             ▶

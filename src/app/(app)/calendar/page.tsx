@@ -805,6 +805,7 @@ export default function CalendarPage() {
       <header className="flex items-center justify-between">
         <button
           onClick={() => goMonth(-1)}
+          aria-label="前の月"
           className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-ink-faint active:translate-y-0.5"
         >
           ◀
@@ -812,6 +813,7 @@ export default function CalendarPage() {
         <h1 className="text-lg font-bold tracking-[0.04em]">{fmtMonthJa(month)}のお金</h1>
         <button
           onClick={() => goMonth(1)}
+          aria-label="次の月"
           className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-ink-faint active:translate-y-0.5"
         >
           ▶
