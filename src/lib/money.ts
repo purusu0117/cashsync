@@ -5,6 +5,10 @@ import { isHoliday } from "@holiday-jp/holiday_jp";
 import { db, uid } from "./db";
 import { jstTodayStr } from "./jst";
 
+// 金額の上限（円）。Postgres の amount は int4（最大約21.4億）なので、それ未満かつ
+// 個人家計として非現実的でない上限を設ける。超過は各APIが400で丁寧に返す（sqlite/pg差の解消も兼ねる）。
+export const MAX_AMOUNT = 1_000_000_000; // 10億円
+
 export function todayStr(): string {
   return jstTodayStr();
 }

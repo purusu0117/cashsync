@@ -4,6 +4,7 @@ import { db, uid } from "@/lib/db";
 import { recordEvent } from "@/lib/events";
 import { fmtYen } from "@/lib/format";
 import { DUPLICATE_MESSAGE, duplicateIncomeExists } from "@/lib/merchant";
+import { MAX_AMOUNT } from "@/lib/money";
 import { monthRange, todayStr } from "@/lib/money";
 import { pushRecordResult } from "@/lib/push";
 
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
       imageHash?: string; // 読み取った画像のsha256（同じ画像の二度読み判定用）
     };
     const amount = Math.round(Number(body.amount));
-    if (!Number.isFinite(amount) || amount <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_AMOUNT) {
       return Response.json({ error: "金額を入力してください。" }, { status: 400 });
     }
     const date = body.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : todayStr();
@@ -107,7 +108,7 @@ export async function PUT(request: Request) {
     };
     if (!body.id) return Response.json({ error: "id required" }, { status: 400 });
     const amount = Math.round(Number(body.amount));
-    if (!Number.isFinite(amount) || amount <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_AMOUNT) {
       return Response.json({ error: "金額を入力してください。" }, { status: 400 });
     }
     const date = body.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : todayStr();

@@ -14,7 +14,7 @@ import path from "path";
 import { after } from "next/server";
 import { EMAIL_UNVERIFIED_MESSAGE, emailVerificationRequired, isUserVerified } from "@/lib/account";
 import { askClaudeReceipt } from "@/lib/ai";
-import { checkAndCountUsage, getUserPlan, limitResponseBody } from "@/lib/aiUsage";
+import { checkAndCountUsage, getUserPlan, limitResponseBody, refundUsage } from "@/lib/aiUsage";
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 import { fmtYen } from "@/lib/format";
@@ -39,6 +39,8 @@ export async function POST(request: Request) {
     const form = await request.formData();
     const file = form.get("image");
     if (!(file instanceof File)) {
+      // AIを呼ぶ前の失敗＝消費した枠を戻す
+      await refundUsage(user.id, "scans").catch(() => {});
       return Response.json({ error: "画像がありません。" }, { status: 400 });
     }
     const buf = Buffer.from(await file.arrayBuffer());
@@ -47,6 +49,8 @@ export async function POST(request: Request) {
     // 同じ画像を既に記録済みなら、解析にAIを使わず即座に知らせる
     const already = await recordedImage(user.id, hash);
     if (already) {
+      // AIを使わず終了＝消費した枠を戻す
+      await refundUsage(user.id, "scans").catch(() => {});
       return Response.json(
         {
           duplicate: true,
@@ -122,6 +126,8 @@ export async function POST(request: Request) {
         }
       } catch (e) {
         console.error("[scan-jobs] failed:", e);
+        // 解析が例外で落ちた（タイムアウト/APIエラー等）＝結果を返せないので消費した枠を戻す
+        await refundUsage(user.id, "scans").catch(() => {});
         await dd
           .run(
             "UPDATE scan_jobs SET status = 'failed', error = ?, updated_at = ? WHERE id = ?",

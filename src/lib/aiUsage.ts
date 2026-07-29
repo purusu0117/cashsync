@@ -136,6 +136,23 @@ export async function checkAndCountUsage(
   return { allowed: true, used: used + 1, limit: monthLimit };
 }
 
+/**
+ * AI呼び出しが失敗（画像不正・タイムアウト・APIエラー等）したときに、消費した枠を1回分戻す。
+ * checkAndCountUsage で +1 済みの回数を打ち消す。0未満にはしない。founder/premiumパースなど
+ * そもそも上限のない枠でも呼んで問題ない（記録カウントを1戻すだけ）。
+ */
+export async function refundUsage(userId: string, kind: UsageKind): Promise<void> {
+  const d = await db();
+  const ym = jstTodayStr().slice(0, 7);
+  const col = kind === "scans" ? "scans" : "parses";
+  // 0未満にしないため WHERE で col>0 を条件に（MAX(a,b)/GREATEST は方言差があるため使わない＝両対応）
+  await d.run(
+    `UPDATE ai_usage SET ${col} = ${col} - 1 WHERE user_id = ? AND ym = ? AND ${col} > 0`,
+    userId,
+    ym,
+  );
+}
+
 export interface RewardGrant {
   ok: boolean;
   added: number;

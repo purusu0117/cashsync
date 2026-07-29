@@ -3,7 +3,7 @@ import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 import { recordEvent } from "@/lib/events";
 import { learnMerchantCategory } from "@/lib/merchant";
-import { monthRange, postRecurringForMonth, searchExpenses, todayStr } from "@/lib/money";
+import { MAX_AMOUNT, monthRange, postRecurringForMonth, searchExpenses, todayStr } from "@/lib/money";
 import { setExpenseTags } from "@/lib/tags";
 
 export const dynamic = "force-dynamic";
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
       tagIds?: string[]; // 横断タグ（任意）。未指定なら従来と完全に同じ挙動
     };
     const amount = Math.round(Number(body.amount));
-    if (!Number.isFinite(amount) || amount <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_AMOUNT) {
       return Response.json({ error: "金額を入力してください。" }, { status: 400 });
     }
     const date = body.date && DATE_RE.test(body.date) ? body.date : todayStr();
@@ -128,7 +128,7 @@ export async function PUT(request: Request) {
     };
     if (!body.id) return Response.json({ error: "id required" }, { status: 400 });
     const amount = Math.round(Number(body.amount));
-    if (!Number.isFinite(amount) || amount <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_AMOUNT) {
       return Response.json({ error: "金額を入力してください。" }, { status: 400 });
     }
     const date = body.date && DATE_RE.test(body.date) ? body.date : todayStr();

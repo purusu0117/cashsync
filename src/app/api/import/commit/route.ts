@@ -2,6 +2,7 @@
 // 支出は source='import'、収入は type='import' で記録し、後から見分けられるようにする。
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
+import { MAX_AMOUNT } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,13 @@ export async function POST(request: Request) {
       const now = Date.now();
       for (const r of rows) {
         const amount = Math.round(Number(r.amount));
-        if (!r.date || !DATE_RE.test(r.date) || !Number.isFinite(amount) || amount <= 0) {
+        if (
+          !r.date ||
+          !DATE_RE.test(r.date) ||
+          !Number.isFinite(amount) ||
+          amount <= 0 ||
+          amount > MAX_AMOUNT
+        ) {
           invalid++;
           continue;
         }

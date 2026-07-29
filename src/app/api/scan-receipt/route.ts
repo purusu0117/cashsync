@@ -5,7 +5,7 @@ import os from "os";
 import path from "path";
 import { EMAIL_UNVERIFIED_MESSAGE, emailVerificationRequired, isUserVerified } from "@/lib/account";
 import { askClaudeReceipt } from "@/lib/ai";
-import { checkAndCountUsage, getUserPlan, limitResponseBody } from "@/lib/aiUsage";
+import { checkAndCountUsage, getUserPlan, limitResponseBody, refundUsage } from "@/lib/aiUsage";
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { imageHashOf, learnedCategoryId } from "@/lib/merchant";
@@ -15,8 +15,11 @@ export const maxDuration = 180;
 
 export async function POST(request: Request) {
   let tmp = "";
+  let userId = ""; // catch で返金するため try 外に保持
+  let counted = false; // 枠を実際に消費したか（消費した時だけ返金する）
   try {
     const user = await requireUser();
+    userId = user.id;
     // 不正対策①（フラグ制御）: 確認必須ON時のみ、未確認ユーザーのAIコスト系を拒否（無料枠farming防止）。
     if (emailVerificationRequired() && !(await isUserVerified(user.id))) {
       return Response.json({ error: "unverified", message: EMAIL_UNVERIFIED_MESSAGE }, { status: 403 });
@@ -27,9 +30,13 @@ export async function POST(request: Request) {
       // { ok:false, error:'limit', message:'…' }。UI側は message を優先表示する
       return Response.json(limitResponseBody("scans", usage, plan), { status: 429 });
     }
+    counted = true; // ここで1回分消費済み。以降の失敗は返金する
     const form = await request.formData();
     const file = form.get("image");
     if (!(file instanceof File)) {
+      // AIを呼ぶ前の失敗＝消費した枠を戻す（画像不正で枠を失わせない）
+      counted = false;
+      await refundUsage(user.id, "scans");
       return Response.json({ error: "image required" }, { status: 400 });
     }
     const buf = Buffer.from(await file.arrayBuffer());
@@ -64,6 +71,8 @@ export async function POST(request: Request) {
     return Response.json({ scan, categoryId, learned, imageHash: imageHashOf(buf) });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
+    // 読み取り失敗（タイムアウト/APIエラー等）＝結果を返せなかったので消費した枠を戻す
+    if (counted && userId) await refundUsage(userId, "scans").catch(() => {});
     return Response.json(
       { error: e instanceof Error ? e.message : "scan failed" },
       { status: 500 },

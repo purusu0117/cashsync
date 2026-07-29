@@ -1,7 +1,7 @@
 // 定期支出/収入（サブスク・家賃・仕送り等）。前作の fixedExpenses + revolving + monthlyOtherIncome を統合。
 import { AuthError, requireUser, unauthorized } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
-import { currentMonth } from "@/lib/money";
+import { currentMonth, MAX_AMOUNT } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ export async function GET() {
     const d = await db();
     const items = await d.all(
       `SELECT r.id, r.kind, r.name, r.amount, r.category_id, r.start_month, r.end_month, r.post_day, r.interval, r.is_fixed, c.name AS category
-       FROM recurring_items r LEFT JOIN categories c ON c.id = r.category_id
+       FROM recurring_items r LEFT JOIN categories c ON c.id = r.category_id AND c.user_id = r.user_id
        WHERE r.user_id = ? ORDER BY r.kind, r.name`,
       user.id,
     );
@@ -44,6 +44,10 @@ export async function POST(request: Request) {
     if (!name || !Number.isFinite(amount) || amount <= 0) {
       return Response.json({ error: "名前と金額は必須です。" }, { status: 400 });
     }
+    // 金額の上限（Postgres int4 の範囲外や非現実的な値で500になるのを防ぐ）
+    if (amount > MAX_AMOUNT) {
+      return Response.json({ error: "金額が大きすぎます。" }, { status: 400 });
+    }
     const now = currentMonth();
     const startMonth = body.startMonth && MONTH_RE.test(body.startMonth) ? body.startMonth : now;
     const endMonth = body.endMonth && MONTH_RE.test(body.endMonth) ? body.endMonth : null;
@@ -52,6 +56,16 @@ export async function POST(request: Request) {
     const isFixed = body.isFixed === false ? 0 : 1; // C12: 既定は固定費
     const id = uid();
     const d = await db();
+    // categoryId は本人所有のもののみ採用（他ユーザーIDの混入・カテゴリ名リークを防ぐ）
+    let categoryId: string | null = null;
+    if (body.categoryId) {
+      const owns = await d.get(
+        "SELECT id FROM categories WHERE id = ? AND user_id = ?",
+        body.categoryId,
+        user.id,
+      );
+      categoryId = owns ? body.categoryId : null;
+    }
     await d.run(
       "INSERT INTO recurring_items (id, user_id, kind, name, amount, category_id, start_month, end_month, post_day, interval, is_fixed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       id,
@@ -59,7 +73,7 @@ export async function POST(request: Request) {
       kind,
       name,
       amount,
-      body.categoryId ?? null,
+      categoryId,
       startMonth,
       endMonth,
       postDay,
