@@ -164,6 +164,42 @@ platform :ios do
     UI.user_error!("timeout: まだ処理中です") unless ready
   end
 
+  desc "対象ビルドがTestFlightでインストール可能（処理=VALID）になるまで待つ＋状態を報告（通知用・審査不要）"
+  lane :wait_ready do
+    issuer = ENV["APPSTORE_ISSUER_ID"].to_s.strip
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APPSTORE_KEY_ID"),
+      issuer_id: issuer.empty? ? nil : issuer,
+      key_content: ENV.fetch("APPSTORE_PRIVATE_KEY"),
+      is_key_content_base64: true,
+      in_house: false,
+    )
+    require "spaceship"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(**api_key)
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    target = (ENV["TARGET_BUILD"] || "").to_i
+    ready = false
+    30.times do
+      builds = app.get_builds(limit: 10)
+      b = target > 0 ? builds.find { |x| x.version.to_i == target } : builds.max_by { |x| x.version.to_i }
+      if b.nil?
+        UI.message("build #{target} はまだ一覧に出ていません（アップロード反映待ち）")
+      else
+        comp = (b.uses_non_exempt_encryption rescue "?")
+        UI.message("build=#{b.version} processing=#{b.processing_state} 輸出コンプライアンス(usesNonExemptEncryption)=#{comp.inspect}")
+        if b.processing_state == "VALID"
+          UI.success("READY: build #{b.version} は処理完了。TestFlightでインストール可能です（compliance=#{comp.inspect}）")
+          ready = true
+          break
+        elsif ["INVALID", "FAILED"].include?(b.processing_state)
+          UI.user_error!("build #{b.version} の処理が失敗しました: #{b.processing_state}")
+        end
+      end
+      sleep(60)
+    end
+    UI.user_error!("timeout: まだ処理中です") unless ready
+  end
+
   desc "署名なしビルド（Secretsが無くても通る確認用）"
   lane :check do
     build_app(
