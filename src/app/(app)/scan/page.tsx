@@ -47,30 +47,35 @@ async function sha256Hex(input: string): Promise<string> {
   }
 }
 
+/** Promise に上限時間を付ける（超えたら reject）。端末内OCRが固まらないための安全網。 */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
+  ]);
+}
+
 /**
- * 端末内OCR用に画像を縮小した dataURL(JPEG) を返す。フル解像度のスクショ/写真は
- * base64がMB級でCapacitorブリッジ転送もVision処理も重く、"解析が終わらない"原因になる。
- * 失敗時は元の dataURL をそのまま返す（読み取り自体は継続できる）。
+ * File を長辺 maxDim 以内の JPEG dataURL に縮小して返す。
+ * フル解像度のスクショ/写真は base64 がMB級でブリッジ転送もVisionも重く"解析が終わらない"原因。
+ * `new Image()`＋巨大dataURL は iOS WebView で load が返らず固まることがあるため、
+ * より確実で速い createImageBitmap(File) を使う。
  */
-async function downscaleDataUrl(dataUrl: string, maxDim: number, quality: number): Promise<string> {
+async function downscaleFile(file: File, maxDim: number, quality: number): Promise<string> {
+  const bitmap = await createImageBitmap(file);
   try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const im = new Image();
-      im.onload = () => resolve(im);
-      im.onerror = () => reject(new Error("image load failed"));
-      im.src = dataUrl;
-    });
-    const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
-    if (scale >= 1) return dataUrl; // 既に十分小さい
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
     const canvas = document.createElement("canvas");
-    canvas.width = Math.round(img.naturalWidth * scale);
-    canvas.height = Math.round(img.naturalHeight * scale);
+    canvas.width = w;
+    canvas.height = h;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return dataUrl;
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    if (!ctx) throw new Error("no 2d context");
+    ctx.drawImage(bitmap, 0, 0, w, h);
     return canvas.toDataURL("image/jpeg", quality);
-  } catch {
-    return dataUrl;
+  } finally {
+    bitmap.close();
   }
 }
 
@@ -187,15 +192,9 @@ export default function ScanPage() {
     // ※ build25/Web（VisionOcr未搭載）は下の従来サーバー経路をそのまま使う（挙動不変）。
     if (isNativePlatform()) {
       try {
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const r = new FileReader();
-          r.onload = () => resolve(String(r.result));
-          r.onerror = () => reject(new Error("read failed"));
-          r.readAsDataURL(file);
-        });
-        // 端末内OCRは縮小画像で十分＆高速（フル解像度はブリッジ転送もVisionも遅く固まる原因）。
-        const small = await downscaleDataUrl(dataUrl, 1600, 0.8);
-        const text = await visionOcrRecognize(small);
+        // 端末内OCR。各ステップに上限時間を付け、固まらないようにする（超えたら「認識できません」へ）。
+        const small = await withTimeout(downscaleFile(file, 1600, 0.8), 15000);
+        const text = await visionOcrRecognize(small, 20000);
         const s = text
           ? parseReceiptText(text, categories.map((c) => c.name), todayLocal())
           : null;
@@ -203,6 +202,12 @@ export default function ScanPage() {
           track("scan_used");
           const catId = categories.find((c) => c.name === s.category)?.id ?? null;
           setScan({ ...s, date: s.date || todayLocal() });
+          const dataUrl = await new Promise<string>((resolve) => {
+            const r = new FileReader();
+            r.onload = () => resolve(String(r.result));
+            r.onerror = () => resolve("");
+            r.readAsDataURL(file);
+          });
           setImageHash(await sha256Hex(dataUrl));
           setCategoryId(catId);
           setSuggestedCategoryId(catId);
@@ -211,7 +216,7 @@ export default function ScanPage() {
           return;
         }
       } catch {
-        /* 端末内OCRに失敗しても、サーバー(API)へは送らない */
+        /* 端末内OCRに失敗/タイムアウトしても、サーバー(API)へは送らない */
       }
       setPhase("failed"); // 読めなければ撮り直し/手入力へ（APIは使わない）
       return;
