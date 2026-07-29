@@ -417,7 +417,7 @@ export default function ScanPage() {
             <span className="mt-3 block text-lg font-bold">レシートを撮影</span>
             <span className="mt-1 block text-xs text-ink-faint">
               {onDevice
-                ? "店名・金額・カテゴリを端末内で読み取ります（AI・通信なし）"
+                ? "店名・金額・カテゴリを自動で読み取ります"
                 : "店名・金額・カテゴリはAIが読み取ります"}
             </span>
           </button>
@@ -454,14 +454,14 @@ export default function ScanPage() {
             <img src={preview} alt="レシート" className="mx-auto max-h-64 rounded-xl border border-rule" />
           )}
           <div className="rounded-2xl border border-rule bg-card px-5 py-6 text-center shadow-sm">
-            <p className="text-lg font-bold">{onDevice ? "読み取り中" : "解析中"}</p>
-            <p className="mt-2 text-xs text-ink-faint">
-              {onDevice
-                ? "端末内で読み取っています（AIもサーバーも使いません）"
-                : elapsed > 30
+            <p className="text-lg font-bold">解析中</p>
+            {!onDevice && (
+              <p className="mt-2 text-xs text-ink-faint">
+                {elapsed > 30
                   ? "混雑していて少し時間がかかっています。もう少しお待ちください"
                   : "AIが読み取り中です（通常10〜30秒・混雑時は少しかかります）"}
-            </p>
+              </p>
+            )}
             {/* C5: サーバー処理は閉じても続くと明示（端末内OCR時は一瞬で終わるので不要） */}
             {!onDevice && (
               <p className="mt-1 text-xs text-sage">
