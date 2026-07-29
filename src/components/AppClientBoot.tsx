@@ -41,7 +41,7 @@ export default function AppClientBoot() {
 
   return (
     <div className="mb-3 rounded-md border border-vermilion/40 bg-vermilion/5 px-3 py-2.5 text-xs leading-relaxed text-ink">
-      <p className="dot text-vermilion">メールアドレスの確認が必要です</p>
+      <p className="font-bold text-vermilion">メールアドレスの確認が必要です</p>
       <p className="mt-1 text-ink-faint">
         登録時にお送りした確認メールのリンクを押してください。確認が済むと、レシート読み取りなどが使えます。
       </p>

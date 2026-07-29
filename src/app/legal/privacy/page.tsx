@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 export default function PrivacyPage() {
   return (
     <article>
-      <h1 className="dot text-xl">プライバシーポリシー</h1>
+      <h1 className="text-xl font-bold">プライバシーポリシー</h1>
       <p className="mt-2 text-[13px] leading-relaxed">
         {LEGAL.operatorType}・{LEGAL.operatorName}（以下「運営者」）は、家計簿アプリ「{LEGAL.serviceName}
         」（以下「本サービス」）における利用者の情報の取り扱いについて、以下のとおりプライバシーポリシー（以下「本ポリシー」）を定めます。
@@ -148,7 +148,7 @@ export default function PrivacyPage() {
         </p>
       </Section>
 
-      <div className="cutline mt-5 pt-3">
+      <div className="mt-5 border-t border-rule pt-3">
         <Faint>
           制定日：{LEGAL.privacyEnacted}／最終改定日：{LEGAL.privacyUpdated}
         </Faint>

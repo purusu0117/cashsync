@@ -208,13 +208,13 @@ export default function StatsPage() {
   if (!ready)
     return loadStalled ? (
       <div className="mt-16 text-center">
-        <p className="dot text-sm text-vermilion">読み込めませんでした</p>
+        <p className="text-sm font-bold text-vermilion">読み込めませんでした</p>
         <button
           onClick={() => {
             setLoadStalled(false);
             load(before, selected);
           }}
-          className="dot mt-4 rounded-md border border-ink px-6 py-2.5 text-sm active:translate-y-0.5"
+          className="mt-4 rounded-xl border border-ink px-6 py-2.5 text-sm font-bold active:translate-y-0.5"
         >
           再試行
         </button>
@@ -230,7 +230,7 @@ export default function StatsPage() {
         <div className="flex items-baseline text-xs">
           <span className="text-ink-faint">{label}</span>
           <span className="leader" />
-          <span className="dot text-ink-faint">比較データなし</span>
+          <span className="text-ink-faint">比較データなし</span>
         </div>
       );
     }
@@ -245,7 +245,7 @@ export default function StatsPage() {
           {label} {fmtYen(base)}
         </span>
         <span className="leader" />
-        <span className={`dot tabular-nums ${color}`}>
+        <span className={`font-bold tabular-nums ${color}`}>
           {sign}
           {fmtYen(Math.abs(diff))}
           {pct !== null ? `・${sign}${pct}%` : ""}
@@ -258,7 +258,7 @@ export default function StatsPage() {
     <button
       onClick={() => setView(v)}
       aria-pressed={view === v}
-      className={`dot flex-1 rounded-md py-1.5 text-sm ${
+      className={`flex-1 rounded-lg py-1.5 text-sm font-bold ${
         view === v ? "bg-ink text-card" : "text-ink-faint"
       }`}
     >
@@ -269,7 +269,7 @@ export default function StatsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="dot text-lg">
+        <h1 className="text-lg font-bold tracking-[0.04em]">
           {view === "week"
             ? "週の振り返り"
             : view === "year"
@@ -294,27 +294,27 @@ export default function StatsPage() {
       {/* C14: 年間ビュー（月ごとの収支バー12ヶ月＋年合計。過去年へは無制限にさかのぼれる） */}
       {view === "year" && (
         <>
-          <section className="zig zig-t zig-b px-3 py-4 shadow-sm">
+          <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between px-1">
-              <button onClick={() => setYear(year - 1)} className="dot px-2 text-lg">
+              <button onClick={() => setYear(year - 1)} className="px-2 text-lg">
                 ◀
               </button>
-              <p className="dot text-sm">{year}年</p>
+              <p className="text-sm font-bold">{year}年</p>
               <button
                 onClick={() => setYear(year + 1)}
                 disabled={year >= Number(todayLocal().slice(0, 4))}
-                className="dot px-2 text-lg disabled:opacity-30"
+                className="px-2 text-lg disabled:opacity-30"
               >
                 ▶
               </button>
             </div>
             <div className="mt-2 flex justify-center gap-4 text-[11px]">
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: INCOME }} />
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-sm" style={{ background: INCOME }} />
                 収入
               </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: EXPENSE }} />
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-sm" style={{ background: EXPENSE }} />
                 支出
               </span>
             </div>
@@ -342,8 +342,8 @@ export default function StatsPage() {
                       if (!active || !payload?.length) return null;
                       const p = payload[0].payload as Point;
                       return (
-                        <div className="zig zig-b rounded-t-sm px-3 py-2 text-xs shadow-md">
-                          <p className="dot">{fmtMonthJa(String(label))}</p>
+                        <div className="rounded-lg border border-rule bg-card px-3 py-2 text-xs shadow-md">
+                          <p className="font-bold">{fmtMonthJa(String(label))}</p>
                           <p style={{ color: INCOME }}>収入 {fmtYen(p.income)}</p>
                           <p style={{ color: EXPENSE }}>支出 {fmtYen(p.expense)}</p>
                           <p className="text-ink-faint">実績（収入−支出） {fmtYen(p.savings)}</p>
@@ -358,8 +358,8 @@ export default function StatsPage() {
             </div>
           </section>
 
-          <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
-            <h2 className="dot text-sm tracking-[0.1em]">{year}年の合計</h2>
+          <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+            <h2 className="text-sm font-bold tracking-[0.04em]">{year}年の合計</h2>
             {(() => {
               const inc = yearSeries.reduce((s, p) => s + p.income, 0);
               const exp = yearSeries.reduce((s, p) => s + p.expense, 0);
@@ -369,23 +369,23 @@ export default function StatsPage() {
                   <div className="flex items-baseline">
                     <span className="text-ink-faint">収入</span>
                     <span className="leader" />
-                    <span className="dot tabular-nums" style={{ color: INCOME }}>
+                    <span className="font-bold tabular-nums" style={{ color: INCOME }}>
                       +{fmtYen(inc)}
                     </span>
                   </div>
                   <div className="flex items-baseline">
                     <span className="text-ink-faint">支出</span>
                     <span className="leader" />
-                    <span className="dot tabular-nums" style={{ color: EXPENSE }}>
+                    <span className="font-bold tabular-nums" style={{ color: EXPENSE }}>
                       −{fmtYen(exp)}
                     </span>
                   </div>
-                  <div className="cutline my-1.5" />
+                  <div className="my-1.5 border-t border-rule" />
                   <div className="flex items-baseline">
                     <span className="text-ink-faint">年間の実績（収入−支出）</span>
                     <span className="leader" />
                     <span
-                      className="dot text-xl tabular-nums"
+                      className="text-xl font-black tabular-nums"
                       style={{ color: sav >= 0 ? INCOME : EXPENSE }}
                     >
                       {sav >= 0 ? "+" : ""}
@@ -395,37 +395,36 @@ export default function StatsPage() {
                 </div>
               );
             })()}
-            <div className="barcode mt-5" />
           </section>
         </>
       )}
 
       {view === "month" && (
         <>
-      <section className="zig zig-t zig-b px-3 py-4 shadow-sm">
+      <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
         <div className="flex items-center justify-between px-1">
-          <button onClick={() => setBefore(shiftMonth(before, -WINDOW))} className="dot px-2 text-lg">
+          <button onClick={() => setBefore(shiftMonth(before, -WINDOW))} className="px-2 text-lg">
             ◀
           </button>
-          <p className="dot text-xs text-ink-faint">
+          <p className="text-xs text-ink-faint">
             {fmtMonthJa(series[0]?.month ?? before)} 〜 {fmtMonthJa(series.at(-1)?.month ?? before)}
           </p>
           <button
             onClick={() => setBefore(shiftMonth(before, WINDOW))}
             disabled={before >= todayLocal().slice(0, 7)}
-            className="dot px-2 text-lg disabled:opacity-30"
+            className="px-2 text-lg disabled:opacity-30"
           >
             ▶
           </button>
         </div>
         {/* 凡例（2系列なので常設） */}
         <div className="mt-2 flex justify-center gap-4 text-[11px]">
-          <span className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: INCOME }} />
+          <span className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-sm" style={{ background: INCOME }} />
             収入
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: EXPENSE }} />
+          <span className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-sm" style={{ background: EXPENSE }} />
             支出
           </span>
         </div>
@@ -461,8 +460,8 @@ export default function StatsPage() {
                   if (!active || !payload?.length) return null;
                   const p = payload[0].payload as Point;
                   return (
-                    <div className="zig zig-b rounded-t-sm px-3 py-2 text-xs shadow-md">
-                      <p className="dot">{fmtMonthJa(String(label))}</p>
+                    <div className="rounded-lg border border-rule bg-card px-3 py-2 text-xs shadow-md">
+                      <p className="font-bold">{fmtMonthJa(String(label))}</p>
                       <p style={{ color: INCOME }}>収入 {fmtYen(p.income)}</p>
                       <p style={{ color: EXPENSE }}>支出 {fmtYen(p.expense)}</p>
                       <p className="text-ink-faint">実績（収入−支出） {fmtYen(p.savings)}</p>
@@ -478,15 +477,15 @@ export default function StatsPage() {
         <p className="text-center text-[11px] text-ink-faint">バーをタップすると下の内訳が切り替わります</p>
       </section>
 
-      <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
-        <h2 className="dot text-sm tracking-[0.1em]">{fmtMonthJa(selected)} の内訳</h2>
+      <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+        <h2 className="text-sm font-bold tracking-[0.04em]">{fmtMonthJa(selected)} の内訳</h2>
         {sel && (
           <div className="mt-2 flex items-baseline text-sm">
             {/* A8: 予測（ホームの「月末までの予測」）と区別するため「実績」と明示 */}
             <span className="text-ink-faint">{Number(selected.slice(5))}月の実績（収入−支出）</span>
             <span className="leader" />
             <span
-              className="dot text-xl tabular-nums"
+              className="text-xl font-black tabular-nums"
               style={{ color: sel.savings >= 0 ? INCOME : EXPENSE }}
             >
               {sel.savings >= 0 ? "+" : ""}
@@ -516,7 +515,7 @@ export default function StatsPage() {
                     <span>{b.category}</span>
                     <span className="ml-1.5 text-[10px] text-ink-faint">{share}%</span>
                     <span className="leader" />
-                    <span className="dot text-[15px] tabular-nums">{fmtYen(b.amount)}</span>
+                    <span className="font-bold tabular-nums text-[15px]">{fmtYen(b.amount)}</span>
                   </div>
                   <div className="mt-1 h-1 rounded-full bg-paper">
                     <div
@@ -529,45 +528,44 @@ export default function StatsPage() {
             });
           if (breakdown.length === 0) {
             return (
-              <p className="cutline mt-3 py-4 pt-3 text-center text-xs text-ink-faint">
+              <p className="mt-3 border-t border-rule py-4 pt-3 text-center text-xs text-ink-faint">
                 この月の支出はありません。
               </p>
             );
           }
           // 固定費が無い月は従来どおり1本のリスト（見出しを増やさない）
           if (fixedTotal === 0) {
-            return <ul className="cutline mt-3 space-y-2.5 pt-3">{renderRows(varRows)}</ul>;
+            return <ul className="mt-3 space-y-2.5 border-t border-rule pt-3">{renderRows(varRows)}</ul>;
           }
           return (
-            <div className="cutline mt-3 pt-3">
+            <div className="mt-3 border-t border-rule pt-3">
               <h3 className="flex items-baseline text-xs">
-                <span className="dot text-ink-faint">固定費（定期・分割）</span>
+                <span className="text-ink-faint">固定費（定期・分割）</span>
                 <span className="leader" />
-                <span className="dot tabular-nums">{fmtYen(fixedTotal)}</span>
+                <span className="font-bold tabular-nums">{fmtYen(fixedTotal)}</span>
               </h3>
               <ul className="mt-2 space-y-2.5">{renderRows(fixedRows)}</ul>
               <h3 className="mt-3 flex items-baseline text-xs">
-                <span className="dot text-ink-faint">変動費（日々の支出）</span>
+                <span className="text-ink-faint">変動費（日々の支出）</span>
                 <span className="leader" />
-                <span className="dot tabular-nums">{fmtYen(varTotal)}</span>
+                <span className="font-bold tabular-nums">{fmtYen(varTotal)}</span>
               </h3>
               <ul className="mt-2 space-y-2.5">{renderRows(varRows)}</ul>
             </div>
           );
         })()}
-        <div className="barcode mt-5" />
       </section>
 
       {/* 前月比・前年同月比（マネフォのマンスリーレポート的な定型比較。選択月に対して算出） */}
       {compare && (
-        <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
-          <h2 className="dot text-sm tracking-[0.1em]">前月比・前年同月比</h2>
+        <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+          <h2 className="text-sm font-bold tracking-[0.04em]">前月比・前年同月比</h2>
           {/* 支出（増＝悪化を朱赤で） */}
           <div className="mt-3">
             <div className="flex items-baseline text-sm">
-              <span className="dot">支出</span>
+              <span className="font-bold">支出</span>
               <span className="leader" />
-              <span className="dot text-lg tabular-nums">{fmtYen(compare.expense.current)}</span>
+              <span className="text-lg font-bold tabular-nums">{fmtYen(compare.expense.current)}</span>
             </div>
             <div className="mt-1 space-y-0.5 pl-1">
               {cmpLine("前月", compare.expense.current, compare.expense.prev, false)}
@@ -577,9 +575,9 @@ export default function StatsPage() {
           {/* 収入（増＝改善を緑で） */}
           <div className="mt-3">
             <div className="flex items-baseline text-sm">
-              <span className="dot">収入</span>
+              <span className="font-bold">収入</span>
               <span className="leader" />
-              <span className="dot text-lg tabular-nums">{fmtYen(compare.income.current)}</span>
+              <span className="text-lg font-bold tabular-nums">{fmtYen(compare.income.current)}</span>
             </div>
             <div className="mt-1 space-y-0.5 pl-1">
               {cmpLine("前月", compare.income.current, compare.income.prev, true)}
@@ -588,8 +586,8 @@ export default function StatsPage() {
           </div>
           {/* カテゴリの増減（今月 vs 前月・上位3件ずつ） */}
           {(compare.increased.length > 0 || compare.decreased.length > 0) && (
-            <div className="cutline mt-3 pt-3">
-              <p className="dot text-xs text-ink-faint">前月比 カテゴリの増減</p>
+            <div className="mt-3 border-t border-rule pt-3">
+              <p className="text-xs text-ink-faint">前月比 カテゴリの増減</p>
               <ul className="mt-2 space-y-1.5">
                 {compare.increased.map((c) => (
                   <li key={`inc-${c.category}`} className="flex items-baseline text-sm">
@@ -598,7 +596,7 @@ export default function StatsPage() {
                     )}
                     <span>{c.category}</span>
                     <span className="leader" />
-                    <span className="dot tabular-nums text-vermilion">▲ +{fmtYen(c.delta)}</span>
+                    <span className="font-bold tabular-nums text-vermilion">▲ +{fmtYen(c.delta)}</span>
                   </li>
                 ))}
                 {compare.decreased.map((c) => (
@@ -608,13 +606,12 @@ export default function StatsPage() {
                     )}
                     <span>{c.category}</span>
                     <span className="leader" />
-                    <span className="dot tabular-nums text-sage">▼ −{fmtYen(-c.delta)}</span>
+                    <span className="font-bold tabular-nums text-sage">▼ −{fmtYen(-c.delta)}</span>
                   </li>
                 ))}
               </ul>
             </div>
           )}
-          <div className="barcode mt-5" />
         </section>
       )}
 
@@ -623,23 +620,23 @@ export default function StatsPage() {
         const rows = tagStats.filter((t) => t.amount > 0);
         const maxTag = Math.max(1, ...rows.map((t) => t.amount));
         return (
-          <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
-            <h2 className="dot text-sm tracking-[0.1em]">タグ別の支出（{fmtMonthJa(selected)}）</h2>
+          <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+            <h2 className="text-sm font-bold tracking-[0.04em]">タグ別の支出（{fmtMonthJa(selected)}）</h2>
             {rows.length === 0 ? (
-              <p className="cutline mt-3 py-4 pt-3 text-center text-xs text-ink-faint">
+              <p className="mt-3 border-t border-rule py-4 pt-3 text-center text-xs text-ink-faint">
                 {tagStats.length === 0
                   ? "タグはまだありません。記録の編集画面からタグを付けられます。"
                   : "この月はタグ付きの支出がありません。"}
               </p>
             ) : (
-              <ul className="cutline mt-3 space-y-2.5 pt-3">
+              <ul className="mt-3 space-y-2.5 border-t border-rule pt-3">
                 {rows.map((t) => (
                   <li key={t.id}>
                     <div className="flex items-baseline text-sm">
                       <span className="text-sage">#{t.name}</span>
                       <span className="ml-1.5 text-[10px] text-ink-faint">{t.count}件</span>
                       <span className="leader" />
-                      <span className="dot text-[15px] tabular-nums">{fmtYen(t.amount)}</span>
+                      <span className="font-bold tabular-nums text-[15px]">{fmtYen(t.amount)}</span>
                     </div>
                     <div className="mt-1 h-1 rounded-full bg-paper">
                       <div
@@ -651,19 +648,18 @@ export default function StatsPage() {
                 ))}
               </ul>
             )}
-            <div className="barcode mt-5" />
           </section>
         );
       })()}
 
       {/* 袋分けポケット：カテゴリ別の今月予算と残り */}
-      <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
-        <h2 className="dot text-sm tracking-[0.1em]">袋分けポケット（今月）</h2>
+      <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+        <h2 className="text-sm font-bold tracking-[0.04em]">袋分けポケット（今月）</h2>
         <p className="mt-0.5 text-[11px] text-ink-faint">
           カテゴリごとに月予算を決めて封筒に入れるイメージ。残りが見えると使いすぎが止まります。
         </p>
         {pockets.length === 0 && (
-          <p className="cutline mt-3 py-4 pt-3 text-center text-xs text-ink-faint">
+          <p className="mt-3 border-t border-rule py-4 pt-3 text-center text-xs text-ink-faint">
             カテゴリを作ると、ここで袋分けの月予算を決められます。
           </p>
         )}
@@ -680,7 +676,7 @@ export default function StatsPage() {
                   <span>{p.name}</span>
                   <span className="leader" />
                   {p.budget > 0 ? (
-                    <span className={`dot tabular-nums ${over ? "text-vermilion" : ""}`}>
+                    <span className={`font-bold tabular-nums ${over ? "text-vermilion" : ""}`}>
                       {over ? `${fmtYen(p.spent - p.budget)}オーバー` : `残り${fmtYen(p.budget - p.spent)}`}
                     </span>
                   ) : (
@@ -716,7 +712,7 @@ export default function StatsPage() {
                     />
                     <button
                       onClick={() => savePocket(p.id)}
-                      className="dot shrink-0 rounded-md border border-ink px-3 text-sm"
+                      className="shrink-0 rounded-lg border border-ink px-3 text-sm font-bold"
                     >
                       保存
                     </button>
@@ -730,19 +726,19 @@ export default function StatsPage() {
 
       {/* 月次振り返りレポート（終わった月のみ・AIが分析） */}
       {selected < todayLocal().slice(0, 7) && (
-        <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
+        <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
           {!review && (
             <>
               <button
                 onClick={loadReview}
                 disabled={reviewLoading}
-                className={`dot w-full rounded-md py-3 text-base ${
+                className={`w-full rounded-xl py-3 text-base font-bold ${
                   reviewLoading
-                    ? "printing border-2 border-ink bg-paper"
+                    ? "border border-rule bg-paper text-ink-faint"
                     : "bg-vermilion text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5"
                 }`}
               >
-                {reviewLoading ? "＊＊＊ 分析中・・・ ＊＊＊" : `${fmtMonthJa(selected)}の振り返りレポート`}
+                {reviewLoading ? "分析中・・・" : `${fmtMonthJa(selected)}の振り返りレポート`}
               </button>
               {reviewLoading && (
                 <p className="mt-2 text-center text-[11px] text-ink-faint">
@@ -754,20 +750,20 @@ export default function StatsPage() {
           )}
           {review && (
             <div>
-              <p className="dot text-center text-xs text-ink-faint">
-                ＊ {fmtMonthJa(selected)} の振り返り ＊
+              <p className="text-center text-xs text-ink-faint">
+                {fmtMonthJa(selected)} の振り返り
               </p>
-              <p className="dot mt-2 text-center text-lg">{review.headline}</p>
+              <p className="mt-2 text-center text-lg font-bold">{review.headline}</p>
               {review.overspend.length > 0 && (
                 <div className="mt-3">
-                  <h3 className="dot text-xs text-vermilion">▲ 使いすぎポイント</h3>
+                  <h3 className="text-xs font-bold text-vermilion">▲ 使いすぎポイント</h3>
                   <ul className="mt-1 space-y-1.5">
                     {review.overspend.map((o, i) => (
                       <li key={i} className="text-sm">
                         <span className="flex items-baseline">
                           <span>{o.category}</span>
                           <span className="leader" />
-                          <span className="dot tabular-nums text-vermilion">{fmtYen(o.amount)}</span>
+                          <span className="font-bold tabular-nums text-vermilion">{fmtYen(o.amount)}</span>
                           {o.prevAmount > 0 && (
                             <span className="ml-1 text-[10px] text-ink-faint">
                               (前月{fmtYen(o.prevAmount)})
@@ -782,7 +778,7 @@ export default function StatsPage() {
               )}
               {review.good.length > 0 && (
                 <div className="mt-3">
-                  <h3 className="dot text-xs" style={{ color: INCOME }}>
+                  <h3 className="text-xs font-bold" style={{ color: INCOME }}>
                     ○ よかったところ
                   </h3>
                   <ul className="mt-1 space-y-0.5">
@@ -795,16 +791,16 @@ export default function StatsPage() {
                 </div>
               )}
               {review.advice.length > 0 && (
-                <div className="mt-3 cutline pt-3">
-                  <h3 className="dot text-xs text-ink-faint">◇ 来月のアドバイス</h3>
+                <div className="mt-3 border-t border-rule pt-3">
+                  <h3 className="text-xs text-ink-faint">◇ 来月のアドバイス</h3>
                   <ul className="mt-1 space-y-2">
                     {review.advice.map((a, i) => (
                       <li key={i} className="text-sm">
                         <span className="flex items-baseline">
-                          <span className="dot">{a.title}</span>
+                          <span className="font-semibold">{a.title}</span>
                           <span className="leader" />
                           {a.saveEstimate > 0 && (
-                            <span className="dot tabular-nums" style={{ color: INCOME }}>
+                            <span className="font-bold tabular-nums" style={{ color: INCOME }}>
                               月{fmtYen(a.saveEstimate)}浮く
                             </span>
                           )}
@@ -815,7 +811,6 @@ export default function StatsPage() {
                   </ul>
                 </div>
               )}
-              <div className="barcode mt-4" />
             </div>
           )}
         </section>

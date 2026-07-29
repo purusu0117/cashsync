@@ -42,7 +42,7 @@ export function Toast({ toast, hide }: { toast: ToastState | null; hide: () => v
             hide();
             u?.();
           }}
-          className="dot shrink-0 rounded border border-card/70 px-2.5 py-1 text-xs"
+          className="shrink-0 rounded border border-card/70 px-2.5 py-1 text-xs font-bold"
         >
           元に戻す
         </button>

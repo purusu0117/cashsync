@@ -26,27 +26,27 @@ const STEPS: { title: string; body: string }[] = [
 export default function ShortcutHelpPage() {
   return (
     <div className="mx-auto max-w-md min-h-dvh px-4 py-8">
-      <p className="dot text-center text-sm text-ink-faint">＊＊ CashSync ヘルプ ＊＊</p>
-      <div className="zig zig-t zig-b mt-4 px-5 py-6 shadow-sm">
-        <h1 className="dot text-lg">iPhoneショートカット連携の使い方</h1>
+      <p className="text-center text-xs text-ink-faint">CashSync ヘルプ</p>
+      <div className="mt-4 rounded-3xl border border-rule bg-card p-6 shadow-sm">
+        <h1 className="text-lg font-bold">iPhoneショートカット連携の使い方</h1>
         <p className="mt-2 text-xs leading-relaxed text-ink-faint">
           ショートカットを使うと、PayPay等の支払いスクショを「読み取り→記録→スクショ削除」までワンタップで処理できます。
         </p>
         <ol className="mt-4 space-y-4">
           {STEPS.map((s, i) => (
             <li key={i} className="flex gap-3">
-              <span className="dot mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-ink text-sm tabular-nums">
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-ink text-sm font-bold tabular-nums">
                 {i + 1}
               </span>
               <div className="min-w-0">
-                <p className="dot text-sm">{s.title}</p>
+                <p className="text-sm font-medium">{s.title}</p>
                 <p className="mt-0.5 text-xs leading-relaxed text-ink-faint">{s.body}</p>
               </div>
             </li>
           ))}
         </ol>
-        <div className="cutline mt-5 pt-4">
-          <p className="dot text-xs">うまく動かないとき</p>
+        <div className="mt-5 border-t border-rule pt-4">
+          <p className="text-xs font-bold tracking-[0.04em]">うまく動かないとき</p>
           <ul className="mt-1 list-disc pl-4 text-xs leading-relaxed text-ink-faint">
             <li>設定画面の「連携キー」をコピーし直し、ショートカット側の入力を確認してください。</li>
             <li>ショートカットが見つからない場合は、iCloudリンクからもう一度追加してください。</li>
@@ -62,7 +62,6 @@ export default function ShortcutHelpPage() {
           ホームへ
         </Link>
       </nav>
-      <div className="barcode mx-auto mt-6 w-40" />
     </div>
   );
 }

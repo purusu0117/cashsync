@@ -728,13 +728,13 @@ export default function CalendarPage() {
   if (!data)
     return loadStalled ? (
       <div className="mt-16 text-center">
-        <p className="dot text-sm text-vermilion">読み込めませんでした</p>
+        <p className="text-sm font-bold text-vermilion">読み込めませんでした</p>
         <button
           onClick={() => {
             setLoadStalled(false);
             reload(month);
           }}
-          className="dot mt-4 rounded-md border border-ink px-6 py-2.5 text-sm active:translate-y-0.5"
+          className="mt-4 rounded-md border border-ink px-6 py-2.5 text-sm font-bold active:translate-y-0.5"
         >
           再試行
         </button>
@@ -803,28 +803,34 @@ export default function CalendarPage() {
     <div className="space-y-4">
       {/* 1) 月ヘッダ */}
       <header className="flex items-center justify-between">
-        <button onClick={() => goMonth(-1)} className="dot px-3 py-1 text-lg">
+        <button
+          onClick={() => goMonth(-1)}
+          className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-ink-faint active:translate-y-0.5"
+        >
           ◀
         </button>
-        <h1 className="dot text-lg">{fmtMonthJa(month)}のお金</h1>
-        <button onClick={() => goMonth(1)} className="dot px-3 py-1 text-lg">
+        <h1 className="text-lg font-bold tracking-[0.04em]">{fmtMonthJa(month)}のお金</h1>
+        <button
+          onClick={() => goMonth(1)}
+          className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-ink-faint active:translate-y-0.5"
+        >
           ▶
         </button>
       </header>
 
       {/* 2) 今日あと使えるお金の計算（内訳） */}
-      <section className="rounded-sm border border-rule bg-card px-5 py-3 shadow-sm">
+      <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
         <button onClick={() => setShowCalc(!showCalc)} className="flex w-full items-baseline">
-          <h2 className="dot text-xs text-ink-faint">
+          <h2 className="text-xs text-ink-faint">
             {b.allowance !== null
-              ? "＊ 今日あと使えるお金の計算 ＊"
+              ? "今日あと使えるお金の計算"
               : b.planned
-                ? "＊ この月の予定収支 ＊"
-                : "＊ この月の収支 ＊"}
+                ? "この月の予定収支"
+                : "この月の収支"}
           </h2>
           <span className="leader" />
           {b.allowance !== null && (
-            <span className={`dot text-lg tabular-nums ${b.allowance < 0 ? "text-vermilion" : ""}`}>
+            <span className={`text-lg font-bold tabular-nums ${b.allowance < 0 ? "text-vermilion" : ""}`}>
               {fmtYen(b.allowance)}
             </span>
           )}
@@ -840,7 +846,7 @@ export default function CalendarPage() {
           <div className="mt-1.5 flex items-baseline text-xs">
             <span className="text-ink-faint">予定合計</span>
             <span className="leader" />
-            <span className="dot shrink-0 tabular-nums text-ink-faint">
+            <span className="shrink-0 font-bold tabular-nums text-ink-faint">
               支出 −{fmtYen(b.expenseTotal)} ・ 収入 +{fmtYen(b.incomeTotal)}
             </span>
           </div>
@@ -851,25 +857,25 @@ export default function CalendarPage() {
             <div className="flex items-baseline">
               <span className="text-ink-faint">予定収入（定期＋入力済みシフトの給料）</span>
               <span className="leader" />
-              <span className="dot shrink-0 tabular-nums text-sage">+{fmtYen(b.incomeTotal)}</span>
+              <span className="shrink-0 font-bold tabular-nums text-sage">+{fmtYen(b.incomeTotal)}</span>
             </div>
             {b.savingsGoal > 0 && (
               <div className="flex items-baseline">
                 <span className="text-ink-faint">貯金目標（先取り）</span>
                 <span className="leader" />
-                <span className="dot tabular-nums">−{fmtYen(b.savingsGoal)}</span>
+                <span className="font-bold tabular-nums">−{fmtYen(b.savingsGoal)}</span>
               </div>
             )}
             <div className="flex items-baseline">
               <span className="text-ink-faint">予定支出（定期・分割）</span>
               <span className="leader" />
-              <span className="dot tabular-nums text-vermilion">−{fmtYen(b.expenseTotal)}</span>
+              <span className="font-bold tabular-nums text-vermilion">−{fmtYen(b.expenseTotal)}</span>
             </div>
-            <div className="cutline my-1.5" />
+            <div className="my-2 border-t border-rule" />
             <div className="flex items-baseline">
               <span className="text-ink-faint">残り</span>
               <span className="leader" />
-              <span className={`dot tabular-nums ${b.remain < 0 ? "text-vermilion" : ""}`}>
+              <span className={`font-bold tabular-nums ${b.remain < 0 ? "text-vermilion" : ""}`}>
                 {fmtYen(b.remain)}
               </span>
             </div>
@@ -883,25 +889,25 @@ export default function CalendarPage() {
             <div className="flex items-baseline">
               <span className="text-ink-faint">バイト給料（今月支払い分）</span>
               <span className="leader" />
-              <span className="dot tabular-nums text-sage">+{fmtYen(b.shiftIncome)}</span>
+              <span className="font-bold tabular-nums text-sage">+{fmtYen(b.shiftIncome)}</span>
             </div>
             <div className="flex items-baseline">
               <span className="text-ink-faint">その他の収入</span>
               <span className="leader" />
-              <span className="dot tabular-nums text-sage">+{fmtYen(b.otherIncome)}</span>
+              <span className="font-bold tabular-nums text-sage">+{fmtYen(b.otherIncome)}</span>
             </div>
             {b.savingsGoal > 0 && (
               <div className="flex items-baseline">
                 <span className="text-ink-faint">貯金目標（先取り）</span>
                 <span className="leader" />
-                <span className="dot tabular-nums">−{fmtYen(b.savingsGoal)}</span>
+                <span className="font-bold tabular-nums">−{fmtYen(b.savingsGoal)}</span>
               </div>
             )}
             {b.allowance !== null && (b.fixedTotal ?? 0) > 0 && (
               <div className="flex items-baseline">
                 <span className="text-ink-faint">今月の固定費（先取り済み）</span>
                 <span className="leader" />
-                <span className="dot tabular-nums text-vermilion">−{fmtYen(b.fixedTotal ?? 0)}</span>
+                <span className="font-bold tabular-nums text-vermilion">−{fmtYen(b.fixedTotal ?? 0)}</span>
               </div>
             )}
             <div className="flex items-baseline">
@@ -909,15 +915,15 @@ export default function CalendarPage() {
                 {b.allowance !== null ? "昨日までの変動支出" : "この月の支出"}
               </span>
               <span className="leader" />
-              <span className="dot tabular-nums text-vermilion">
+              <span className="font-bold tabular-nums text-vermilion">
                 −{fmtYen(b.allowance !== null ? (b.spentBeforeToday ?? b.expenseTotal) : b.expenseTotal)}
               </span>
             </div>
-            <div className="cutline my-1.5" />
+            <div className="my-2 border-t border-rule" />
             <div className="flex items-baseline">
               <span className="text-ink-faint">残り</span>
               <span className="leader" />
-              <span className={`dot tabular-nums ${b.remain < 0 ? "text-vermilion" : ""}`}>
+              <span className={`font-bold tabular-nums ${b.remain < 0 ? "text-vermilion" : ""}`}>
                 {fmtYen(b.remain)}
               </span>
             </div>
@@ -926,19 +932,19 @@ export default function CalendarPage() {
                 <div className="flex items-baseline">
                   <span className="text-ink-faint">÷ 残り{b.daysRemaining}日</span>
                   <span className="leader" />
-                  <span className="dot tabular-nums">
+                  <span className="font-bold tabular-nums">
                     = 今日の予算 {fmtYen(b.todayBudget ?? b.allowance)}
                   </span>
                 </div>
                 <div className="flex items-baseline">
                   <span className="text-ink-faint">− 今日使った分</span>
                   <span className="leader" />
-                  <span className="dot tabular-nums text-vermilion">−{fmtYen(b.spentToday ?? 0)}</span>
+                  <span className="font-bold tabular-nums text-vermilion">−{fmtYen(b.spentToday ?? 0)}</span>
                 </div>
                 <div className="flex items-baseline">
                   <span className="text-ink-faint">= 今日あと使える</span>
                   <span className="leader" />
-                  <span className={`dot tabular-nums ${b.allowance < 0 ? "text-vermilion" : ""}`}>
+                  <span className={`font-bold tabular-nums ${b.allowance < 0 ? "text-vermilion" : ""}`}>
                     {fmtYen(b.allowance)}
                   </span>
                 </div>
@@ -951,14 +957,14 @@ export default function CalendarPage() {
       {/* 月切替後のfetchが全滅したとき：前月データのまま「空の月」に見えるので、
           本物のノーマネーデー月と区別できるエラー＋再試行を出す（初回読み込みの再試行UIと同トーン）。 */}
       {monthLoadFailed && data.month !== month && (
-        <div className="zig zig-t zig-b px-5 py-6 text-center shadow-sm">
-          <p className="dot text-sm text-vermilion">{fmtMonthJa(month)}を読み込めませんでした</p>
+        <div className="rounded-2xl border border-rule bg-card px-5 py-6 text-center shadow-sm">
+          <p className="text-sm font-bold text-vermilion">{fmtMonthJa(month)}を読み込めませんでした</p>
           <button
             onClick={() => {
               setMonthLoadFailed(false);
               reload(month);
             }}
-            className="dot mt-3 rounded-md border border-ink px-6 py-2.5 text-sm active:translate-y-0.5"
+            className="mt-3 rounded-md border border-ink px-6 py-2.5 text-sm font-bold active:translate-y-0.5"
           >
             再試行
           </button>
@@ -966,7 +972,7 @@ export default function CalendarPage() {
       )}
 
       {/* 3) 大きいカレンダー：箱を並べず、印字だけで組む（データのない日は静かに、使った日は濃く） */}
-      <div className="zig zig-t zig-b px-2 py-4 shadow-sm">
+      <div className="rounded-2xl border border-rule bg-card px-2 pb-3 pt-4 shadow-sm">
         <div className="grid grid-cols-7 text-center text-[11px]">
           {["日", "月", "火", "水", "木", "金", "土"].map((d, i) => (
             <span key={d} className={`py-1 ${i === 0 ? "text-vermilion" : "text-ink-faint"}`}>
@@ -999,12 +1005,12 @@ export default function CalendarPage() {
               <button
                 key={date}
                 onClick={() => openDay(date)}
-                className={`relative flex min-h-14 flex-col items-center gap-0.5 pb-1 pt-1 ${
-                  picked ? "rounded-md border-2 border-vermilion" : ""
+                className={`relative flex min-h-14 flex-col items-center gap-0.5 rounded-lg pb-1 pt-1 ${
+                  picked ? "border-2 border-vermilion" : ""
                 }`}
               >
                 <span
-                  className={`dot flex h-6 w-6 items-center justify-center rounded-full text-[13px] leading-none ${
+                  className={`flex h-6 w-6 items-center justify-center rounded-full text-[13px] font-bold leading-none tabular-nums ${
                     picked
                       ? "text-vermilion"
                       : today
@@ -1029,27 +1035,27 @@ export default function CalendarPage() {
                   </span>
                 )}
                 {(pd || ppd) && (
-                  <span className={`dot text-[9px] leading-none ${pd ? "text-sage" : "text-sage/55"}`}>
+                  <span className={`text-[9px] font-bold leading-none ${pd ? "text-sage" : "text-sage/55"}`}>
                     給料日
                   </span>
                 )}
                 {got > 0 && (
-                  <span className="dot text-[10px] leading-none tabular-nums text-sage">
+                  <span className="text-[10px] font-bold leading-none tabular-nums text-sage">
                     +{got.toLocaleString()}
                   </span>
                 )}
                 {spent > 0 && (
-                  <span className="dot text-[10px] leading-none tabular-nums text-ink">
+                  <span className="text-[10px] font-bold leading-none tabular-nums text-ink">
                     -{spent.toLocaleString()}
                   </span>
                 )}
                 {planGot > 0 && (
-                  <span className="dot text-[10px] leading-none tabular-nums text-sage/55">
+                  <span className="text-[10px] font-bold leading-none tabular-nums text-sage/55">
                     +{planGot.toLocaleString()}
                   </span>
                 )}
                 {planSpent > 0 && (
-                  <span className="dot text-[10px] leading-none tabular-nums text-ink-faint/80">
+                  <span className="text-[10px] font-bold leading-none tabular-nums text-ink-faint/80">
                     -{planSpent.toLocaleString()}
                   </span>
                 )}
@@ -1057,7 +1063,7 @@ export default function CalendarPage() {
             );
           })}
         </div>
-        <p className="cutline mt-2 pt-2 text-center text-[11px] text-ink-faint">
+        <p className="mt-2 border-t border-rule pt-2 text-center text-[11px] text-ink-faint">
           {multiMode
             ? "日付をタップして選択（✓）→ 下の「複数日まとめて登録」で一括登録します"
             : hasPlan
@@ -1074,7 +1080,7 @@ export default function CalendarPage() {
       {/* 4) シフト登録エリア */}
       <div className="space-y-4">
         <div className="flex items-baseline">
-          <h2 className="dot text-sm tracking-[0.14em]">シフト</h2>
+          <h2 className="text-sm font-bold tracking-[0.04em]">シフト</h2>
           {jobs.length > 0 && (
             <>
               <span className="leader" />
@@ -1090,11 +1096,11 @@ export default function CalendarPage() {
 
         {jobsLoaded && jobs.length === 0 ? (
           /* バイト先0件でもカレンダーは表示。ここから登録へ誘導（強制はしない） */
-          <div className="zig zig-t zig-b px-5 py-6 text-center shadow-sm">
+          <div className="rounded-2xl border border-rule bg-card px-5 py-6 text-center shadow-sm">
             <p className="text-sm">バイト先を登録すると、シフトから給料を自動計算できます。</p>
             <Link
               href="/settings#jobs"
-              className="dot mt-3 inline-block rounded-md bg-vermilion px-6 py-3 text-card shadow-[0_2px_0_var(--vermilion-deep)]"
+              className="mt-3 inline-block rounded-xl bg-vermilion px-6 py-3 font-bold text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none"
             >
               バイト先を登録する
             </Link>
@@ -1103,11 +1109,11 @@ export default function CalendarPage() {
           <>
             {/* この月の勤務で稼ぐ額 */}
             {income && (
-              <div className="zig zig-t zig-b px-5 pt-4 pb-3 shadow-sm">
-                <p className="dot text-center text-xs tracking-[0.18em] text-ink-faint">
-                  ＊ この月の勤務で稼ぐ額 ＊
+              <div className="rounded-2xl border border-rule bg-card px-5 pb-3 pt-4 shadow-sm">
+                <p className="text-center text-xs font-bold tracking-[0.04em] text-ink-faint">
+                  この月の勤務で稼ぐ額
                 </p>
-                <p className="dot mt-1 text-center text-4xl leading-none tabular-nums text-sage">
+                <p className="mt-1 text-center text-4xl font-black leading-none tabular-nums text-sage">
                   {fmtYen(income.total)}
                 </p>
                 <p className="mt-1.5 text-center text-[11px] text-ink-faint">
@@ -1124,7 +1130,7 @@ export default function CalendarPage() {
             )}
 
             {/* 音声でシフト追加（マイクが主役：話す→自動解析→1タップ登録） */}
-            <section className="zig zig-t zig-b px-4 py-4 shadow-sm">
+            <section className="rounded-2xl border border-rule bg-card px-4 py-4 shadow-sm">
               {!parsed && (
                 <>
                   {speechOk && (
@@ -1145,7 +1151,7 @@ export default function CalendarPage() {
                         ) : (
                           <MicIcon className="h-5 w-5 shrink-0" />
                         )}
-                        <span className="dot text-lg">
+                        <span className="text-lg font-bold">
                           {listening
                             ? "録音中… タップで確定"
                             : parsing
@@ -1201,7 +1207,7 @@ export default function CalendarPage() {
                       <button
                         onClick={() => parseShiftText()}
                         disabled={parsing || !text.trim()}
-                        className="dot shrink-0 rounded-md border border-ink px-4 text-sm disabled:opacity-40"
+                        className="shrink-0 rounded-md border border-ink px-4 text-sm font-bold disabled:opacity-40"
                       >
                         {parsing ? "…" : "変換"}
                       </button>
@@ -1211,7 +1217,7 @@ export default function CalendarPage() {
               )}
               {parsed && (
                 <div>
-                  <p className="dot text-center text-xs text-ink-faint">＊ このシフトを登録します ＊</p>
+                  <p className="text-center text-xs font-bold tracking-[0.04em] text-ink-faint">このシフトを登録します</p>
                   <div className="mt-1">
                     {parsed.map((s, i) => (
                       <div key={i} className="flex items-center gap-1.5 py-0.5 text-sm">
@@ -1246,7 +1252,7 @@ export default function CalendarPage() {
                           </span>
                         )}
                         <span className="leader" />
-                        <span className="dot shrink-0 tabular-nums">
+                        <span className="shrink-0 font-bold tabular-nums">
                           {minToHHMM(s.startMin)}〜{minToHHMM(s.endMin)}
                         </span>
                       </div>
@@ -1265,7 +1271,7 @@ export default function CalendarPage() {
                     <button
                       onClick={saveParsed}
                       disabled={parsing}
-                      className="dot flex-[2] rounded-md bg-vermilion py-3 text-base text-card shadow-[0_2px_0_var(--vermilion-deep)]"
+                      className="flex-[2] rounded-xl bg-vermilion py-3 text-base font-bold text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none"
                     >
                       {parsed.length}件を登録する
                     </button>
@@ -1275,14 +1281,14 @@ export default function CalendarPage() {
             </section>
 
             {/* 複数日まとめて登録 */}
-            <section className="zig zig-t zig-b px-4 py-4 shadow-sm">
+            <section className="rounded-2xl border border-rule bg-card px-4 py-4 shadow-sm">
               {!multiMode ? (
                 <button
                   onClick={() => {
                     setMultiMode(true);
                     setMultiDates(new Set());
                   }}
-                  className="dot w-full rounded-md border border-ink py-2.5 text-sm active:translate-y-0.5"
+                  className="w-full rounded-md border border-ink py-2.5 text-sm font-bold active:translate-y-0.5"
                 >
                   複数日まとめて登録
                 </button>
@@ -1317,7 +1323,7 @@ export default function CalendarPage() {
                       onChange={(e) => setMsStart(e.target.value)}
                       className="min-w-0 flex-1 rounded-md border border-rule bg-paper px-2 py-2 text-sm"
                     />
-                    <span className="dot">〜</span>
+                    <span className="text-ink-faint">〜</span>
                     <input
                       type="time"
                       value={msEnd}
@@ -1347,7 +1353,7 @@ export default function CalendarPage() {
                     <button
                       onClick={saveMulti}
                       disabled={multiBusy || multiDates.size === 0}
-                      className="dot flex-[2] rounded-md bg-vermilion py-2.5 text-sm text-card shadow-[0_2px_0_var(--vermilion-deep)] disabled:opacity-50"
+                      className="flex-[2] rounded-xl bg-vermilion py-2.5 text-sm font-bold text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none disabled:opacity-50"
                     >
                       {multiBusy ? "登録中・・・" : `${multiDates.size}日ぶん登録`}
                     </button>
@@ -1358,8 +1364,8 @@ export default function CalendarPage() {
 
             {/* この月のシフト一覧（時間・給料・出どころ・削除） */}
             {shifts.length > 0 && (
-              <section className="zig zig-t zig-b px-4 py-3 shadow-sm">
-                <h2 className="dot text-xs text-ink-faint">この月のシフト</h2>
+              <section className="rounded-2xl border border-rule bg-card px-4 py-3 shadow-sm">
+                <h2 className="text-xs text-ink-faint">この月のシフト</h2>
                 <ul className="mt-1">
                   {shifts.map((s) => (
                     <li key={s.id} className="flex items-center gap-2 py-1.5 text-sm">
@@ -1388,10 +1394,10 @@ export default function CalendarPage() {
                           )}
                         </span>
                         <span className="leader" />
-                        <span className="dot shrink-0 tabular-nums">
+                        <span className="shrink-0 font-bold tabular-nums">
                           {minToHHMM(s.start_min)}〜{minToHHMM(s.end_min)}
                         </span>
-                        <span className="dot ml-2 shrink-0 tabular-nums text-sage">{fmtYen(s.pay)}</span>
+                        <span className="ml-2 shrink-0 font-bold tabular-nums text-sage">{fmtYen(s.pay)}</span>
                       </button>
                       <button
                         onClick={() => removeShiftWithUndo(s)}
@@ -1424,10 +1430,10 @@ export default function CalendarPage() {
       {selected && (
         <div className="fixed inset-0 z-50 flex items-end bg-ink/40" onClick={() => setSelected(null)}>
           <div
-            className="zig zig-t mx-auto max-h-[75dvh] w-full max-w-md overflow-y-auto px-5 pb-8 pt-5"
+            className="mx-auto max-h-[75dvh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-card px-5 pb-8 pt-5 shadow-sm"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="dot text-center text-xs text-ink-faint">＊ {fmtDateJa(selected)} ＊</p>
+            <p className="text-center text-xs font-bold tracking-[0.04em] text-ink-faint">{fmtDateJa(selected)}</p>
             {selPd.map((p) => (
               <div
                 key={p.jobId}
@@ -1441,7 +1447,7 @@ export default function CalendarPage() {
                   />
                   <span>{p.jobName} 給料日</span>
                   <span className="leader" />
-                  <span className="dot tabular-nums text-sage">+{fmtYen(p.amount)}</span>
+                  <span className="font-bold tabular-nums text-sage">+{fmtYen(p.amount)}</span>
                 </div>
                 <p className="mt-0.5 text-[11px] text-ink-faint">
                   {p.periodStart === p.periodEnd
@@ -1457,13 +1463,13 @@ export default function CalendarPage() {
                     <span className="text-sage">＋</span>
                     <span className="ml-1 truncate">{x.memo || "収入"}</span>
                     <span className="leader" />
-                    <span className="dot tabular-nums text-sage">+{fmtYen(x.amount)}</span>
+                    <span className="font-bold tabular-nums text-sage">+{fmtYen(x.amount)}</span>
                   </li>
                 ))}
               </ul>
             )}
             {selExp.length > 0 && (
-              <ul className="mt-3 cutline pt-2">
+              <ul className="mt-3 border-t border-rule pt-2">
                 {selExp.map((e) => (
                   <li key={e.id}>
                     {/* C10: 行タップで履歴と同じ編集シート（削除もシート内から） */}
@@ -1476,7 +1482,7 @@ export default function CalendarPage() {
                       )}
                       <span className="truncate">{e.memo || e.category || "支出"}</span>
                       <span className="leader" />
-                      <span className="dot tabular-nums text-vermilion">−{fmtYen(e.amount)}</span>
+                      <span className="font-bold tabular-nums text-vermilion">−{fmtYen(e.amount)}</span>
                     </button>
                   </li>
                 ))}
@@ -1484,7 +1490,7 @@ export default function CalendarPage() {
             )}
             {/* その日のシフト（掛け持ち対応。タップで編集・✕で削除） */}
             {selShifts.length > 0 && (
-              <ul className="mt-3 cutline pt-2">
+              <ul className="mt-3 border-t border-rule pt-2">
                 {selShifts.map((s) => (
                   <li key={s.id} className="flex items-center gap-2 py-1 text-sm">
                     <button
@@ -1497,10 +1503,10 @@ export default function CalendarPage() {
                       />
                       <span className="shrink-0">{s.job_name || "シフト"}</span>
                       <span className="leader" />
-                      <span className="dot shrink-0 tabular-nums">
+                      <span className="shrink-0 font-bold tabular-nums">
                         {minToHHMM(s.start_min)}〜{minToHHMM(s.end_min)}
                       </span>
-                      <span className="dot ml-2 shrink-0 tabular-nums text-sage">{fmtYen(s.pay)}</span>
+                      <span className="ml-2 shrink-0 font-bold tabular-nums text-sage">{fmtYen(s.pay)}</span>
                     </button>
                     <button
                       onClick={() => removeShiftWithUndo(s)}
@@ -1514,8 +1520,8 @@ export default function CalendarPage() {
               </ul>
             )}
             {(selPlanPd.length > 0 || selPlanInc.length > 0 || selPlanExp.length > 0) && (
-              <div className="mt-3 cutline pt-2">
-                <p className="dot text-[11px] text-ink-faint">＊ 予定（まだ記帳前） ＊</p>
+              <div className="mt-3 border-t border-rule pt-2">
+                <p className="text-[11px] font-bold text-ink-faint">予定（まだ記帳前）</p>
                 {selPlanPd.map((p) => (
                   <div
                     key={p.jobId}
@@ -1531,7 +1537,7 @@ export default function CalendarPage() {
                       <span className="ml-1 shrink-0 text-[10px] text-ink-faint">予定</span>
                       <span className="leader" />
                       {p.amount > 0 ? (
-                        <span className="dot shrink-0 tabular-nums text-sage">+{fmtYen(p.amount)}</span>
+                        <span className="shrink-0 font-bold tabular-nums text-sage">+{fmtYen(p.amount)}</span>
                       ) : (
                         <span className="shrink-0 text-[11px] text-ink-faint">金額未定</span>
                       )}
@@ -1551,7 +1557,7 @@ export default function CalendarPage() {
                         <span className="ml-1 truncate">{x.name}</span>
                         <span className="ml-1 shrink-0 text-[10px] text-ink-faint">予定</span>
                         <span className="leader" />
-                        <span className="dot shrink-0 tabular-nums text-sage">+{fmtYen(x.amount)}</span>
+                        <span className="shrink-0 font-bold tabular-nums text-sage">+{fmtYen(x.amount)}</span>
                       </li>
                     ))}
                   </ul>
@@ -1566,7 +1572,7 @@ export default function CalendarPage() {
                         <span className="truncate">{x.name}</span>
                         <span className="shrink-0 text-[10px] text-ink-faint">予定</span>
                         <span className="leader" />
-                        <span className="dot shrink-0 tabular-nums text-ink-faint">−{fmtYen(x.amount)}</span>
+                        <span className="shrink-0 font-bold tabular-nums text-ink-faint">−{fmtYen(x.amount)}</span>
                       </li>
                     ))}
                   </ul>
@@ -1589,18 +1595,18 @@ export default function CalendarPage() {
               )}
 
             {/* この日にシフトを直接追加（単発。複数日まとめて・音声はカレンダー下のシフト登録エリアから） */}
-            <div className="mt-4 cutline pt-3">
+            <div className="mt-4 border-t border-rule pt-3">
               {jobs.length === 0 ? (
                 <Link
                   href="/settings#jobs"
-                  className="dot block text-center text-[11px] text-ink-faint underline underline-offset-2"
+                  className="block text-center text-[11px] text-ink-faint underline underline-offset-2"
                 >
                   バイト先を登録すると、ここからシフトを入れられます
                 </Link>
               ) : !showShiftAdd ? (
                 <button
                   onClick={() => setShowShiftAdd(true)}
-                  className="dot w-full rounded-md border border-ink py-2 text-sm active:translate-y-0.5"
+                  className="w-full rounded-md border border-ink py-2 text-sm font-bold active:translate-y-0.5"
                 >
                   ＋ この日にシフトを追加（掛け持ちOK）
                 </button>
@@ -1656,7 +1662,7 @@ export default function CalendarPage() {
                     <button
                       onClick={addShift}
                       disabled={shiftBusy || !jobId}
-                      className="dot rounded-md bg-vermilion px-4 py-1.5 text-sm text-card active:translate-y-0.5 disabled:opacity-50"
+                      className="rounded-xl bg-vermilion px-4 py-1.5 text-sm font-bold text-card active:translate-y-0.5 disabled:opacity-50"
                     >
                       追加
                     </button>
@@ -1672,10 +1678,10 @@ export default function CalendarPage() {
       {editDate && (
         <div className="fixed inset-0 z-50 flex items-end bg-ink/40" onClick={() => setEditDate(null)}>
           <div
-            className="zig zig-t mx-auto w-full max-w-md px-5 pb-8 pt-5"
+            className="mx-auto w-full max-w-md rounded-t-2xl bg-card px-5 pb-8 pt-5 shadow-sm"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="dot text-center text-xs text-ink-faint">＊ {fmtDateJa(editDate)} ＊</p>
+            <p className="text-center text-xs font-bold tracking-[0.04em] text-ink-faint">{fmtDateJa(editDate)}</p>
             <div className="mt-3 space-y-3">
               {jobs.length > 1 && (
                 <select
@@ -1697,7 +1703,7 @@ export default function CalendarPage() {
                   onChange={(e) => setEStart(e.target.value)}
                   className="min-w-0 flex-1 rounded-md border border-rule bg-paper px-3 py-2 text-base"
                 />
-                <span className="dot shrink-0">〜</span>
+                <span className="shrink-0 text-ink-faint">〜</span>
                 <input
                   type="time"
                   value={eEnd}
@@ -1706,7 +1712,7 @@ export default function CalendarPage() {
                 />
               </div>
               <label className="flex items-center gap-2 text-sm">
-                <span className="dot text-xs text-ink-faint">休憩(分)</span>
+                <span className="text-xs text-ink-faint">休憩(分)</span>
                 <input
                   type="number"
                   inputMode="numeric"
@@ -1736,7 +1742,7 @@ export default function CalendarPage() {
               <button
                 onClick={saveShift}
                 disabled={editBusy}
-                className="dot flex-1 rounded-md bg-vermilion py-3 text-base text-card shadow-[0_2px_0_var(--vermilion-deep)]"
+                className="flex-1 rounded-xl bg-vermilion py-3 text-base font-bold text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none"
               >
                 {editBusy ? "・・・" : "保存"}
               </button>
@@ -1749,10 +1755,10 @@ export default function CalendarPage() {
       {linkOpen && (
         <div className="fixed inset-0 z-50 flex items-end bg-ink/40" onClick={() => setLinkOpen(false)}>
           <div
-            className="zig zig-t mx-auto max-h-[85dvh] w-full max-w-md overflow-y-auto px-5 pb-8 pt-5"
+            className="mx-auto max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-card px-5 pb-8 pt-5 shadow-sm"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="dot text-center text-xs text-ink-faint">＊ カレンダー自動同期 ＊</p>
+            <p className="text-center text-xs font-bold tracking-[0.04em] text-ink-faint">カレンダー自動同期</p>
             <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
               一度ONにすると、アプリを開くたびに今月・来月のシフトを自動で取り込み、時間変更や取り消しも反映します（手入力のシフトには触りません）。
             </p>
@@ -1771,7 +1777,7 @@ export default function CalendarPage() {
                 </select>
               )}
               <label className="block">
-                <span className="dot text-xs text-ink-faint">含めるキーワード（予定タイトル・カンマ区切り）</span>
+                <span className="text-xs text-ink-faint">含めるキーワード（予定タイトル・カンマ区切り）</span>
                 <input
                   value={linkKeywords}
                   onChange={(e) => setLinkKeywords(e.target.value)}
@@ -1780,7 +1786,7 @@ export default function CalendarPage() {
                 />
               </label>
               <label className="block">
-                <span className="dot text-xs text-ink-faint">除外ワード（希望提出・締切などの誤取り込み防止）</span>
+                <span className="text-xs text-ink-faint">除外ワード（希望提出・締切などの誤取り込み防止）</span>
                 <input
                   value={linkExcludes}
                   onChange={(e) => setLinkExcludes(e.target.value)}
@@ -1799,7 +1805,7 @@ export default function CalendarPage() {
               <button
                 onClick={startLink}
                 disabled={linkBusy || !linkKeywords.trim()}
-                className="dot w-full rounded-md bg-vermilion py-3 text-base text-card shadow-[0_2px_0_var(--vermilion-deep)] disabled:opacity-50"
+                className="w-full rounded-xl bg-vermilion py-3 text-base font-bold text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none disabled:opacity-50"
               >
                 {linkBusy ? "同期中・・・" : autoOn ? "設定を保存して今すぐ同期" : "連携して自動同期を開始"}
               </button>

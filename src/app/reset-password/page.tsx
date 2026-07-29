@@ -49,10 +49,10 @@ function ResetPasswordForm() {
 
   return (
     <div className="mx-auto max-w-md min-h-dvh flex flex-col justify-center px-6 py-10">
-      <div className="zig zig-t zig-b px-6 py-8 shadow-sm">
-        <p className="dot text-center text-sm text-ink-faint">＊＊ パスワード再設定 ＊＊</p>
-        <h1 className="dot text-center text-4xl mt-2">CashSync</h1>
-        <div className="cutline my-5" />
+      <div className="rounded-3xl border border-rule bg-card px-6 py-8 shadow-sm">
+        <p className="text-center text-xs text-ink-faint">パスワード再設定</p>
+        <h1 className="text-center text-4xl font-black tracking-tight mt-2">CashSync</h1>
+        <div className="border-t border-rule my-5" />
         {!token ? (
           <div className="text-center">
             <p className="text-sm text-vermilion">リンクが正しくありません。</p>
@@ -68,13 +68,13 @@ function ResetPasswordForm() {
           </div>
         ) : done ? (
           <div className="text-center">
-            <p className="dot text-sm text-sage">新しいパスワードを設定しました</p>
+            <p className="text-sm font-bold text-sage">新しいパスワードを設定しました</p>
             <p className="mt-2 text-xs text-ink-faint">
               新しいパスワードでログインし直してください。
             </p>
             <Link
               href="/login"
-              className="dot mt-5 block w-full rounded-md bg-vermilion py-3 text-center text-lg text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none"
+              className="mt-5 block w-full rounded-xl bg-vermilion py-3 text-center text-lg font-bold text-card shadow-sm active:translate-y-0.5 active:shadow-none"
             >
               ログインへ
             </Link>
@@ -82,23 +82,23 @@ function ResetPasswordForm() {
         ) : (
           <form onSubmit={submit} className="space-y-3">
             <label className="block">
-              <span className="dot text-xs text-ink-faint">新しいパスワード</span>
+              <span className="text-xs text-ink-faint">新しいパスワード</span>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
+                className="mt-1 w-full rounded-xl border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
                 autoComplete="new-password"
               />
               <span className="mt-1 block text-[11px] text-ink-faint">8文字以上で設定してください</span>
             </label>
             <label className="block">
-              <span className="dot text-xs text-ink-faint">新しいパスワード（確認）</span>
+              <span className="text-xs text-ink-faint">新しいパスワード（確認）</span>
               <input
                 type="password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
-                className="mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
+                className="mt-1 w-full rounded-xl border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
                 autoComplete="new-password"
               />
             </label>
@@ -106,7 +106,7 @@ function ResetPasswordForm() {
             <button
               type="submit"
               disabled={busy}
-              className="dot w-full rounded-md bg-vermilion py-3 text-lg text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none disabled:opacity-50"
+              className="w-full rounded-xl bg-vermilion py-3 text-lg font-bold text-card shadow-sm active:translate-y-0.5 active:shadow-none disabled:opacity-50"
             >
               {busy ? "・・・" : "パスワードを設定する"}
             </button>

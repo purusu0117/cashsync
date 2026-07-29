@@ -6,8 +6,8 @@ import { LEGAL } from "@/lib/legal";
 export default function LegalLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="mx-auto max-w-md min-h-dvh px-4 py-8">
-      <p className="dot text-center text-sm text-ink-faint">＊＊ {LEGAL.serviceName} ＊＊</p>
-      <div className="zig zig-t zig-b mt-4 px-5 py-6 shadow-sm">{children}</div>
+      <p className="text-center text-xs text-ink-faint">{LEGAL.serviceName}</p>
+      <div className="mt-4 rounded-3xl border border-rule bg-card p-6 shadow-sm">{children}</div>
       <nav className="mt-6 flex items-center justify-center gap-4 text-xs text-ink-faint">
         <Link href="/legal/privacy" className="underline underline-offset-4">
           プライバシーポリシー
@@ -19,7 +19,6 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
           アプリへ戻る
         </Link>
       </nav>
-      <div className="barcode mx-auto mt-6 w-40" />
     </div>
   );
 }

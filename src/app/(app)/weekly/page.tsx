@@ -7,7 +7,7 @@ import WeeklyReview from "@/components/WeeklyReview";
 export default function WeeklyPage() {
   return (
     <div className="space-y-4">
-      <h1 className="dot text-lg">先週の振り返り</h1>
+      <h1 className="text-lg font-bold tracking-[0.04em]">先週の振り返り</h1>
       <WeeklyReview showStatsLink />
     </div>
   );

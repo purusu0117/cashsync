@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 export default function TermsPage() {
   return (
     <article>
-      <h1 className="dot text-xl">利用規約</h1>
+      <h1 className="text-xl font-bold">利用規約</h1>
       <p className="mt-2 text-[13px] leading-relaxed">
         この利用規約（以下「本規約」）は、{LEGAL.operatorType}・{LEGAL.operatorName}
         （以下「運営者」）が提供する家計簿アプリ「{LEGAL.serviceName}
@@ -127,7 +127,7 @@ export default function TermsPage() {
         </p>
       </Section>
 
-      <div className="cutline mt-5 pt-3">
+      <div className="mt-5 border-t border-rule pt-3">
         <Faint>
           制定日：{LEGAL.termsEnacted}／最終改定日：{LEGAL.termsUpdated}
         </Faint>

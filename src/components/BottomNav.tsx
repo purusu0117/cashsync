@@ -18,7 +18,7 @@ export default function BottomNav() {
   const pathname = usePathname();
   const tabs = TABS;
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-40 bg-card cutline pb-[env(safe-area-inset-bottom)]">
+    <nav className="fixed bottom-0 inset-x-0 z-40 bg-card border-t border-rule pb-[env(safe-area-inset-bottom)]">
       <div className="mx-auto max-w-md flex items-stretch">
         {tabs.map((t) => {
           const active = t.href === "/" ? pathname === "/" : pathname.startsWith(t.href);
@@ -31,7 +31,7 @@ export default function BottomNav() {
               }`}
             >
               <t.icon className="h-5 w-5" />
-              <span className="dot text-[10px] whitespace-nowrap">{t.label}</span>
+              <span className="text-[10px] font-medium whitespace-nowrap">{t.label}</span>
             </Link>
           );
         })}

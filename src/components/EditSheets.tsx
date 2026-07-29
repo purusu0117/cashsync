@@ -214,30 +214,30 @@ export function ExpenseEditSheet({
   return (
     <div className="fixed inset-0 z-[60] flex items-end bg-ink/40" onClick={onClose}>
       <div
-        className="zig zig-t mx-auto max-h-[85dvh] w-full max-w-md overflow-y-auto px-5 pb-8 pt-5"
+        className="rounded-t-2xl bg-card mx-auto max-h-[85dvh] w-full max-w-md overflow-y-auto px-5 pb-8 pt-5 shadow-sm"
         onClick={(e) => e.stopPropagation()}
       >
-        <p className="dot text-center text-xs text-ink-faint">＊ 編集 ＊</p>
+        <p className="text-center text-sm font-bold tracking-[0.04em] text-ink-faint">編集</p>
         <div className="mt-3 space-y-3">
           <input
             type="number"
             inputMode="numeric"
             value={draft.amount || ""}
             onChange={(e) => setDraft({ ...draft, amount: Number(e.target.value) })}
-            className="dot w-full rounded-md border border-rule bg-paper px-3 py-2 text-2xl tabular-nums outline-none focus:border-ink"
+            className="w-full rounded-xl border border-rule bg-paper px-3 py-2 text-2xl font-black tabular-nums outline-none focus:border-ink"
           />
           <input
             type="date"
             value={draft.date}
             onChange={(e) => setDraft({ ...draft, date: e.target.value })}
-            className="w-full rounded-md border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
+            className="w-full rounded-xl border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
           />
           <div className="flex flex-wrap gap-1.5">
             {categories.map((c) => (
               <button
                 key={c.id}
                 onClick={() => setDraft({ ...draft, category_id: c.id })}
-                className={`flex items-center gap-1 rounded-full border px-3 py-1 text-sm ${
+                className={`flex items-center gap-1 rounded-xl border px-3 py-1 text-sm font-semibold ${
                   draft.category_id === c.id
                     ? "border-vermilion bg-vermilion text-card"
                     : "border-rule bg-paper"
@@ -250,7 +250,7 @@ export function ExpenseEditSheet({
           {/* 横断タグ：カテゴリとは別に複数付けられる（親が tags を渡した時だけ表示） */}
           {tagsEnabled && (
             <div>
-              <p className="dot text-[11px] text-ink-faint">タグ（任意・複数可）</p>
+              <p className="text-xs text-ink-faint">タグ（任意・複数可）</p>
               {tagLoadError && (
                 <p className="mt-0.5 text-[11px] text-caution">
                   タグを読み込めませんでした（このまま保存すると今のタグは保持されます）
@@ -261,7 +261,7 @@ export function ExpenseEditSheet({
                   <button
                     key={t.id}
                     onClick={() => toggleTag(t.id)}
-                    className={`rounded-full border px-3 py-1 text-sm ${
+                    className={`rounded-xl border px-3 py-1 text-sm font-semibold ${
                       selectedTags.has(t.id)
                         ? "border-sage bg-sage text-card"
                         : "border-rule bg-paper text-ink"
@@ -277,12 +277,12 @@ export function ExpenseEditSheet({
                   onChange={(e) => setNewTag(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && addTag()}
                   placeholder="新しいタグ（例：旅行・推し活）"
-                  className="min-w-0 flex-1 rounded-md border border-rule bg-paper px-3 py-1.5 text-sm outline-none focus:border-ink"
+                  className="min-w-0 flex-1 rounded-xl border border-rule bg-paper px-3 py-1.5 text-sm outline-none focus:border-ink"
                 />
                 <button
                   onClick={addTag}
                   disabled={!newTag.trim() || tagBusy}
-                  className="dot shrink-0 rounded-md border border-ink px-3 text-sm disabled:opacity-40"
+                  className="shrink-0 rounded-xl border border-ink px-3 text-sm font-semibold disabled:opacity-40"
                 >
                   ＋ 追加
                 </button>
@@ -293,7 +293,7 @@ export function ExpenseEditSheet({
             value={draft.memo}
             onChange={(e) => setDraft({ ...draft, memo: e.target.value })}
             placeholder="メモ"
-            className="w-full rounded-md border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
+            className="w-full rounded-xl border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
           />
         </div>
         {error && <p className="mt-2 text-sm text-vermilion">{error}</p>}
@@ -301,7 +301,7 @@ export function ExpenseEditSheet({
           <button
             onClick={remove}
             disabled={busy}
-            className="rounded-md border border-vermilion px-4 py-3 text-sm text-vermilion disabled:opacity-50"
+            className="rounded-xl border border-vermilion px-4 py-3 text-sm font-semibold text-vermilion active:translate-y-0.5 disabled:opacity-50"
           >
             削除
           </button>
@@ -309,7 +309,7 @@ export function ExpenseEditSheet({
             <button
               onClick={duplicate}
               disabled={busy}
-              className="flex-1 rounded-md border border-rule py-3 text-sm disabled:opacity-50"
+              className="flex-1 rounded-xl border border-ink py-3 text-sm font-semibold active:translate-y-0.5 disabled:opacity-50"
               title="同じ内容で今日の日付で記録"
             >
               もう一度
@@ -318,7 +318,7 @@ export function ExpenseEditSheet({
           <button
             onClick={save}
             disabled={busy || !(draft.amount > 0)}
-            className="dot flex-1 rounded-md bg-vermilion py-3 text-base text-card shadow-[0_2px_0_var(--vermilion-deep)] disabled:opacity-50"
+            className="flex-1 rounded-xl bg-vermilion py-3 text-base font-bold text-card shadow-sm active:translate-y-0.5 active:shadow-none disabled:opacity-50"
           >
             保存
           </button>
@@ -385,29 +385,29 @@ export function IncomeEditSheet({
   return (
     <div className="fixed inset-0 z-[60] flex items-end bg-ink/40" onClick={onClose}>
       <div
-        className="zig zig-t mx-auto w-full max-w-md px-5 pb-8 pt-5"
+        className="rounded-t-2xl bg-card mx-auto w-full max-w-md px-5 pb-8 pt-5 shadow-sm"
         onClick={(e) => e.stopPropagation()}
       >
-        <p className="dot text-center text-xs text-sage">＊ 収入の編集 ＊</p>
+        <p className="text-center text-sm font-bold tracking-[0.04em] text-sage">収入の編集</p>
         <div className="mt-3 space-y-3">
           <input
             type="number"
             inputMode="numeric"
             value={draft.amount || ""}
             onChange={(e) => setDraft({ ...draft, amount: Number(e.target.value) })}
-            className="dot w-full rounded-md border border-rule bg-paper px-3 py-2 text-2xl tabular-nums outline-none focus:border-ink"
+            className="w-full rounded-xl border border-rule bg-paper px-3 py-2 text-2xl font-black tabular-nums outline-none focus:border-ink"
           />
           <input
             type="date"
             value={draft.date}
             onChange={(e) => setDraft({ ...draft, date: e.target.value })}
-            className="w-full rounded-md border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
+            className="w-full rounded-xl border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
           />
           <input
             value={draft.memo}
             onChange={(e) => setDraft({ ...draft, memo: e.target.value })}
             placeholder="メモ（仕送り・お小遣いなど）"
-            className="w-full rounded-md border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
+            className="w-full rounded-xl border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
           />
         </div>
         {error && <p className="mt-2 text-sm text-vermilion">{error}</p>}
@@ -415,14 +415,14 @@ export function IncomeEditSheet({
           <button
             onClick={remove}
             disabled={busy}
-            className="rounded-md border border-vermilion px-4 py-3 text-sm text-vermilion disabled:opacity-50"
+            className="rounded-xl border border-vermilion px-4 py-3 text-sm font-semibold text-vermilion active:translate-y-0.5 disabled:opacity-50"
           >
             削除
           </button>
           <button
             onClick={save}
             disabled={busy || !(draft.amount > 0)}
-            className="dot flex-1 rounded-md bg-sage py-3 text-base text-card shadow-[0_2px_0_#1f6b42] disabled:opacity-50"
+            className="flex-1 rounded-xl bg-sage py-3 text-base font-bold text-card shadow-sm active:translate-y-0.5 active:shadow-none disabled:opacity-50"
           >
             保存
           </button>

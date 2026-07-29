@@ -43,20 +43,20 @@ function VerifyInner() {
 
   return (
     <div className="mx-auto max-w-md min-h-dvh flex flex-col justify-center px-6 py-10">
-      <div className="zig zig-t zig-b px-6 py-8 shadow-sm text-center">
-        <p className="dot text-sm text-ink-faint">＊＊ メール確認 ＊＊</p>
-        <h1 className="dot text-4xl mt-2">CashSync</h1>
-        <div className="cutline my-5" />
-        {state === "checking" && <p className="dot text-sm text-ink-faint">確認しています・・・</p>}
+      <div className="rounded-3xl border border-rule bg-card px-6 py-8 shadow-sm text-center">
+        <p className="text-xs text-ink-faint">メール確認</p>
+        <h1 className="text-4xl font-black tracking-tight mt-2">CashSync</h1>
+        <div className="border-t border-rule my-5" />
+        {state === "checking" && <p className="text-sm font-bold text-ink-faint">確認しています・・・</p>}
         {state === "done" && (
           <>
-            <p className="dot text-sm text-sage">メールアドレスを確認しました</p>
+            <p className="text-sm font-bold text-sage">メールアドレスを確認しました</p>
             <p className="mt-2 text-xs text-ink-faint">
               すべての機能がご利用いただけます。アプリに戻ってお使いください。
             </p>
             <Link
               href="/"
-              className="dot mt-5 block w-full rounded-md bg-vermilion py-3 text-lg text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none"
+              className="mt-5 block w-full rounded-xl bg-vermilion py-3 text-lg font-bold text-card shadow-sm active:translate-y-0.5 active:shadow-none"
             >
               ホームへ
             </Link>

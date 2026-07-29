@@ -42,8 +42,8 @@ export default function AdminAnalytics() {
   if (!visible) return null;
 
   return (
-    <section className="zig zig-t zig-b px-4 py-4 shadow-sm">
-      <h2 className="dot mb-2 text-xs text-ink-faint">アナリティクス（管理者のみ）</h2>
+    <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+      <h2 className="mb-2 text-xs text-ink-faint">アナリティクス（管理者のみ）</h2>
       {rows && rows.length > 0 ? (
         <table className="w-full text-sm tabular-nums">
           <thead>

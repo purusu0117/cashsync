@@ -40,8 +40,8 @@ export default function WeeklyReview({ showStatsLink = false }: { showStatsLink?
         <p className="text-xs text-ink-faint">
           {fmtDateJa(data.range.start)} 〜 {fmtDateJa(data.range.end)}
         </p>
-        <section className="zig zig-t zig-b px-5 py-6 text-center shadow-sm">
-          <p className="dot text-xs text-ink-faint">＊ 週の振り返り ＊</p>
+        <section className="rounded-2xl border border-rule bg-card p-4 text-center shadow-sm">
+          <p className="text-xs text-ink-faint">週の振り返り</p>
           <p className="mt-3 text-sm leading-relaxed">
             記録を始めると週の振り返りが届きます
           </p>
@@ -50,11 +50,10 @@ export default function WeeklyReview({ showStatsLink = false }: { showStatsLink?
           </p>
           <Link
             href="/"
-            className="dot mt-4 inline-block rounded-md border border-ink px-4 py-2 text-sm active:translate-y-0.5"
+            className="mt-4 inline-block rounded-xl border border-ink px-4 py-2 text-sm font-semibold active:translate-y-0.5"
           >
             ホームで記録する
           </Link>
-          <div className="barcode mt-5" />
         </section>
       </div>
     );
@@ -71,11 +70,11 @@ export default function WeeklyReview({ showStatsLink = false }: { showStatsLink?
       </p>
 
       {/* カード1：支出合計と先週比 */}
-      <section className="zig zig-t zig-b px-5 py-5 text-center shadow-sm">
-        <p className="dot text-xs text-ink-faint">＊ 先週つかったお金（固定費除く）＊</p>
-        <p className="dot mt-2 text-5xl tabular-nums">{fmtYen(data.total)}</p>
+      <section className="rounded-3xl border border-rule bg-card p-4 text-center shadow-sm">
+        <p className="text-xs text-ink-faint">先週つかったお金（固定費除く）</p>
+        <p className="mt-2 text-5xl font-black tabular-nums">{fmtYen(data.total)}</p>
         {diffPct !== null ? (
-          <p className={`dot mt-2 text-sm ${saved ? "text-sage" : "text-vermilion"}`}>
+          <p className={`mt-2 text-sm ${saved ? "text-sage" : "text-vermilion"}`}>
             前の週より {saved ? "▼" : "▲"}
             {fmtYen(Math.abs(diff))}（{Math.abs(diffPct)}%{saved ? "節約" : "増"}）
           </p>
@@ -85,8 +84,8 @@ export default function WeeklyReview({ showStatsLink = false }: { showStatsLink?
       </section>
 
       {/* カード2：内訳ハイライト */}
-      <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
-        <p className="dot text-xs text-ink-faint">＊ ハイライト ＊</p>
+      <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+        <p className="text-xs text-ink-faint">ハイライト</p>
         {data.top && (
           <div className="mt-2 flex items-baseline text-sm">
             <span className="flex items-center gap-1">
@@ -94,14 +93,14 @@ export default function WeeklyReview({ showStatsLink = false }: { showStatsLink?
               {data.top.category}
             </span>
             <span className="leader" />
-            <span className="dot tabular-nums">{fmtYen(data.top.amount)}</span>
+            <span className="font-bold tabular-nums">{fmtYen(data.top.amount)}</span>
           </div>
         )}
         {data.max && (
           <div className="mt-1.5 flex items-baseline text-sm">
             <span className="truncate">最大の買い物：{data.max.memo || "支出"}</span>
             <span className="leader" />
-            <span className="dot tabular-nums">{fmtYen(data.max.amount)}</span>
+            <span className="font-bold tabular-nums">{fmtYen(data.max.amount)}</span>
           </div>
         )}
         {!data.top && !data.max && (
@@ -110,10 +109,10 @@ export default function WeeklyReview({ showStatsLink = false }: { showStatsLink?
       </section>
 
       {/* カード3：ノーマネーデー */}
-      <section className="zig zig-t zig-b px-5 py-4 text-center shadow-sm">
-        <p className="dot text-xs text-ink-faint">＊ ノーマネーデー ＊</p>
-        <p className="dot mt-1 text-3xl">
-          <span className="mu">無</span> × {data.noMoneyDays}
+      <section className="rounded-2xl border border-rule bg-card p-4 text-center shadow-sm">
+        <p className="text-xs text-ink-faint">ノーマネーデー</p>
+        <p className="mt-1 text-3xl font-black tabular-nums">
+          <span>無</span> × {data.noMoneyDays}
           <span className="text-base text-ink-faint">/7日</span>
         </p>
         <p className="mt-1 text-xs text-ink-faint">
@@ -123,13 +122,12 @@ export default function WeeklyReview({ showStatsLink = false }: { showStatsLink?
               ? "いい調子。あと1日増やせるとさらに貯まります"
               : "今週は「買わない日」を1日つくってみましょう"}
         </p>
-        <div className="barcode mt-4" />
       </section>
 
       {showStatsLink && (
         <Link
           href="/stats"
-          className="block rounded-md border border-dashed border-rule py-3 text-center text-sm text-ink-faint"
+          className="block rounded-xl border border-dashed border-rule py-3 text-center text-sm font-semibold text-ink-faint"
         >
           月全体のグラフを見る
         </Link>

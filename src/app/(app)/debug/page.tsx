@@ -54,8 +54,8 @@ export default function DebugPage() {
 
   return (
     <div className="space-y-3 pb-8">
-      <h1 className="dot text-base">ネイティブ連携の診断</h1>
-      <div className="zig zig-t zig-b divide-y divide-dotted divide-rule px-4 shadow-sm">
+      <h1 className="text-base font-bold tracking-[0.04em]">ネイティブ連携の診断</h1>
+      <div className="divide-y divide-rule rounded-2xl border border-rule bg-card px-4 shadow-sm">
         {rows.map((r, i) => (
           <div key={i} className="py-2 text-xs">
             <div className="text-ink-faint">{r.label}</div>
@@ -70,7 +70,7 @@ export default function DebugPage() {
           const r = await fetch("/api/push/test", { method: "POST" }).then((x) => x.json());
           setLog((l) => [...l, `テスト通知: ${JSON.stringify(r)}`]);
         }}
-        className="dot w-full rounded-md border border-ink py-3 text-sm"
+        className="w-full rounded-xl border border-ink py-3 text-sm font-semibold active:translate-y-0.5"
       >
         通知の端末登録＋テスト送信
       </button>
@@ -80,7 +80,7 @@ export default function DebugPage() {
           await syncWidgetAuth(p.apiToken ?? "");
           setLog((l) => [...l, "ウィジェットへトークンを再送しました"]);
         }}
-        className="dot w-full rounded-md border border-ink py-3 text-sm"
+        className="w-full rounded-xl border border-ink py-3 text-sm font-semibold active:translate-y-0.5"
       >
         ウィジェットにトークンを送る
       </button>

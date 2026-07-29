@@ -8,7 +8,7 @@ import { apiCall, apiJson } from "@/lib/clientApi";
 import { CATEGORY_ICON_KEYS, DEFAULT_CATEGORY_ICON } from "@/lib/categoryIcons";
 
 const input =
-  "rounded-md border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink";
+  "rounded-xl border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink";
 
 function Sheet({
   title,
@@ -22,10 +22,10 @@ function Sheet({
   return (
     <div className="fixed inset-0 z-[60] flex items-end bg-ink/40" onClick={onClose}>
       <div
-        className="zig zig-t mx-auto max-h-[85dvh] w-full max-w-md overflow-y-auto px-5 pb-8 pt-5"
+        className="rounded-t-2xl bg-card mx-auto max-h-[85dvh] w-full max-w-md overflow-y-auto px-5 pb-8 pt-5 shadow-sm"
         onClick={(e) => e.stopPropagation()}
       >
-        <p className="dot text-center text-xs text-ink-faint">＊ {title} ＊</p>
+        <p className="text-center text-sm font-bold tracking-[0.04em] text-ink-faint">{title}</p>
         {children}
       </div>
     </div>
@@ -52,14 +52,14 @@ function SheetButtons({
         <button
           onClick={onCancel}
           disabled={busy}
-          className="flex-1 rounded-md border border-rule py-3 text-sm text-ink-faint disabled:opacity-50"
+          className="flex-1 rounded-xl border border-ink py-3 text-sm font-semibold text-ink-faint active:translate-y-0.5 disabled:opacity-50"
         >
           やめる
         </button>
         <button
           onClick={onSave}
           disabled={busy || disabled}
-          className="dot flex-[2] rounded-md bg-vermilion py-3 text-base text-card shadow-[0_2px_0_var(--vermilion-deep)] disabled:opacity-50"
+          className="flex-[2] rounded-xl bg-vermilion py-3 text-base font-bold text-card shadow-sm active:translate-y-0.5 active:shadow-none disabled:opacity-50"
         >
           {busy ? "保存中・・・" : "保存"}
         </button>
@@ -239,14 +239,14 @@ export function CategoryEditSheet({
           className={`${input} w-full`}
         />
         <div>
-          <p className="text-[11px] text-ink-faint">アイコン</p>
+          <p className="text-xs text-ink-faint">アイコン</p>
           <div className="mt-1 grid grid-cols-8 gap-1">
             {[DEFAULT_CATEGORY_ICON, ...CATEGORY_ICON_KEYS].map((k) => (
               <button
                 key={k}
                 onClick={() => setIcon(k)}
                 aria-label={`アイコン ${k}`}
-                className={`rounded-md border p-1.5 ${
+                className={`rounded-xl border p-1.5 ${
                   icon === k ? "border-ink bg-card text-ink" : "border-rule bg-paper text-ink-faint"
                 }`}
               >

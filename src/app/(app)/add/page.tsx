@@ -278,23 +278,23 @@ export default function AddPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="dot text-lg">支出を記録</h1>
+      <h1 className="text-lg font-bold tracking-[0.04em]">支出を記録</h1>
 
       {/* 音声/文章で入力（マイクが主役：話す→自動でフォームに反映） */}
-      <section className="zig zig-t zig-b px-4 py-4 shadow-sm">
-        <h2 className="dot mb-2 text-xs text-ink-faint">
+      <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+        <h2 className="mb-2 text-sm font-bold tracking-[0.04em]">
           {speechOk ? "話す・書くで自動入力" : "文章から自動入力"}
         </h2>
         {speechOk && (
           <button
             onClick={toggleVoice}
             disabled={parsing}
-            className={`w-full rounded-lg py-4 text-center transition-colors ${
+            className={`w-full rounded-xl py-4 text-center font-bold transition-colors ${
               listening
                 ? "animate-pulse bg-vermilion text-card"
                 : parsing
-                  ? "border-2 border-ink bg-paper"
-                  : "bg-vermilion text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none"
+                  ? "border border-ink bg-paper"
+                  : "bg-vermilion text-card active:translate-y-0.5 active:shadow-none"
             }`}
           >
             {listening ? (
@@ -302,7 +302,7 @@ export default function AddPage() {
             ) : (
               <MicIcon className="mx-auto h-7 w-7" />
             )}
-            <span className="dot block text-lg">
+            <span className="block text-lg font-bold">
               {listening ? "録音中… タップで確定" : parsing ? "AIが解析中・・・" : "話して記録"}
             </span>
             <span className={`block text-[11px] ${listening || parsing ? "" : "opacity-80"}`}>
@@ -315,7 +315,7 @@ export default function AddPage() {
           </button>
         )}
         {listening && liveText && (
-          <p className="mt-2 rounded-md border border-rule bg-paper px-3 py-2 text-sm text-ink">{liveText}</p>
+          <p className="mt-2 rounded-xl border border-rule bg-paper px-3 py-2 text-sm text-ink">{liveText}</p>
         )}
         {speechOk && !showTextInput ? (
           <button
@@ -331,12 +331,12 @@ export default function AddPage() {
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && parseText()}
               placeholder="昨日セブンで昼飯650円"
-              className="min-w-0 flex-1 rounded-md border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
+              className="min-w-0 flex-1 rounded-xl border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
             />
             <button
               onClick={() => parseText()}
               disabled={parsing || !text.trim()}
-              className="dot shrink-0 rounded-md border border-ink px-4 text-sm disabled:opacity-40"
+              className="shrink-0 rounded-xl border border-ink px-4 text-sm font-bold disabled:opacity-40"
             >
               {parsing ? "…" : "変換"}
             </button>
@@ -357,10 +357,10 @@ export default function AddPage() {
       </section>
 
       {/* 手入力フォーム */}
-      <section className="zig zig-t zig-b px-4 py-4 shadow-sm space-y-3">
-        <h2 className="dot text-xs text-ink-faint">手入力フォーム</h2>
+      <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm space-y-3">
+        <h2 className="text-sm font-bold tracking-[0.04em]">手入力フォーム</h2>
         <label className="block">
-          <span className="dot text-xs text-ink-faint">金額</span>
+          <span className="text-xs text-ink-faint">金額</span>
           <input
             type="number"
             inputMode="numeric"
@@ -370,11 +370,11 @@ export default function AddPage() {
               setParsedNote(""); // 手編集したら「変換しました」の✓案内は取り消す
             }}
             placeholder="0"
-            className="dot mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2.5 text-3xl tabular-nums outline-none focus:border-ink"
+            className="mt-1 w-full rounded-xl border border-rule bg-paper px-3 py-2.5 text-3xl font-black tabular-nums outline-none focus:border-ink"
           />
         </label>
         <label className="block">
-          <span className="dot text-xs text-ink-faint">日付</span>
+          <span className="text-xs text-ink-faint">日付</span>
           <input
             type="date"
             value={date}
@@ -382,11 +382,11 @@ export default function AddPage() {
               setDate(e.target.value);
               setParsedNote("");
             }}
-            className="mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
+            className="mt-1 w-full rounded-xl border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
           />
         </label>
         <div>
-          <span className="dot text-xs text-ink-faint">カテゴリ</span>
+          <span className="text-xs text-ink-faint">カテゴリ</span>
           {!showAllCats && categories.length > 6 && (
             <span className="ml-1.5 text-[10px] text-ink-faint">よく使う順</span>
           )}
@@ -395,7 +395,7 @@ export default function AddPage() {
               <button
                 key={c.id}
                 onClick={() => setCategoryId(c.id)}
-                className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm ${
+                className={`flex items-center gap-1 rounded-xl border px-3 py-1.5 text-sm font-semibold ${
                   categoryId === c.id
                     ? "border-vermilion bg-vermilion text-card"
                     : "border-rule bg-paper text-ink"
@@ -407,7 +407,7 @@ export default function AddPage() {
             {categories.length > 6 && (
               <button
                 onClick={() => setShowAllCats(!showAllCats)}
-                className="rounded-full border border-dashed border-rule bg-paper px-3 py-1.5 text-sm text-ink-faint"
+                className="rounded-xl border border-dashed border-rule bg-paper px-3 py-1.5 text-sm text-ink-faint"
               >
                 {showAllCats ? "たたむ" : `すべて表示（${categories.length}）`}
               </button>
@@ -416,13 +416,13 @@ export default function AddPage() {
         </div>
         {/* 横断タグ（任意）：カテゴリとは別に複数付けて後でまとめて集計できる */}
         <div>
-          <span className="dot text-xs text-ink-faint">タグ（任意・複数可）</span>
+          <span className="text-xs text-ink-faint">タグ（任意・複数可）</span>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {tags.map((t) => (
               <button
                 key={t.id}
                 onClick={() => toggleTag(t.id)}
-                className={`rounded-full border px-3 py-1.5 text-sm ${
+                className={`rounded-xl border px-3 py-1.5 text-sm font-semibold ${
                   selectedTags.has(t.id)
                     ? "border-sage bg-sage text-card"
                     : "border-rule bg-paper text-ink"
@@ -438,24 +438,24 @@ export default function AddPage() {
               onChange={(e) => setNewTag(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTag())}
               placeholder="新しいタグ（例：旅行・推し活）"
-              className="min-w-0 flex-1 rounded-md border border-rule bg-paper px-3 py-1.5 text-sm outline-none focus:border-ink"
+              className="min-w-0 flex-1 rounded-xl border border-rule bg-paper px-3 py-1.5 text-sm outline-none focus:border-ink"
             />
             <button
               onClick={addTag}
               disabled={!newTag.trim() || tagBusy}
-              className="dot shrink-0 rounded-md border border-ink px-3 text-sm disabled:opacity-40"
+              className="shrink-0 rounded-xl border border-ink px-3 text-sm font-bold disabled:opacity-40"
             >
               ＋ 追加
             </button>
           </div>
         </div>
         <label className="block">
-          <span className="dot text-xs text-ink-faint">メモ（任意）</span>
+          <span className="text-xs text-ink-faint">メモ（任意）</span>
           <input
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
             placeholder="セブンイレブン"
-            className="mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
+            className="mt-1 w-full rounded-xl border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
           />
         </label>
         {error && <p className="text-sm text-vermilion">{error}</p>}
@@ -464,7 +464,7 @@ export default function AddPage() {
           <button
             onClick={save}
             disabled={busy}
-            className="dot w-full rounded-md bg-vermilion py-3 text-lg text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none disabled:opacity-50"
+            className="w-full rounded-xl bg-vermilion py-3 text-lg font-bold text-card active:translate-y-0.5 active:shadow-none disabled:opacity-50"
           >
             {busy ? "保存中・・・" : Number(amount) > 0 ? `${fmtYen(Number(amount))} で記録` : "記録する"}
           </button>

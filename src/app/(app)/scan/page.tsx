@@ -332,10 +332,10 @@ export default function ScanPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-baseline justify-between gap-2">
-        <h1 className="dot text-lg">レシート・スクショを読み取る</h1>
+        <h1 className="text-lg font-bold tracking-[0.04em]">レシート・スクショを読み取る</h1>
         {scansLeft !== null && (
           <span
-            className={`dot shrink-0 text-[11px] tabular-nums ${
+            className={`shrink-0 text-[11px] tabular-nums ${
               scansLeft <= 5 ? "text-caution" : "text-ink-faint"
             }`}
           >
@@ -363,20 +363,20 @@ export default function ScanPage() {
         <div className="space-y-3">
           <button
             onClick={() => fileRef.current?.click()}
-            className="zig zig-t zig-b w-full px-6 py-10 text-center shadow-sm active:translate-y-0.5"
+            className="w-full rounded-2xl border border-rule bg-card px-6 py-10 text-center shadow-sm active:translate-y-0.5"
           >
             <CameraIcon className="mx-auto h-12 w-12" />
-            <span className="dot mt-3 block text-lg">レシートを撮影</span>
+            <span className="mt-3 block text-lg font-bold">レシートを撮影</span>
             <span className="mt-1 block text-xs text-ink-faint">
               店名・金額・カテゴリはAIが読み取ります
             </span>
           </button>
           <button
             onClick={() => libRef.current?.click()}
-            className="zig zig-t zig-b w-full px-6 py-6 text-center shadow-sm active:translate-y-0.5"
+            className="w-full rounded-2xl border border-rule bg-card px-6 py-6 text-center shadow-sm active:translate-y-0.5"
           >
             <ImageIcon className="mx-auto h-8 w-8" />
-            <span className="dot mt-1 block text-base">スクショ・画像から読み取る</span>
+            <span className="mt-1 block text-base font-bold">スクショ・画像から読み取る</span>
             <span className="mt-1 block text-xs text-ink-faint">
               PayPayの支払い画面・ネット注文の確認画面などもOK
             </span>
@@ -401,10 +401,10 @@ export default function ScanPage() {
         <div className="space-y-4">
           {preview && (
             /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={preview} alt="レシート" className="mx-auto max-h-64 rounded-md border border-rule" />
+            <img src={preview} alt="レシート" className="mx-auto max-h-64 rounded-xl border border-rule" />
           )}
-          <div className="zig zig-t zig-b px-5 py-6 text-center shadow-sm">
-            <p className="dot printing text-lg">＊＊＊ 解析中 ＊＊＊</p>
+          <div className="rounded-2xl border border-rule bg-card px-5 py-6 text-center shadow-sm">
+            <p className="text-lg font-bold">解析中</p>
             <p className="mt-2 text-xs text-ink-faint">
               {elapsed > 30
                 ? "混雑していて少し時間がかかっています。もう少しお待ちください"
@@ -414,21 +414,21 @@ export default function ScanPage() {
             <p className="mt-1 text-xs text-sage">
               このまま閉じても大丈夫です。終わったら通知でお知らせします
             </p>
-            <p className="dot mt-3 text-sm tabular-nums text-ink-faint">{elapsed}秒経過</p>
+            <p className="mt-3 text-sm tabular-nums text-ink-faint">{elapsed}秒経過</p>
           </div>
         </div>
       )}
 
       {/* A4: 金額も店名も読み取れなかった（空フォームを出さず撮り直しを案内） */}
       {phase === "failed" && (
-        <div className="zig zig-t zig-b px-5 py-6 text-center shadow-sm">
-          <p className="dot text-lg text-vermilion">レシートを認識できませんでした</p>
+        <div className="rounded-2xl border border-rule bg-card px-5 py-6 text-center shadow-sm">
+          <p className="text-lg font-bold text-vermilion">レシートを認識できませんでした</p>
           <p className="mt-2 text-xs leading-relaxed text-ink-faint">
             明るい場所で全体が写るように撮り直してください
           </p>
           <button
             onClick={() => (fromLibrary ? libRef : fileRef).current?.click()}
-            className="dot mt-4 w-full rounded-md bg-vermilion py-3 text-base text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none"
+            className="mt-4 w-full rounded-xl bg-vermilion py-3 text-base font-bold text-card shadow-sm active:translate-y-0.5 active:shadow-none"
           >
             {fromLibrary ? "画像を選び直す" : "撮り直す"}
           </button>
@@ -442,11 +442,11 @@ export default function ScanPage() {
       )}
 
       {phase === "done" && (
-        <div className="zig zig-t zig-b px-5 py-6 text-center shadow-sm">
+        <div className="rounded-2xl border border-rule bg-card px-5 py-6 text-center shadow-sm">
           <CheckCircleIcon className="mx-auto h-10 w-10 text-sage" />
-          <p className="dot mt-2 text-lg">記録しました</p>
-          <div className="mx-auto mt-4 max-w-xs rounded-md border border-rule bg-paper px-4 py-3 text-left text-xs leading-relaxed">
-            <p className="dot flex items-center gap-1 text-ink">
+          <p className="mt-2 text-lg font-bold">記録しました</p>
+          <div className="mx-auto mt-4 max-w-xs rounded-xl border border-rule bg-paper px-4 py-3 text-left text-xs leading-relaxed">
+            <p className="flex items-center gap-1 font-bold text-ink">
               <TrashIcon className="h-4 w-4 shrink-0" /> 元のスクショはもう不要です
             </p>
             {native ? (
@@ -458,7 +458,7 @@ export default function ScanPage() {
                   <button
                     onClick={cleanSourceScreenshot}
                     disabled={cleanState === "busy"}
-                    className="dot mt-2 w-full rounded-md border border-ink py-2.5 text-sm disabled:opacity-50"
+                    className="mt-2 w-full rounded-xl border border-ink py-2.5 text-sm font-semibold active:translate-y-0.5 disabled:opacity-50"
                   >
                     {cleanState === "busy" ? "削除の確認中・・・" : "端末からこのスクショを削除"}
                   </button>
@@ -489,7 +489,7 @@ export default function ScanPage() {
               router.push("/");
               router.refresh();
             }}
-            className="dot mt-4 w-full rounded-md bg-vermilion py-3 text-base text-card shadow-[0_2px_0_var(--vermilion-deep)]"
+            className="mt-4 w-full rounded-xl bg-vermilion py-3 text-base font-bold text-card shadow-sm active:translate-y-0.5 active:shadow-none"
           >
             ホームへ戻る
           </button>
@@ -497,8 +497,8 @@ export default function ScanPage() {
       )}
 
       {(phase === "confirm" || phase === "saving") && scan && (
-        <div className="zig zig-t zig-b px-5 py-5 shadow-sm">
-          <p className="dot text-center text-xs text-ink-faint">＊ 読み取り結果（修正できます）＊</p>
+        <div className="rounded-2xl border border-rule bg-card px-5 py-5 shadow-sm">
+          <p className="text-center text-xs text-ink-faint">読み取り結果（修正できます）</p>
           <div className="mt-3 flex justify-center gap-1.5">
             <button
               onClick={() => setScan({ ...scan, kind: "expense" })}
@@ -521,38 +521,38 @@ export default function ScanPage() {
           </div>
           <div className="mt-3 space-y-3">
             <label className="block">
-              <span className="dot text-xs text-ink-faint">店名</span>
+              <span className="text-xs text-ink-faint">店名</span>
               <input
                 value={scan.store}
                 onChange={(e) => setScan({ ...scan, store: e.target.value })}
-                className="mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
+                className="mt-1 w-full rounded-xl border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
                 placeholder="店名"
               />
             </label>
             <div className="flex gap-3">
               <label className="block min-w-0 flex-1">
-                <span className="dot text-xs text-ink-faint">日付</span>
+                <span className="text-xs text-ink-faint">日付</span>
                 <input
                   type="date"
                   value={scan.date}
                   onChange={(e) => setScan({ ...scan, date: e.target.value })}
-                  className="mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
+                  className="mt-1 w-full rounded-xl border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink"
                 />
               </label>
               <label className="block min-w-0 flex-1">
-                <span className="dot text-xs text-ink-faint">合計</span>
+                <span className="text-xs text-ink-faint">合計</span>
                 <input
                   type="number"
                   inputMode="numeric"
                   value={scan.total || ""}
                   onChange={(e) => setScan({ ...scan, total: Number(e.target.value) })}
-                  className="dot mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2 text-xl tabular-nums outline-none focus:border-ink"
+                  className="mt-1 w-full rounded-xl border border-rule bg-paper px-3 py-2 text-xl font-bold tabular-nums outline-none focus:border-ink"
                 />
               </label>
             </div>
             {scan.kind === "expense" && !splitMode && (
             <div>
-              <span className="dot text-xs text-ink-faint">カテゴリ</span>
+              <span className="text-xs text-ink-faint">カテゴリ</span>
               {learned && (
                 <span
                   className="ml-1.5 inline-flex items-center gap-0.5 rounded-full border border-rule bg-paper px-1.5 py-0.5 align-middle text-[10px] text-ink-faint"
@@ -581,13 +581,13 @@ export default function ScanPage() {
             )}
             {scan.kind === "expense" && !splitMode && scan.items.length > 0 && (
               <div>
-                <p className="dot text-xs text-ink-faint">品目（明細として保存されます）</p>
+                <p className="text-xs text-ink-faint">品目（明細として保存されます）</p>
                 <ul className="mt-1">
                   {scan.items.map((it, i) => (
                     <li key={i} className="flex items-baseline py-0.5 text-sm">
                       <span className="truncate">{it.name}</span>
                       <span className="leader" />
-                      <span className="dot tabular-nums">{fmtYen(it.price)}</span>
+                      <span className="font-bold tabular-nums">{fmtYen(it.price)}</span>
                     </li>
                   ))}
                 </ul>
@@ -597,7 +597,7 @@ export default function ScanPage() {
             {scan.kind === "expense" && !splitMode && (
               <button
                 onClick={enableSplit}
-                className="dot w-full rounded-md border border-dashed border-rule py-2.5 text-sm text-ink-faint active:translate-y-0.5"
+                className="w-full rounded-xl border border-dashed border-rule py-2.5 text-sm text-ink-faint active:translate-y-0.5"
               >
                 ＋ 品目ごとにカテゴリを分ける
               </button>
@@ -605,7 +605,7 @@ export default function ScanPage() {
             {scan.kind === "expense" && splitMode && (
               <div>
                 <div className="flex items-baseline justify-between">
-                  <span className="dot text-xs text-ink-faint">品目ごとにカテゴリを分ける</span>
+                  <span className="text-xs text-ink-faint">品目ごとにカテゴリを分ける</span>
                   <button
                     onClick={() => setSplitMode(false)}
                     className="text-[11px] text-ink-faint underline underline-offset-2"
@@ -615,7 +615,7 @@ export default function ScanPage() {
                 </div>
                 <ul className="mt-2 space-y-2">
                   {splitRows.map((r, i) => (
-                    <li key={i} className="rounded-md border border-rule bg-paper px-2.5 py-2">
+                    <li key={i} className="rounded-xl border border-rule bg-paper px-2.5 py-2">
                       <div className="flex items-center gap-2">
                         <input
                           value={r.name}
@@ -639,7 +639,7 @@ export default function ScanPage() {
                             )
                           }
                           placeholder="0"
-                          className="dot w-20 shrink-0 border-b border-rule bg-transparent px-0.5 py-1 text-right text-base tabular-nums outline-none focus:border-ink"
+                          className="w-20 shrink-0 border-b border-rule bg-transparent px-0.5 py-1 text-right text-base font-bold tabular-nums outline-none focus:border-ink"
                         />
                         <span className="shrink-0 text-xs text-ink-faint">円</span>
                         <button
@@ -676,7 +676,7 @@ export default function ScanPage() {
                   onClick={() =>
                     setSplitRows((rows) => [...rows, { name: "", amount: 0, categoryId }])
                   }
-                  className="dot mt-2 w-full rounded-md border border-dashed border-rule py-2 text-xs text-ink-faint active:translate-y-0.5"
+                  className="mt-2 w-full rounded-xl border border-dashed border-rule py-2 text-xs text-ink-faint active:translate-y-0.5"
                 >
                   ＋ 行を追加
                 </button>
@@ -684,7 +684,7 @@ export default function ScanPage() {
                 <div className="mt-2 flex items-baseline text-xs">
                   <span className="text-ink-faint">割当合計</span>
                   <span className="leader" />
-                  <span className="dot tabular-nums">
+                  <span className="font-bold tabular-nums">
                     {fmtYen(splitAssigned)} / {fmtYen(scan.total)}
                   </span>
                 </div>
@@ -709,7 +709,7 @@ export default function ScanPage() {
           {error && <p className="mt-2 text-sm text-vermilion">{error}</p>}
           {dupConfirm ? (
             // 重複検知：エラーで突き放さず「本当に別の支払いか」を確認してから記録できるようにする
-            <div className="mt-4 rounded-md border border-vermilion bg-paper px-4 py-3">
+            <div className="mt-4 rounded-xl border border-vermilion bg-paper px-4 py-3">
               <p className="text-sm leading-relaxed text-ink">
                 同じ内容（{fmtDateJa(scan.date)}・{fmtYen(scan.total)}・{scan.store || "店名なし"}
                 ）を今日すでに記録しています。本当に別の{scan.kind === "income" ? "受け取り" : "支払い"}
@@ -719,14 +719,14 @@ export default function ScanPage() {
                 <button
                   onClick={() => setDupConfirm(false)}
                   disabled={phase === "saving"}
-                  className="flex-1 rounded-md border border-rule py-3 text-sm text-ink-faint"
+                  className="flex-1 rounded-xl border border-rule py-3 text-sm text-ink-faint"
                 >
                   やめる
                 </button>
                 <button
                   onClick={() => save(true)}
                   disabled={phase === "saving"}
-                  className="dot flex-[2] rounded-md bg-vermilion py-3 text-sm text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none disabled:opacity-50"
+                  className="flex-[2] rounded-xl bg-vermilion py-3 text-sm font-bold text-card shadow-sm active:translate-y-0.5 active:shadow-none disabled:opacity-50"
                 >
                   {phase === "saving" ? "保存中・・・" : `別の${scan.kind === "income" ? "受け取り" : "支払い"}なので記録する`}
                 </button>
@@ -740,17 +740,15 @@ export default function ScanPage() {
                 setDupConfirm(false);
                 setPhase("idle");
               }}
-              className="flex-1 rounded-md border border-rule py-3 text-sm text-ink-faint"
+              className="flex-1 rounded-xl border border-rule py-3 text-sm text-ink-faint"
             >
               撮り直す
             </button>
             <button
               onClick={() => save()}
               disabled={phase === "saving" || !scan.total}
-              className={`dot flex-[2] rounded-md py-3 text-lg text-card active:translate-y-0.5 active:shadow-none disabled:opacity-50 ${
-                scan.kind === "income"
-                  ? "bg-sage shadow-[0_2px_0_#1f6b42]"
-                  : "bg-vermilion shadow-[0_2px_0_var(--vermilion-deep)]"
+              className={`flex-[2] rounded-xl py-3 text-lg font-bold text-card shadow-sm active:translate-y-0.5 active:shadow-none disabled:opacity-50 ${
+                scan.kind === "income" ? "bg-sage" : "bg-vermilion"
               }`}
             >
               {phase === "saving"

@@ -38,7 +38,7 @@ const FORMAT_LABELS: Record<string, string> = {
 const input =
   "rounded-md border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink";
 const addBtn =
-  "dot rounded-md border border-ink px-4 py-2 text-sm active:translate-y-0.5 disabled:opacity-40";
+  "rounded-xl border border-ink px-4 py-2 text-sm font-semibold active:translate-y-0.5 disabled:opacity-40";
 
 export function ExportSection() {
   const [period, setPeriod] = useState<"all" | "year" | "month">("all");
@@ -57,8 +57,8 @@ export function ExportSection() {
   }
 
   return (
-    <section id="export" className="zig zig-t zig-b px-4 py-4 shadow-sm">
-      <h2 className="dot text-sm">データのエクスポート</h2>
+    <section id="export" className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+      <h2 className="text-sm font-bold tracking-[0.04em]">データのエクスポート</h2>
       <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
         支出・収入・シフトをまとめたCSVをダウンロードします（Excelでそのまま開けます）。
       </p>
@@ -179,8 +179,8 @@ export function ImportSection() {
     0;
 
   return (
-    <section id="import" className="zig zig-t zig-b px-4 py-4 shadow-sm">
-      <h2 className="dot text-sm">他のアプリから引っ越し</h2>
+    <section id="import" className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+      <h2 className="text-sm font-bold tracking-[0.04em]">他のアプリから引っ越し</h2>
       <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
         Zaim・マネーフォワードなどのCSV、または他アプリの履歴画面のスクショから記録を取り込めます。登録前に内容を確認できます。
       </p>
@@ -215,7 +215,7 @@ export function ImportSection() {
         </button>
       </div>
       {error && <p className="mt-2 text-xs text-vermilion">{error}</p>}
-      {doneMsg && <p className="dot mt-2 text-xs text-sage">{doneMsg}</p>}
+      {doneMsg && <p className="mt-2 text-xs text-sage">{doneMsg}</p>}
 
       {/* プレビュー（選択して一括登録） */}
       {preview && (
@@ -224,10 +224,10 @@ export function ImportSection() {
           onClick={() => busy !== "commit" && setPreview(null)}
         >
           <div
-            className="zig zig-t mx-auto flex max-h-[85dvh] w-full max-w-md flex-col px-5 pb-6 pt-5"
+            className="mx-auto flex max-h-[85dvh] w-full max-w-md flex-col rounded-t-2xl bg-card px-5 pb-6 pt-5 shadow-sm"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="dot text-center text-sm">＊ 取り込みプレビュー ＊</p>
+            <p className="text-center text-sm font-bold tracking-[0.04em]">取り込みプレビュー</p>
             <p className="mt-1 text-center text-[11px] text-ink-faint">
               {FORMAT_LABELS[preview.format] ?? preview.format}・{preview.rows.length}件を検出
               {preview.skipped > 0 && `（${preview.skipped}行は読み取れずスキップ）`}
@@ -240,11 +240,11 @@ export function ImportSection() {
                 {allChecked ? "全部はずす" : "全部えらぶ"}
               </button>
               <span className="leader" />
-              <span className="dot tabular-nums">
+              <span className="font-bold tabular-nums">
                 支出 −{fmtYen(expTotal)} ・ 収入 +{fmtYen(incTotal)}
               </span>
             </div>
-            <ul className="cutline mt-2 min-h-0 flex-1 overflow-y-auto pt-2">
+            <ul className="mt-2 min-h-0 flex-1 overflow-y-auto border-t border-rule pt-2">
               {preview.rows.map((r, i) => (
                 <li key={i}>
                   <label className="flex items-baseline gap-2 py-1.5 text-sm">
@@ -267,7 +267,7 @@ export function ImportSection() {
                     )}
                     <span className="leader" />
                     <span
-                      className={`dot shrink-0 tabular-nums ${r.kind === "income" ? "text-sage" : ""}`}
+                      className={`shrink-0 font-bold tabular-nums ${r.kind === "income" ? "text-sage" : ""}`}
                     >
                       {r.kind === "income" ? "+" : "-"}
                       {fmtYen(r.amount)}
@@ -287,7 +287,7 @@ export function ImportSection() {
               <button
                 onClick={commit}
                 disabled={busy === "commit" || checkedCount === 0}
-                className="dot flex-[2] rounded-md bg-vermilion py-3 text-sm text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none disabled:opacity-50"
+                className="flex-[2] rounded-xl bg-vermilion py-3 text-sm font-bold text-card shadow-sm active:translate-y-0.5 active:shadow-none disabled:opacity-50"
               >
                 {busy === "commit" ? "登録中・・・" : `${checkedCount}件を取り込む`}
               </button>

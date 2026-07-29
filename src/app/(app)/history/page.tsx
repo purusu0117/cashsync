@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ExpenseEditSheet, IncomeEditSheet } from "@/components/EditSheets";
+import { CategoryIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
 import { Toast, useToast } from "@/components/Toast";
 import { cachedFetch, netFetch } from "@/lib/cachedFetch";
@@ -249,13 +250,13 @@ export default function HistoryPage() {
   if (!ready)
     return loadStalled ? (
       <div className="mt-16 text-center">
-        <p className="dot text-sm text-vermilion">読み込めませんでした</p>
+        <p className="text-sm font-bold text-vermilion">読み込めませんでした</p>
         <button
           onClick={() => {
             setLoadStalled(false);
             load(month);
           }}
-          className="dot mt-4 rounded-md border border-ink px-6 py-2.5 text-sm active:translate-y-0.5"
+          className="mt-4 rounded-xl border border-ink px-6 py-2.5 text-sm active:translate-y-0.5"
         >
           再試行
         </button>
@@ -282,7 +283,7 @@ export default function HistoryPage() {
           <button
             onClick={() => setFilterOpen(!filterOpen)}
             aria-expanded={filterOpen}
-            className={`dot shrink-0 rounded-md border px-3 py-2 text-xs ${
+            className={`shrink-0 rounded-md border px-3 py-2 text-xs ${
               fCat || fMin || fMax ? "border-ink text-ink" : "border-rule text-ink-faint"
             }`}
           >
@@ -326,10 +327,10 @@ export default function HistoryPage() {
 
       {searching ? (
         /* B11: 検索結果（全期間・日付降順・ページング） */
-        <div className="zig zig-t zig-b px-5 pt-4 pb-4 shadow-sm">
-          <p className="dot text-center text-xs tracking-[0.18em] text-ink-faint">＊ 検索結果 ＊</p>
+        <div className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+          <h2 className="text-sm font-bold tracking-[0.04em]">検索結果</h2>
           <p
-            className={`mt-1 text-center text-[11px] ${
+            className={`mt-0.5 text-[11px] ${
               searchError && results.length === 0 ? "text-vermilion" : "text-ink-faint"
             }`}
           >
@@ -339,20 +340,24 @@ export default function HistoryPage() {
                 ? "検索できませんでした"
                 : `${resultTotal}件見つかりました`}
           </p>
-          <div className="cutline mt-2 pt-1">
+          <div className="mt-2">
             {results.map((e) => (
               <button
                 key={e.id}
                 onClick={() => setEditing({ ...e })}
-                className="flex w-full items-baseline py-1.5 text-left text-sm"
+                className="flex w-full items-center gap-3 border-b border-rule/70 py-2.5 text-left"
               >
-                <span className="shrink-0 text-[11px] text-ink-faint">
-                  {fmtDateJa(e.date)}
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-paper text-ink-faint">
+                  <CategoryIcon icon={e.icon} className="h-5 w-5" />
                 </span>
-                <span className="ml-1.5 truncate">{e.memo || e.category || "支出"}</span>
-                <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">{e.category}</span>
-                <span className="leader" />
-                <span className="dot text-[15px] tabular-nums">{fmtYen(e.amount)}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm">{e.memo || e.category || "支出"}</p>
+                  <p className="text-[11px] text-ink-faint">
+                    {fmtDateJa(e.date)}
+                    {e.category && `・${e.category}`}
+                  </p>
+                </div>
+                <span className="shrink-0 font-bold tabular-nums">{fmtYen(e.amount)}</span>
               </button>
             ))}
             {!searchBusy &&
@@ -361,7 +366,7 @@ export default function HistoryPage() {
                 <div className="py-8 text-center">
                   <button
                     onClick={() => runSearch(0, false)}
-                    className="dot rounded-md border border-ink px-6 py-2 text-sm active:translate-y-0.5"
+                    className="rounded-xl border border-ink px-6 py-2 text-sm active:translate-y-0.5"
                   >
                     再試行
                   </button>
@@ -374,7 +379,7 @@ export default function HistoryPage() {
             <button
               onClick={() => runSearch(results.length, true)}
               disabled={searchBusy}
-              className="dot mt-3 w-full rounded-md border border-rule py-2.5 text-sm text-ink-faint disabled:opacity-50"
+              className="mt-3 w-full rounded-xl border border-rule py-2.5 text-sm text-ink-faint disabled:opacity-50"
             >
               {searchBusy ? "読み込み中・・・" : `もっと見る（あと${resultTotal - results.length}件）`}
             </button>
@@ -384,17 +389,24 @@ export default function HistoryPage() {
               読み込めませんでした。もう一度お試しください。
             </p>
           )}
-          <div className="barcode mt-4" />
         </div>
       ) : (
         <>
       <header className="flex items-center justify-between">
-        <button onClick={() => setMonth(shiftMonth(month, -1))} className="dot px-3 py-1 text-lg">
+        <button
+          onClick={() => setMonth(shiftMonth(month, -1))}
+          aria-label="前の月"
+          className="px-3 py-1 text-lg text-ink-faint active:translate-y-0.5"
+        >
           ◀
         </button>
-        <h1 className="dot text-lg">{fmtMonthJa(month)}</h1>
+        <h1 className="text-base font-bold tracking-[0.04em]">{fmtMonthJa(month)}</h1>
         {/* C15: 未来月へも送れる（予定を薄字で表示） */}
-        <button onClick={() => setMonth(shiftMonth(month, 1))} className="dot px-3 py-1 text-lg">
+        <button
+          onClick={() => setMonth(shiftMonth(month, 1))}
+          aria-label="次の月"
+          className="px-3 py-1 text-lg text-ink-faint active:translate-y-0.5"
+        >
           ▶
         </button>
       </header>
@@ -405,11 +417,11 @@ export default function HistoryPage() {
         </p>
       )}
 
-      {/* 1ヶ月＝1枚の長いレシート：本物のレシート同様、切らずに続けて印字する */}
-      <div className="zig zig-t zig-b px-5 pt-4 pb-4 shadow-sm">
+      {/* 月の支出合計とその月の記録一覧 */}
+      <div className="rounded-3xl border border-rule bg-card p-5 shadow-sm">
         <div className="text-center">
-          <p className="dot text-xs tracking-[0.18em] text-ink-faint">＊ 支出合計 ＊</p>
-          <p className="dot mt-1 text-4xl leading-none tabular-nums">{fmtYen(total)}</p>
+          <p className="text-[11px] tracking-[0.14em] text-ink-faint">支出合計</p>
+          <p className="mt-1 text-4xl font-black leading-none tabular-nums">{fmtYen(total)}</p>
           <p className="mt-1 text-[11px] text-ink-faint">{expenses.length}件の記録</p>
           {/* C9: ホームは行末✕、履歴はタップ→編集シート内削除。導線の違いを一言で示す */}
           {(expenses.length > 0 || incomes.length > 0) && (
@@ -417,7 +429,7 @@ export default function HistoryPage() {
           )}
           {/* C15: 未来月は予定の合計も添える */}
           {plan && (plan.expenseTotal > 0 || plan.incomeTotal > 0) && (
-            <p className="dot mt-1 text-[11px] text-ink-faint">
+            <p className="mt-1 text-[11px] text-ink-faint">
               予定：支出 −{fmtYen(plan.expenseTotal)} ・ 収入 +{fmtYen(plan.incomeTotal)}
             </p>
           )}
@@ -425,20 +437,21 @@ export default function HistoryPage() {
 
         {/* 収入（シフト給与以外：スクショ収入・仕送り等） */}
         {incomes.length > 0 && (
-          <section className="cutline mt-3 pt-3">
-            <h2 className="dot text-xs tracking-[0.1em] text-sage">その他の収入（バイト給与を除く）</h2>
-            <ul className="mt-0.5">
+          <section className="mt-4 border-t border-rule pt-4">
+            <h2 className="text-sm font-bold tracking-[0.04em] text-sage">その他の収入（バイト給与を除く）</h2>
+            <ul className="mt-1">
               {incomes.map((i) => (
                 <li key={i.id}>
                   {/* C8: 行タップで支出と同等の編集シート（金額・日付・メモ。削除もシート内から） */}
                   <button
                     onClick={() => setEditingIncome({ ...i })}
-                    className="flex w-full items-baseline gap-1 py-1.5 text-left text-sm"
+                    className="flex w-full items-center gap-3 border-b border-rule/70 py-2.5 text-left"
                   >
-                    <span className="shrink-0 text-ink-faint">{fmtDateJa(i.date)}</span>
-                    <span className="ml-1 truncate">{i.memo || "収入"}</span>
-                    <span className="leader" />
-                    <span className="dot tabular-nums text-sage">+{fmtYen(i.amount)}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">{i.memo || "収入"}</p>
+                      <p className="text-[11px] text-ink-faint">{fmtDateJa(i.date)}</p>
+                    </div>
+                    <span className="shrink-0 font-bold tabular-nums text-sage">+{fmtYen(i.amount)}</span>
                   </button>
                 </li>
               ))}
@@ -449,31 +462,34 @@ export default function HistoryPage() {
         {[...byDate.entries()].map(([date, list]) => {
           const dayTotal = list.reduce((s, e) => s + e.amount, 0);
           return (
-            <section key={date} className="cutline mt-3 pt-2.5">
-              <h2 className="flex items-baseline">
-                <span className="dot text-[13px]">{fmtDateJa(date)}</span>
-                <span className="leader" />
-                <span className="dot text-[11px] tabular-nums text-ink-faint">
+            <section key={date} className="mt-4 border-t border-rule pt-4">
+              <div className="flex items-baseline justify-between">
+                <h2 className="text-sm font-bold tracking-[0.04em]">{fmtDateJa(date)}</h2>
+                <span className="text-[11px] tabular-nums text-ink-faint">
                   {list.length}件 {fmtYen(dayTotal)}
                 </span>
-              </h2>
-              <div>
+              </div>
+              <div className="mt-1">
                 {list.map((e) => (
                   /* C7: 行の✕は廃止（誤タップ対策）。タップ→編集シート内から削除する */
                   <button
                     key={e.id}
                     onClick={() => setEditing({ ...e })}
-                    className="flex w-full items-baseline py-1.5 text-left text-sm"
+                    className="flex w-full items-center gap-3 border-b border-rule/70 py-2.5 text-left"
                   >
-                    <span className="truncate">{e.memo || e.category || "支出"}</span>
-                    <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">
-                      {e.category}
-                      {e.source === "receipt" && "・自動"}
-                      {e.source === "recurring" && "・定期"}
-                      {e.source === "import" && "・取り込み"}
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-paper text-ink-faint">
+                      <CategoryIcon icon={e.icon} className="h-5 w-5" />
                     </span>
-                    <span className="leader" />
-                    <span className="dot text-[15px] tabular-nums">{fmtYen(e.amount)}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">{e.memo || e.category || "支出"}</p>
+                      <p className="text-[11px] text-ink-faint">
+                        {e.category}
+                        {e.source === "receipt" && "・自動"}
+                        {e.source === "recurring" && "・定期"}
+                        {e.source === "import" && "・取り込み"}
+                      </p>
+                    </div>
+                    <span className="shrink-0 font-bold tabular-nums">{fmtYen(e.amount)}</span>
                   </button>
                 ))}
               </div>
@@ -481,49 +497,47 @@ export default function HistoryPage() {
           );
         })}
         {expenses.length === 0 && incomes.length === 0 && planItems.length === 0 && (
-          <div className="cutline mt-3 py-8 pt-6 text-center">
+          <div className="mt-4 border-t border-rule py-8 pt-8 text-center">
             <p className="text-xs text-ink-faint">この月の記録はありません。</p>
             <Link
               href="/add"
-              className="dot mt-3 inline-block rounded-md border border-ink px-5 py-2 text-sm active:translate-y-0.5"
+              className="mt-3 inline-block rounded-xl border border-ink px-5 py-2 text-sm active:translate-y-0.5"
             >
               記録する
             </Link>
           </div>
         )}
 
-        {/* C15: 予定（定期・分割・給料日）。カレンダーと同じデータを薄字で印字する */}
+        {/* C15: 予定（定期・分割・給料日）。カレンダーと同じデータを薄字で表示する */}
         {planItems.length > 0 && (
-          <section className="cutline mt-3 pt-2.5">
-            <h2 className="dot text-[11px] text-ink-faint">＊ 予定（まだ記帳前） ＊</h2>
-            <div className="opacity-70">
+          <section className="mt-4 border-t border-rule pt-4">
+            <h2 className="text-sm font-bold tracking-[0.04em] text-ink-faint">予定（まだ記帳前）</h2>
+            <div className="mt-1 opacity-80">
               {planItems.map((p) => (
-                <div key={p.key} className="flex items-baseline py-1.5 text-sm">
-                  <span className="shrink-0 text-[11px] text-ink-faint">{fmtDateJa(p.date)}</span>
-                  <span className="ml-1.5 truncate text-ink-faint">{p.label}</span>
-                  {p.sub && <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">{p.sub}</span>}
-                  <span className="leader" />
+                <div key={p.key} className="flex items-center gap-3 border-b border-rule/70 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-ink-faint">{p.label}</p>
+                    <p className="text-[11px] text-ink-faint">
+                      {fmtDateJa(p.date)}
+                      {p.sub && `・${p.sub}`}
+                    </p>
+                  </div>
                   {p.amount > 0 ? (
-                    <span className={`dot tabular-nums ${p.income ? "text-sage/80" : "text-ink-faint"}`}>
+                    <span className={`shrink-0 font-bold tabular-nums ${p.income ? "text-sage/80" : "text-ink-faint"}`}>
                       {p.income ? "+" : "-"}
                       {fmtYen(p.amount)}
                     </span>
                   ) : (
-                    <span className="shrink-0 text-[10px] text-ink-faint">金額未定</span>
+                    <span className="shrink-0 text-[11px] text-ink-faint">金額未定</span>
                   )}
                 </div>
               ))}
             </div>
-            <p className="mt-1 text-[10px] text-ink-faint">
+            <p className="mt-2 text-[10px] text-ink-faint">
               予定はその月が来ると自動で記帳されます（設定 › 定期支出・収入）
             </p>
           </section>
         )}
-
-        <div className="barcode mt-4" />
-        <p className="dot mt-1 text-center text-[10px] tracking-[0.3em] text-ink-faint">
-          {month.replace("-", "")}
-        </p>
       </div>
         </>
       )}

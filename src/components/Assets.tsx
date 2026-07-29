@@ -201,10 +201,10 @@ export default function Assets() {
   return (
     <div className="space-y-4">
       {/* 純資産の合計＋前月比 */}
-      <section className="zig zig-t zig-b px-5 py-5 text-center shadow-sm">
-        <h2 className="dot text-sm tracking-[0.1em] text-ink-faint">純資産（資産−負債）</h2>
+      <section className="rounded-3xl border border-rule bg-card p-5 text-center shadow-sm">
+        <h2 className="text-sm font-bold tracking-[0.04em] text-ink-faint">純資産（資産−負債）</h2>
         <p
-          className={`dot mt-1 text-3xl tabular-nums ${
+          className={`mt-1 text-3xl font-black tabular-nums ${
             netWorth < 0 ? "text-vermilion" : netWorth === 0 ? "text-ink-faint" : "text-sage"
           }`}
         >
@@ -214,9 +214,9 @@ export default function Assets() {
           <p className="mt-1 text-xs">
             <span className="text-ink-faint">前月比 </span>
             {diff === 0 ? (
-              <span className="dot tabular-nums text-ink-faint">±{fmtYen(0)}</span>
+              <span className="font-bold tabular-nums text-ink-faint">±{fmtYen(0)}</span>
             ) : (
-              <span className={`dot tabular-nums ${diff < 0 ? "text-vermilion" : "text-sage"}`}>
+              <span className={`font-bold tabular-nums ${diff < 0 ? "text-vermilion" : "text-sage"}`}>
                 {diff > 0 ? "+" : "−"}
                 {fmtYen(Math.abs(diff))}
               </span>
@@ -229,13 +229,13 @@ export default function Assets() {
 
       {accounts.length === 0 ? (
         // 空状態
-        <section className="zig zig-t zig-b px-5 py-8 text-center shadow-sm">
+        <section className="rounded-2xl border border-rule bg-card p-6 text-center shadow-sm">
           <p className="text-sm text-ink-faint">
             口座を追加すると、純資産と推移が見られます。
           </p>
           <button
             onClick={openAdd}
-            className="dot mt-4 rounded-md bg-vermilion px-5 py-2.5 text-sm text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5"
+            className="mt-4 rounded-xl bg-vermilion px-5 py-2.5 text-sm font-bold text-card shadow-sm active:translate-y-0.5"
           >
             ＋ 口座を追加
           </button>
@@ -255,8 +255,8 @@ export default function Assets() {
       ) : (
         <>
           {/* 純資産の推移 */}
-          <section className="zig zig-t zig-b px-3 py-4 shadow-sm">
-            <h2 className="dot px-2 text-sm tracking-[0.1em]">純資産の推移</h2>
+          <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+            <h2 className="text-sm font-bold tracking-[0.04em]">純資産の推移</h2>
             {trend.length <= 1 ? (
               <p className="mt-3 px-2 text-[11px] text-ink-faint">
                 まだ{trend.length === 1 ? "1ヶ月分" : "データ"}だけです。翌月以降の残高を記録すると推移が見えてきます。
@@ -288,8 +288,8 @@ export default function Assets() {
                         if (!active || !payload?.length) return null;
                         const p = payload[0].payload as TrendPoint;
                         return (
-                          <div className="zig zig-b rounded-t-sm px-3 py-2 text-xs shadow-md">
-                            <p className="dot">{fmtMonthJa(String(label))}</p>
+                          <div className="rounded-xl border border-rule bg-card px-3 py-2 text-xs shadow-md">
+                            <p className="font-bold">{fmtMonthJa(String(label))}</p>
                             <p style={{ color: SAGE }}>純資産 {fmtYen(p.netWorth)}</p>
                           </div>
                         );
@@ -303,8 +303,8 @@ export default function Assets() {
           </section>
 
           {/* 口座一覧 */}
-          <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
-            <h2 className="dot text-sm tracking-[0.1em]">口座</h2>
+          <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+            <h2 className="text-sm font-bold tracking-[0.04em]">口座</h2>
             <ul className="mt-3 space-y-2.5">
               {accounts.map((a) => (
                 <li key={a.id}>
@@ -317,7 +317,7 @@ export default function Assets() {
                     <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">{KIND_LABEL[a.kind]}</span>
                     <span className="leader" />
                     <span
-                      className={`dot shrink-0 text-[15px] tabular-nums ${a.kind === "debt" ? "text-vermilion" : ""}`}
+                      className={`shrink-0 text-[15px] font-bold tabular-nums ${a.kind === "debt" ? "text-vermilion" : ""}`}
                     >
                       {a.kind === "debt" ? fmtYen(-a.balance) : fmtYen(a.balance)}
                     </span>
@@ -338,7 +338,7 @@ export default function Assets() {
                 </li>
               ))}
             </ul>
-            <div className="cutline mt-3 pt-3">
+            <div className="mt-3 border-t border-rule pt-3">
               {adding ? (
                 <AccountForm
                   form={form}
@@ -351,19 +351,18 @@ export default function Assets() {
               ) : (
                 <button
                   onClick={openAdd}
-                  className="dot w-full rounded-md border border-ink py-2.5 text-sm"
+                  className="w-full rounded-xl border border-ink py-2.5 text-sm font-semibold"
                 >
                   ＋ 口座を追加
                 </button>
               )}
             </div>
-            <div className="barcode mt-5" />
           </section>
 
           {/* 残高更新リマインド。資産は手入力なので、任意で毎月の更新日を通知する */}
-          <section className="zig zig-t zig-b px-5 py-4 shadow-sm">
+          <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between">
-              <h2 className="dot text-sm tracking-[0.1em]">残高更新リマインド</h2>
+              <h2 className="text-sm font-bold tracking-[0.04em]">残高更新リマインド</h2>
               {reminderSaved && <span className="text-[11px] text-sage">保存しました</span>}
             </div>
             <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
@@ -406,12 +405,12 @@ function AccountForm({
   error: string;
 }) {
   return (
-    <div className="space-y-2 rounded-md border border-rule bg-paper p-3">
+    <div className="space-y-2 rounded-xl border border-rule bg-paper p-3">
       <input
         value={form.name}
         onChange={(e) => setForm({ ...form, name: e.target.value })}
         placeholder="口座名（例：三井住友銀行）"
-        className="w-full rounded-md border border-rule bg-card px-3 py-1.5 text-sm outline-none focus:border-ink"
+        className="w-full rounded-xl border border-rule bg-card px-3 py-1.5 text-sm outline-none focus:border-ink"
       />
       <div className="flex flex-wrap gap-1.5">
         {KINDS.map((k) => (
@@ -419,7 +418,7 @@ function AccountForm({
             key={k.key}
             onClick={() => setForm({ ...form, kind: k.key })}
             aria-pressed={form.kind === k.key}
-            className={`dot rounded-md px-2.5 py-1 text-xs ${
+            className={`rounded-xl px-2.5 py-1 text-xs font-semibold ${
               form.kind === k.key ? "bg-ink text-card" : "border border-rule text-ink-faint"
             }`}
           >
@@ -437,7 +436,7 @@ function AccountForm({
           value={form.balance}
           onChange={(e) => setForm({ ...form, balance: e.target.value })}
           placeholder="0"
-          className="min-w-0 flex-1 rounded-md border border-rule bg-card px-3 py-1.5 text-right text-sm tabular-nums outline-none focus:border-ink"
+          className="min-w-0 flex-1 rounded-xl border border-rule bg-card px-3 py-1.5 text-right text-sm tabular-nums outline-none focus:border-ink"
         />
         <span className="text-sm text-ink-faint">円</span>
       </div>
@@ -446,14 +445,14 @@ function AccountForm({
         <button
           onClick={onSave}
           disabled={busy}
-          className="dot flex-1 rounded-md bg-vermilion py-2 text-sm text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 disabled:opacity-50"
+          className="flex-1 rounded-xl bg-vermilion py-2 text-sm font-bold text-card shadow-sm active:translate-y-0.5 disabled:opacity-50"
         >
           {busy ? "・・・" : "保存"}
         </button>
         <button
           onClick={onCancel}
           disabled={busy}
-          className="dot rounded-md border border-rule px-4 py-2 text-sm text-ink-faint"
+          className="rounded-xl border border-rule px-4 py-2 text-sm font-semibold text-ink-faint"
         >
           やめる
         </button>
@@ -461,7 +460,7 @@ function AccountForm({
           <button
             onClick={onDelete}
             disabled={busy}
-            className="dot rounded-md border border-vermilion px-4 py-2 text-sm text-vermilion"
+            className="rounded-xl border border-vermilion px-4 py-2 text-sm font-semibold text-vermilion"
           >
             削除
           </button>

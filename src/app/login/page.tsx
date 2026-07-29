@@ -81,17 +81,17 @@ export default function LoginPage() {
 
   return (
     <div className="mx-auto max-w-md min-h-dvh flex flex-col justify-center px-6 py-10">
-      <div className="zig zig-t zig-b px-6 py-8 shadow-sm">
-        <p className="dot text-center text-sm text-ink-faint">＊＊ ようこそ ＊＊</p>
-        <h1 className="dot text-center text-4xl mt-2">CashSync</h1>
+      <div className="rounded-3xl border border-rule bg-card px-6 py-8 shadow-sm">
+        <p className="text-center text-xs text-ink-faint">ようこそ</p>
+        <h1 className="text-center text-4xl font-black tracking-tight mt-2">CashSync</h1>
         <p className="text-center text-xs text-ink-faint mt-2">
           レシートを撮るだけ、入力3秒の家計簿
         </p>
-        <div className="cutline my-5" />
+        <div className="border-t border-rule my-5" />
         {mode === "forgot" && forgotSent ? (
           /* B5: 受付完了。メールの有無にかかわらず常にこの画面（アカウント列挙をさせない） */
           <div className="text-center">
-            <p className="dot text-sm">メールを送信しました</p>
+            <p className="text-sm font-bold">メールを送信しました</p>
             <p className="mt-2 text-xs leading-relaxed text-ink-faint">
               {email} 宛にパスワード再設定のリンクを送りました（有効期限：1時間）。
               届かない場合は、メールアドレスの間違いや迷惑メールフォルダをご確認ください。
@@ -117,35 +117,35 @@ export default function LoginPage() {
         <form onSubmit={submit} className="space-y-3">
           {mode === "register" && (
             <label className="block">
-              <span className="dot text-xs text-ink-faint">名前</span>
+              <span className="text-xs text-ink-faint">名前</span>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
+                className="mt-1 w-full rounded-xl border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
                 placeholder="タロー"
                 autoComplete="name"
               />
             </label>
           )}
           <label className="block">
-            <span className="dot text-xs text-ink-faint">メールアドレス</span>
+            <span className="text-xs text-ink-faint">メールアドレス</span>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
+              className="mt-1 w-full rounded-xl border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
               placeholder="you@example.com"
               autoComplete="email"
             />
           </label>
           {mode !== "forgot" && (
             <label className="block">
-              <span className="dot text-xs text-ink-faint">パスワード</span>
+              <span className="text-xs text-ink-faint">パスワード</span>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 w-full rounded-md border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
+                className="mt-1 w-full rounded-xl border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
               />
               {mode === "register" && (
@@ -157,7 +157,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={busy}
-            className="dot w-full rounded-md bg-vermilion py-3 text-lg text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none disabled:opacity-50"
+            className="w-full rounded-xl bg-vermilion py-3 text-lg font-bold text-card shadow-sm active:translate-y-0.5 active:shadow-none disabled:opacity-50"
           >
             {busy
               ? mode === "login"

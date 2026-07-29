@@ -111,8 +111,8 @@ export default function AppLock() {
   return (
     <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-paper px-6">
       <div className="w-full max-w-xs text-center">
-        <p className="dot text-sm tracking-[0.42em]">CASHSYNC</p>
-        <p className="dot mt-3 text-xs text-ink-faint">＊ ロック中 ＊</p>
+        <p className="font-bold text-sm tracking-[0.42em]">CASHSYNC</p>
+        <p className="mt-3 text-xs text-ink-faint">ロック中</p>
         <p className="mt-2 text-xs text-ink-faint">パスコードを入力してください</p>
 
         {/* 入力ドット */}
@@ -140,7 +140,7 @@ export default function AppLock() {
                 key={k}
                 onClick={() => press(k)}
                 aria-label={k === "del" ? "1文字消す" : k}
-                className="dot rounded-md border border-rule bg-card py-3.5 text-xl shadow-sm active:translate-y-0.5"
+                className="rounded-xl border border-rule bg-card py-3.5 text-xl font-bold shadow-sm active:translate-y-0.5"
               >
                 {k === "del" ? "←" : k}
               </button>
@@ -154,13 +154,13 @@ export default function AppLock() {
               bioTriedRef.current = false;
               tryBio();
             }}
-            className="dot mt-4 w-full rounded-md border border-ink py-2.5 text-sm active:translate-y-0.5"
+            className="mt-4 w-full rounded-xl border border-ink py-2.5 text-sm font-semibold active:translate-y-0.5"
           >
             生体認証で解除
           </button>
         )}
 
-        <div className="cutline mt-5 pt-4">
+        <div className="border-t border-rule mt-5 pt-4">
           <p className="text-[11px] leading-relaxed text-ink-faint">
             パスコードを忘れた場合は、ログアウトして再ログインするとロックが解除されます（記録は消えません）。
           </p>

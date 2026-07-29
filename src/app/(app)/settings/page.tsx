@@ -96,9 +96,9 @@ function Fold({ summary, children }: { summary: string; children: ReactNode }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full items-baseline rounded-md border border-rule bg-paper px-3 py-2 text-left active:translate-y-0.5"
+        className="flex w-full items-baseline rounded-xl border border-rule bg-paper px-3 py-2 text-left active:translate-y-0.5"
       >
-        <span className="dot min-w-0 flex-1 truncate text-xs tabular-nums">{summary}</span>
+        <span className="min-w-0 flex-1 truncate text-xs font-medium tabular-nums">{summary}</span>
         <span className="ml-2 shrink-0 text-xs text-ink-faint">{open ? "とじる ▲" : "ひらく ▼"}</span>
       </button>
       {open && <div className="mt-2">{children}</div>}
@@ -643,9 +643,9 @@ export default function SettingsPage() {
   }
 
   const input =
-    "rounded-md border border-rule bg-paper px-3 py-2 text-base outline-none focus:border-ink";
+    "rounded-xl border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink";
   const addBtn =
-    "dot rounded-md border border-ink px-4 py-2 text-sm active:translate-y-0.5 disabled:opacity-40";
+    "rounded-xl border border-ink px-4 py-2 text-sm font-bold active:translate-y-0.5 disabled:opacity-40";
 
   // --- 折りたたみ要約：閉じたままでも「何件・月いくら」が一目でわかるように ---
   const splits = recurring.filter((r) => SPLIT_RE.test(r.name));
@@ -674,13 +674,13 @@ export default function SettingsPage() {
   if (!ready)
     return loadStalled ? (
       <div className="mt-16 text-center">
-        <p className="dot text-sm text-vermilion">読み込めませんでした</p>
+        <p className="text-sm font-bold text-vermilion">読み込めませんでした</p>
         <button
           onClick={() => {
             setLoadStalled(false);
             load();
           }}
-          className="dot mt-4 rounded-md border border-ink px-6 py-2.5 text-sm active:translate-y-0.5"
+          className="mt-4 rounded-xl border border-ink px-6 py-2.5 text-sm font-bold active:translate-y-0.5"
         >
           再試行
         </button>
@@ -691,20 +691,20 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="dot text-lg">設定</h1>
+      <h1 className="text-lg font-bold tracking-[0.04em]">設定</h1>
       {/* 管理者(founder)だけに表示される最小アナリティクス。非管理者では何も出ない */}
       <AdminAnalytics />
       {pageError && (
-        <p className="rounded-md border border-vermilion px-3 py-2 text-sm text-vermilion">
+        <p className="rounded-xl border border-vermilion px-3 py-2 text-sm text-vermilion">
           {pageError}
         </p>
       )}
 
-      <section id="plan" className="zig zig-t zig-b px-4 py-4 shadow-sm">
+      <section id="plan" className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
         <div className="flex items-baseline">
-          <h2 className="dot text-sm">プラン</h2>
+          <h2 className="text-sm font-bold tracking-[0.04em]">プラン</h2>
           <span className="leader" />
-          <span className="dot shrink-0 text-sm">{PLAN_LABEL[plan]}</span>
+          <span className="shrink-0 text-sm font-bold">{PLAN_LABEL[plan]}</span>
         </div>
         {/* B12: 今月のAI残量（freeは数値・残5回以下でamber、premium/founderは無制限） */}
         {aiUsage &&
@@ -722,7 +722,7 @@ export default function SettingsPage() {
                     <span className="text-ink-faint">{label}</span>
                     <span className="leader" />
                     <span
-                      className={`dot tabular-nums ${
+                      className={`font-bold tabular-nums ${
                         remaining !== null && remaining <= 5 ? "text-caution" : ""
                       }`}
                     >
@@ -735,7 +735,7 @@ export default function SettingsPage() {
             </ul>
           ) : (
             <p className="mt-2 text-sm">
-              今月のAI読み取り・文章入力 <span className="dot">無制限</span>
+              今月のAI読み取り・文章入力 <span className="font-bold">無制限</span>
             </p>
           ))}
         {plan === "free" && (
@@ -749,14 +749,14 @@ export default function SettingsPage() {
                 <button
                   onClick={buyPremium}
                   disabled={planBusy}
-                  className="dot mt-2 w-full rounded-md border border-ink py-2.5 text-sm active:translate-y-0.5 disabled:opacity-50"
+                  className="mt-2 w-full rounded-xl border border-ink py-2.5 text-sm font-bold active:translate-y-0.5 disabled:opacity-50"
                 >
                   {planBusy ? "・・・" : "プレミアムにアップグレード ¥480/月"}
                 </button>
                 <button
                   onClick={restorePurchase}
                   disabled={planBusy}
-                  className="mt-2 w-full rounded-md border border-rule py-2 text-xs text-ink-faint disabled:opacity-50"
+                  className="mt-2 w-full rounded-xl border border-rule py-2 text-xs text-ink-faint disabled:opacity-50"
                 >
                   購入の復元（機種変更でプレミアムが外れたとき）
                 </button>
@@ -766,7 +766,7 @@ export default function SettingsPage() {
                 </p>
               </>
             ) : (
-              <p className="mt-2 rounded-md border border-rule px-3 py-2 text-xs text-ink-faint">
+              <p className="mt-2 rounded-xl border border-rule px-3 py-2 text-xs text-ink-faint">
                 {purchaseEnv === "native"
                   ? "プレミアムの購入は現在準備中です。もうしばらくお待ちください。"
                   : "プレミアムはiOSアプリから購入できます。"}
@@ -789,8 +789,8 @@ export default function SettingsPage() {
         {planNotice && <p className="mt-2 text-xs text-sage">{planNotice}</p>}
       </section>
 
-      <section id="goal" className="zig zig-t zig-b px-4 py-4 shadow-sm">
-        <h2 className="dot text-sm">毎月の貯金目標（先取り貯金）</h2>
+      <section id="goal" className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+        <h2 className="text-sm font-bold tracking-[0.04em]">毎月の貯金目標（先取り貯金）</h2>
         <p className="mt-0.5 text-[11px] text-ink-faint">
           目標額を収入から先に差し引いて「今日使えるお金」を計算します。残りだけ使えば自動的に貯まる方式です。
         </p>
@@ -810,10 +810,10 @@ export default function SettingsPage() {
       </section>
 
       {/* B9: 家計簿の月の開始日（締め日）。25なら 7/25〜8/24 が「8月」として集計される */}
-      <section id="month-start" className="zig zig-t zig-b px-4 py-4 shadow-sm">
+      <section id="month-start" className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
         <div className="flex items-baseline justify-between">
-          <h2 className="dot text-sm">家計簿の月の開始日</h2>
-          {monthStartSaved && <span className="dot text-xs text-sage">保存済✓</span>}
+          <h2 className="text-sm font-bold tracking-[0.04em]">家計簿の月の開始日</h2>
+          {monthStartSaved && <span className="text-xs font-bold text-sage">保存済✓</span>}
         </div>
         <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
           給料日に合わせると管理しやすい設定です。例えば25日開始なら、7/25〜8/24が「8月」として集計されます（カレンダーの見た目は変わりません）。
@@ -839,9 +839,9 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section id="jobs" className="zig zig-t zig-b px-4 py-4 shadow-sm">
+      <section id="jobs" className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
         <div className="flex items-center justify-between">
-          <h2 className="dot text-sm">バイト先と時給</h2>
+          <h2 className="text-sm font-bold tracking-[0.04em]">バイト先と時給</h2>
           <Link href="/calendar" className="text-[11px] text-ink-faint underline underline-offset-2">
             シフト入力へ
           </Link>
@@ -852,7 +852,7 @@ export default function SettingsPage() {
           {jobs.map((j) =>
             jobConfirmId === j.id ? (
               /* B7: 削除前にシフトも一緒に消えることを明示して確認する */
-              <li key={j.id} className="flex items-center gap-2 rounded-md border border-vermilion bg-paper px-2 py-2">
+              <li key={j.id} className="flex items-center gap-2 rounded-xl border border-vermilion bg-paper px-2 py-2">
                 <span className="min-w-0 flex-1 text-xs leading-snug">
                   「{j.name}」を削除しますか？
                   {j.shift_count > 0 && (
@@ -866,7 +866,7 @@ export default function SettingsPage() {
                     setJobConfirmId(null);
                     del(`/api/jobs?id=${j.id}`);
                   }}
-                  className="dot shrink-0 rounded border border-vermilion px-2 py-1 text-xs text-vermilion"
+                  className="shrink-0 rounded-lg border border-vermilion px-2 py-1 text-xs font-bold text-vermilion"
                 >
                   削除する
                 </button>
@@ -886,7 +886,7 @@ export default function SettingsPage() {
                   />
                   <span className="min-w-0 truncate">{j.name}</span>
                   <span className="leader" />
-                  <span className="dot shrink-0 tabular-nums">
+                  <span className="shrink-0 font-bold tabular-nums">
                     平日{fmtYen(j.weekday_rate)} / 土日祝{fmtYen(j.weekend_holiday_rate)}
                   </span>
                   <button
@@ -950,8 +950,8 @@ export default function SettingsPage() {
         </p>
       </section>
 
-      <section id="recurring" className="zig zig-t zig-b px-4 py-4 shadow-sm">
-        <h2 className="dot text-sm">定期支出・収入</h2>
+      <section id="recurring" className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+        <h2 className="text-sm font-bold tracking-[0.04em]">定期支出・収入</h2>
         <p className="mt-0.5 text-[11px] text-ink-faint">家賃・サブスク・仕送りなど。指定日に自動で記録されます（月払い／年払い）。</p>
         <Fold summary={regSummary}>
           {regulars.length === 0 ? (
@@ -970,7 +970,7 @@ export default function SettingsPage() {
                       <span className="min-w-0 truncate">{r.name}</span>
                     </span>
                     <span className="leader" />
-                    <span className={`dot shrink-0 tabular-nums ${r.kind === "income" ? "text-sage" : ""}`}>{fmtYen(r.amount)}</span>
+                    <span className={`shrink-0 font-bold tabular-nums ${r.kind === "income" ? "text-sage" : ""}`}>{fmtYen(r.amount)}</span>
                     <button onClick={() => del(`/api/recurring?id=${r.id}`)} className="ml-2 shrink-0 text-xs text-vermilion">
                       ✕
                     </button>
@@ -1001,7 +1001,7 @@ export default function SettingsPage() {
         </Fold>
         {/* B3: 収入プリセット（社会人向け）。UIは増やさず1タップで給料/ボーナスの登録欄を整える。 */}
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <span className="dot text-[11px] text-ink-faint">かんたん設定</span>
+          <span className="text-[11px] font-medium text-ink-faint">かんたん設定</span>
           <button
             type="button"
             onClick={() => {
@@ -1010,9 +1010,9 @@ export default function SettingsPage() {
               setRecName("給料");
               setRecDay("25");
             }}
-            className="dot rounded-full border border-sage px-2.5 py-1 text-xs text-sage active:translate-y-0.5"
+            className="flex items-center gap-1 rounded-full border border-sage px-2.5 py-1 text-xs font-medium text-sage active:translate-y-0.5"
           >
-            💰 毎月の給料
+            <CoinIcon className="h-3.5 w-3.5" /> 毎月の給料
           </button>
           <button
             type="button"
@@ -1022,9 +1022,9 @@ export default function SettingsPage() {
               setRecName("ボーナス");
               setRecMonth(thisMonth);
             }}
-            className="dot rounded-full border border-sage px-2.5 py-1 text-xs text-sage active:translate-y-0.5"
+            className="flex items-center gap-1 rounded-full border border-sage px-2.5 py-1 text-xs font-medium text-sage active:translate-y-0.5"
           >
-            🎁 ボーナス
+            <CoinIcon className="h-3.5 w-3.5" /> ボーナス
           </button>
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2">
@@ -1041,7 +1041,7 @@ export default function SettingsPage() {
         {recInterval === "yearly" && (
           <div className="mt-2">
             <label className="block">
-              <span className="dot text-xs text-ink-faint">初回の年月（毎年この月に計上）</span>
+              <span className="text-xs font-medium text-ink-faint">初回の年月（毎年この月に計上）</span>
               <input type="month" value={recMonth} onChange={(e) => setRecMonth(e.target.value)} className={`${input} mt-1 block w-full min-w-0`} />
             </label>
             <p className="mt-1 text-[11px] text-ink-faint">
@@ -1096,8 +1096,8 @@ export default function SettingsPage() {
           </p>
         )}
 
-        <div className="cutline mt-4 pt-3">
-          <h3 className="dot flex items-center gap-1 text-xs">
+        <div className="mt-4 border-t border-rule pt-3">
+          <h3 className="flex items-center gap-1 text-xs font-bold">
             <CardIcon className="h-4 w-4" /> 分割払い
           </h3>
           <Fold summary={splitSummary}>
@@ -1116,7 +1116,7 @@ export default function SettingsPage() {
                           <span className="min-w-0 truncate">{r.name.replace(SPLIT_RE, "")}</span>
                         </span>
                         <span className="leader" />
-                        <span className="dot shrink-0 tabular-nums">{fmtYen(r.amount)}/月</span>
+                        <span className="shrink-0 font-bold tabular-nums">{fmtYen(r.amount)}/月</span>
                         <button onClick={() => del(`/api/recurring?id=${r.id}`)} className="ml-2 shrink-0 text-xs text-vermilion">
                           ✕
                         </button>
@@ -1177,8 +1177,8 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section id="presets" className="zig zig-t zig-b px-4 py-4 shadow-sm">
-        <h2 className="dot text-sm">かんたん入力ボタン</h2>
+      <section id="presets" className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+        <h2 className="text-sm font-bold tracking-[0.04em]">かんたん入力ボタン</h2>
         <p className="mt-0.5 text-[11px] text-ink-faint">
           Suicaチャージなど、レシートやスクショで撮りにくい定型支出を登録すると、ホームに1タップ記録ボタンが並びます（{MAX_PRESETS}個まで）。
         </p>
@@ -1191,7 +1191,7 @@ export default function SettingsPage() {
               <span className="min-w-0 truncate">{p.label}</span>
               {p.category && <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">{p.category}</span>}
               <span className="leader" />
-              <span className="dot shrink-0 tabular-nums">{fmtYen(p.amount)}</span>
+              <span className="shrink-0 font-bold tabular-nums">{fmtYen(p.amount)}</span>
               <button
                 onClick={() => setEditPreset(p)}
                 className="ml-2 shrink-0 text-xs text-ink-faint underline underline-offset-2"
@@ -1239,8 +1239,8 @@ export default function SettingsPage() {
         </button>
       </section>
 
-      <section id="categories" className="zig zig-t zig-b px-4 py-4 shadow-sm">
-        <h2 className="dot text-sm">カテゴリ</h2>
+      <section id="categories" className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+        <h2 className="text-sm font-bold tracking-[0.04em]">カテゴリ</h2>
         <Fold summary={`${categories.length}件`}>
           <div className="flex flex-wrap gap-1.5">
             {categories.length === 0 && <p className="text-[11px] text-ink-faint">まだ登録がありません</p>}
@@ -1288,8 +1288,8 @@ export default function SettingsPage() {
       </section>
 
       {/* 横断タグ：カテゴリ（1支出＝1軸）とは別に、複数付けてまたぎ集計するラベル */}
-      <section id="tags" className="zig zig-t zig-b px-4 py-4 shadow-sm">
-        <h2 className="dot text-sm">タグ</h2>
+      <section id="tags" className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+        <h2 className="text-sm font-bold tracking-[0.04em]">タグ</h2>
         <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
           カテゴリとは別に、1つの支出へ複数付けられるラベルです（例：旅行・推し活・こだわり買い）。付け方は、<span className="text-ink">「履歴」で支払いをタップ → 開いた画面でタグを選ぶ</span>だけ（記録のあとからでもOK）。付けたタグは <span className="text-ink">グラフの「タグ別の支出」</span> でまとめて見られます。
         </p>
@@ -1305,7 +1305,7 @@ export default function SettingsPage() {
                     onKeyDown={(e) => e.key === "Enter" && saveTagName(t.id)}
                     className={`${input} w-32 py-1 text-sm`}
                   />
-                  <button onClick={() => saveTagName(t.id)} className="dot text-xs text-ink underline underline-offset-2">
+                  <button onClick={() => saveTagName(t.id)} className="text-xs font-bold text-ink underline underline-offset-2">
                     保存
                   </button>
                   <button onClick={() => setEditTagId(null)} className="text-xs text-ink-faint">
@@ -1348,8 +1348,8 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section id="push" className="zig zig-t zig-b px-4 py-4 shadow-sm">
-        <h2 className="dot text-sm">通知</h2>
+      <section id="push" className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+        <h2 className="text-sm font-bold tracking-[0.04em]">通知</h2>
         {/* Web Push（ブラウザの通知）はWebViewの中では動かないため、ネイティブアプリでは出さない。
             ネイティブの通知は今後 APNs／ローカル通知で対応する（大翔の指摘 2026-07-27）。 */}
         {isNativePlatform() ? (
@@ -1396,7 +1396,7 @@ export default function SettingsPage() {
           <select
             value={String(reminderHour)}
             onChange={(e) => saveReminderHour(Number(e.target.value))}
-            className="mt-2 w-full rounded-md border border-rule bg-card px-3 py-2.5 text-sm"
+            className="mt-2 w-full rounded-xl border border-rule bg-card px-3 py-2.5 text-sm"
           >
             <option value="-1">リマインドしない</option>
             {[18, 19, 20, 21, 22, 23].map((h) => (
@@ -1414,8 +1414,8 @@ export default function SettingsPage() {
       </section>
 
       {/* B8: アプリロック（4桁パスコード。この端末だけのロック・覗き見防止） */}
-      <section id="applock" className="zig zig-t zig-b px-4 py-4 shadow-sm">
-        <h2 className="dot text-sm">アプリロック</h2>
+      <section id="applock" className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+        <h2 className="text-sm font-bold tracking-[0.04em]">アプリロック</h2>
         <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
           アプリを開くときに4桁のパスコードを求めます（対応端末のアプリではFace ID等でも解除できます）。この端末だけの設定です。パスコードを忘れた場合は、ログアウトして再ログインすると解除されます。
         </p>
@@ -1427,8 +1427,8 @@ export default function SettingsPage() {
               setLockPin2("");
               setLockSetup(lockOn ? "off" : "new");
             }}
-            className={`mt-2 w-full rounded-md py-2.5 text-sm ${
-              lockOn ? "border border-sage text-sage" : "dot border border-ink"
+            className={`mt-2 w-full rounded-xl py-2.5 text-sm font-bold ${
+              lockOn ? "border border-sage text-sage" : "border border-ink"
             }`}
           >
             {lockOn ? "ロックON（タップでOFF）" : "ロックをONにする"}
@@ -1474,7 +1474,7 @@ export default function SettingsPage() {
               </button>
               <button
                 onClick={() => setLockSetup(null)}
-                className="flex-1 rounded-md border border-rule py-2 text-sm text-ink-faint"
+                className="flex-1 rounded-xl border border-rule py-2 text-sm text-ink-faint"
               >
                 やめる
               </button>
@@ -1484,8 +1484,8 @@ export default function SettingsPage() {
       </section>
 
       {/* B5: パスワード変更（ログイン中） */}
-      <section id="password" className="zig zig-t zig-b px-4 py-4 shadow-sm">
-        <h2 className="dot text-sm">パスワード変更</h2>
+      <section id="password" className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+        <h2 className="text-sm font-bold tracking-[0.04em]">パスワード変更</h2>
         <div className="mt-2 space-y-2">
           <input
             type="password"
@@ -1520,9 +1520,9 @@ export default function SettingsPage() {
           ネイティブアプリ（App Store版）はスクショ削除をアプリ自身が行えるので出さない（大翔指摘 2026-07-27）。 */}
       <section
         id="shortcut"
-        className={`zig zig-t zig-b px-4 py-4 shadow-sm ${isNativePlatform() ? "hidden" : ""}`}
+        className={`rounded-2xl border border-rule bg-card p-4 shadow-sm ${isNativePlatform() ? "hidden" : ""}`}
       >
-        <h2 className="dot text-sm">iPhoneショートカット連携</h2>
+        <h2 className="text-sm font-bold tracking-[0.04em]">iPhoneショートカット連携</h2>
         <p className="mt-0.5 text-[11px] leading-relaxed text-ink-faint">
           ショートカットから「スクショ読取→記録→スクショ削除」を一気に実行するための鍵（連携キー）です。使い方は
           <Link href="/help/shortcut" className="underline underline-offset-2">
@@ -1558,7 +1558,7 @@ export default function SettingsPage() {
       <ExportSection />
       <ImportSection />
 
-      <button onClick={logout} className="w-full rounded-md border border-rule py-3 text-sm text-ink-faint">
+      <button onClick={logout} className="w-full rounded-xl border border-rule py-3 text-sm text-ink-faint">
         ログアウト
       </button>
 
@@ -1569,7 +1569,7 @@ export default function SettingsPage() {
           setDelError("");
           setDelOpen(true);
         }}
-        className="w-full rounded-md border border-rule py-3 text-sm text-vermilion"
+        className="w-full rounded-xl border border-rule py-3 text-sm text-vermilion"
       >
         アカウントを削除
       </button>
@@ -1584,7 +1584,7 @@ export default function SettingsPage() {
           ネイティブ連携の診断
         </Link>
       </p>
-      <p className="dot pb-2 text-center text-[10px] text-ink-faint">CashSync v0.1</p>
+      <p className="pb-2 text-center text-[10px] text-ink-faint">CashSync v0.1</p>
 
       {/* B5: アカウント削除の確認シート（パスワードで本人確認） */}
       {delOpen && (
@@ -1593,10 +1593,10 @@ export default function SettingsPage() {
           onClick={() => !delBusy && setDelOpen(false)}
         >
           <div
-            className="zig zig-t mx-auto w-full max-w-md px-5 pb-8 pt-5"
+            className="mx-auto w-full max-w-md rounded-t-2xl border-t border-rule bg-card px-5 pb-8 pt-5"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="dot text-center text-sm text-vermilion">＊ アカウントを削除 ＊</p>
+            <p className="text-center text-sm font-bold text-vermilion">アカウントを削除</p>
             <p className="mt-3 text-xs leading-relaxed">
               すべての記録（支出・収入・シフト・レシート・設定）が完全に削除されます。
               <span className="text-vermilion">この操作は取り消せません。</span>
@@ -1610,21 +1610,21 @@ export default function SettingsPage() {
               onChange={(e) => setDelPassword(e.target.value)}
               placeholder="パスワード"
               autoComplete="current-password"
-              className="mt-2 w-full rounded-md border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
+              className="mt-2 w-full rounded-xl border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
             />
             {delError && <p className="mt-2 text-xs text-vermilion">{delError}</p>}
             <div className="mt-3 space-y-2">
               <button
                 onClick={submitDeleteAccount}
                 disabled={delBusy || !delPassword}
-                className="dot w-full rounded-md border border-vermilion py-3 text-sm text-vermilion active:translate-y-0.5 disabled:opacity-40"
+                className="w-full rounded-xl border border-vermilion py-3 text-sm font-bold text-vermilion active:translate-y-0.5 disabled:opacity-40"
               >
                 {delBusy ? "削除しています・・・" : "すべてのデータを完全に削除する"}
               </button>
               <button
                 onClick={() => setDelOpen(false)}
                 disabled={delBusy}
-                className="w-full rounded-md border border-rule bg-paper py-3 text-sm"
+                className="w-full rounded-xl border border-rule bg-paper py-3 text-sm"
               >
                 やめる
               </button>

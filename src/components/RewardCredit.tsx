@@ -58,7 +58,7 @@ export default function RewardCredit({
       <button
         onClick={watch}
         disabled={busy}
-        className="dot flex w-full items-center justify-center gap-1.5 rounded-md border border-vermilion py-2.5 text-sm text-vermilion active:translate-y-0.5 disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-vermilion py-2.5 text-sm font-semibold text-vermilion active:translate-y-0.5 disabled:opacity-50"
       >
         {busy ? (
           "動画を再生中・・・"

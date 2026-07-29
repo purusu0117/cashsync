@@ -34,8 +34,19 @@ export async function GET() {
     const ydStr = jstTodayStr(-1);
     // クラウド版（Vercel⇄Supabase）はDB往復ごとにレイテンシが乗るため、独立クエリは並列で投げる。
     // forecast だけは summary に依存するので、summary の完了に連結する。
-    const [sf, goalRow, recent, ydCount, presets, noMoney, spentToday, fixedTotal, payday, counts] =
-      await Promise.all([
+    const [
+      sf,
+      goalRow,
+      recent,
+      ydCount,
+      presets,
+      noMoney,
+      spentToday,
+      fixedTotal,
+      payday,
+      counts,
+      categoryBreakdown,
+    ] = await Promise.all([
       monthSummary(user.id, month).then(async (summary) => ({
         summary,
         forecast: await monthForecast(user.id, summary),
@@ -90,6 +101,17 @@ export async function GET() {
           expensesAll: exp?.c ?? 0,
         };
       })(),
+      // カテゴリ別の当月支出（ホームの円グラフ用）。集計期間（締め日基準）で合算。
+      d.all(
+        `SELECT c.name AS name, c.icon AS icon, SUM(e.amount) AS total
+         FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
+         WHERE e.user_id = ? AND e.date >= ? AND e.date <= ?
+         GROUP BY e.category_id
+         ORDER BY total DESC`,
+        user.id,
+        range.start,
+        range.end,
+      ) as Promise<{ name: string | null; icon: string | null; total: number }[]>,
     ]);
     const { summary, forecast } = sf;
     const savingsGoal = goalRow?.savings_goal ?? 0;
@@ -116,6 +138,8 @@ export async function GET() {
       recent,
       presets,
       counts,
+      // ホームの円グラフ用：カテゴリ別の当月支出（金額降順）
+      categoryBreakdown,
     });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();

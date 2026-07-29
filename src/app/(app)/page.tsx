@@ -58,6 +58,8 @@ interface Summary {
     category: string | null;
     icon: string | null;
   }[];
+  // ホームの円グラフ用：カテゴリ別の当月支出（金額降順・旧キャッシュには無いので optional）
+  categoryBreakdown?: { name: string | null; icon: string | null; total: number }[];
   // 働き方（収入タイプ）。hourly=時給/シフト, salary=月給, daily=日給。セットアップ導線の最適化に使う
   workStyle?: string;
   // B3: 初回セットアップカード用の登録状況（旧キャッシュには無いので optional）
@@ -386,14 +388,14 @@ export default function HomePage() {
   if (error && !data)
     return (
       <div className="mt-16 text-center">
-        <p className="dot text-sm text-vermilion">読み込めませんでした</p>
+        <p className="text-sm font-bold tracking-[0.04em] text-vermilion">読み込めませんでした</p>
         <p className="mt-1 text-xs text-ink-faint">{error}</p>
         <button
           onClick={() => {
             setError("");
             load();
           }}
-          className="dot mt-4 rounded-md border border-ink px-6 py-2.5 text-sm active:translate-y-0.5"
+          className="mt-4 rounded-md border border-ink px-6 py-2.5 text-sm font-bold active:translate-y-0.5"
         >
           もう一度試す
         </button>
@@ -430,7 +432,40 @@ export default function HomePage() {
   // C4: 桁数に応じて金額の文字サイズを縮小し、64pxの桁あふれ（横スクロール）を防ぐ
   const allowanceStr = fmtYen(data.allowance);
   const allowanceSize =
-    allowanceStr.length > 10 ? "text-[40px]" : allowanceStr.length > 8 ? "text-[52px]" : "text-[64px]";
+    allowanceStr.length > 9 ? "text-[26px]" : allowanceStr.length > 7 ? "text-[32px]" : "text-[38px]";
+
+  // 今日あと使えるゲージ：今日の予算に対する「残り」の割合（0〜1）。予算未設定なら満タン表示。
+  const gaugePct =
+    (data.budget?.todayBudget ?? 0) > 0
+      ? Math.max(0, Math.min(1, data.allowance / data.budget!.todayBudget))
+      : 1;
+  // ゲージ・判子の色（信号機）を SVG stroke 用の実カラーに解決
+  const signalHex =
+    signal === "red" ? "var(--vermilion)" : signal === "yellow" ? "var(--caution)" : "var(--sage)";
+  // カテゴリ円グラフ：上位5＋その他。感熱紙パレットに馴染む固定色。
+  const CAT_COLORS = ["#2f8f5b", "#e8442e", "#c98a2e", "#5b7fb0", "#8a6ea8", "#9a9384"];
+  const catRaw = (data.categoryBreakdown ?? []).filter((c) => c.total > 0);
+  const catTotal = catRaw.reduce((s, c) => s + c.total, 0);
+  const catTop = catRaw.slice(0, 5);
+  const catOtherTotal = catRaw.slice(5).reduce((s, c) => s + c.total, 0);
+  const donutSegs = [
+    ...catTop.map((c, i) => ({
+      name: c.name ?? "未分類",
+      icon: c.icon,
+      total: c.total,
+      color: CAT_COLORS[i],
+    })),
+    ...(catOtherTotal > 0
+      ? [{ name: "その他", icon: null as string | null, total: catOtherTotal, color: CAT_COLORS[5] }]
+      : []),
+  ];
+  let donutAcc = 0;
+  const donutArcs = donutSegs.map((s) => {
+    const pct = catTotal > 0 ? (s.total / catTotal) * 100 : 0;
+    const arc = { ...s, pct, offset: 25 - donutAcc };
+    donutAcc += pct;
+    return arc;
+  });
 
   return (
     <div className="space-y-5">
@@ -452,9 +487,9 @@ export default function HomePage() {
 
       {/* B3: 初回セットアップカード（レシート世界観・番号付きステップ） */}
       {showSetup && data.counts && (
-        <section className="zig zig-t zig-b px-5 pb-4 pt-4 shadow-sm">
+        <section className="rounded-2xl border border-rule bg-card px-5 pb-4 pt-4 shadow-sm">
           <div className="flex items-baseline justify-between">
-            <p className="dot text-sm tracking-[0.14em]">＊ はじめかた ＊</p>
+            <p className="text-sm font-bold tracking-[0.04em]">はじめかた</p>
             <button
               onClick={() => {
                 localStorage.setItem("cashsync-setup", "done");
@@ -468,7 +503,7 @@ export default function HomePage() {
           <p className="mt-1 text-[11px] text-ink-faint">
             4つのステップで「今日あと使える」が動き出します
           </p>
-          <ol className="cutline mt-3 space-y-2.5 pt-3">
+          <ol className="mt-3 space-y-2.5 border-t border-rule pt-3">
             {(
               [
                 {
@@ -497,7 +532,7 @@ export default function HomePage() {
             ).map((s, i) => (
               <li key={s.label} className="flex items-center gap-2.5 text-sm">
                 <span
-                  className={`dot flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[13px] tabular-nums ${
+                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[13px] font-bold tabular-nums ${
                     s.done ? "border-sage text-sage" : "border-ink"
                   }`}
                 >
@@ -507,10 +542,7 @@ export default function HomePage() {
                   {s.label}
                 </span>
                 {s.done ? (
-                  <span
-                    className="stamp dot shrink-0 px-1.5 py-0.5 text-xs text-sage"
-                    style={{ borderColor: "currentColor" }}
-                  >
+                  <span className="shrink-0 rounded-md border border-sage px-1.5 py-0.5 text-xs font-bold text-sage">
                     済
                   </span>
                 ) : s.actions ? (
@@ -519,7 +551,7 @@ export default function HomePage() {
                       <Link
                         key={a.href}
                         href={a.href}
-                        className="dot rounded border border-ink px-2 py-1 text-xs active:translate-y-0.5"
+                        className="rounded border border-ink px-2 py-1 text-xs font-bold active:translate-y-0.5"
                       >
                         {a.label}
                       </Link>
@@ -528,7 +560,7 @@ export default function HomePage() {
                 ) : s.href ? (
                   <Link
                     href={s.href}
-                    className="dot shrink-0 rounded border border-ink px-2 py-1 text-xs active:translate-y-0.5"
+                    className="shrink-0 rounded border border-ink px-2 py-1 text-xs font-bold active:translate-y-0.5"
                   >
                     設定へ
                   </Link>
@@ -536,13 +568,13 @@ export default function HomePage() {
                   <span className="flex shrink-0 gap-1.5">
                     <button
                       onClick={() => camRef.current?.click()}
-                      className="dot rounded border border-ink px-2 py-1 text-xs active:translate-y-0.5"
+                      className="rounded border border-ink px-2 py-1 text-xs font-bold active:translate-y-0.5"
                     >
                       撮る
                     </button>
                     <Link
                       href="/add"
-                      className="dot rounded border border-ink px-2 py-1 text-xs active:translate-y-0.5"
+                      className="rounded border border-ink px-2 py-1 text-xs font-bold active:translate-y-0.5"
                     >
                       手入力
                     </Link>
@@ -561,7 +593,7 @@ export default function HomePage() {
           <Link
             href={`/stats?m=${reviewMonth}`}
             onClick={() => localStorage.setItem(`cashsync-review-note-${reviewMonth}`, "1")}
-            className="dot shrink-0 rounded border border-ink px-2 py-1"
+            className="shrink-0 rounded border border-ink px-2 py-1 font-bold"
           >
             見る
           </Link>
@@ -585,7 +617,7 @@ export default function HomePage() {
           <Link
             href="/weekly"
             onClick={() => localStorage.setItem(`cashsync-weekly-note-${weeklyKey}`, "1")}
-            className="dot shrink-0 rounded border border-ink px-2 py-1"
+            className="shrink-0 rounded border border-ink px-2 py-1 font-bold"
           >
             見る
           </Link>
@@ -610,7 +642,7 @@ export default function HomePage() {
             読み取りが終わった記録が{pendingScans.length}件あります
             {pendingScans[0]?.scan?.total ? `（${fmtYen(pendingScans[0].scan.total)}〜）` : ""}
           </span>
-          <Link href="/scan?job=1" className="dot shrink-0 rounded border border-sage px-2 py-1 text-sage">
+          <Link href="/scan?job=1" className="shrink-0 rounded border border-sage px-2 py-1 font-bold text-sage">
             確認する
           </Link>
         </div>
@@ -619,23 +651,22 @@ export default function HomePage() {
       {amnesty && (
         <div className="flex items-center gap-2 rounded-md border border-rule bg-card px-3 py-2 text-xs">
           <span className="min-w-0 flex-1">昨日（{fmtDateJa(amnesty)}）の記録がありません</span>
-          <button onClick={dismissAmnesty} className="dot shrink-0 rounded border border-sage px-2 py-1 text-sage">
+          <button onClick={dismissAmnesty} className="shrink-0 rounded border border-sage px-2 py-1 font-bold text-sage">
             0円だった
           </button>
           <Link
             href={`/add?date=${amnesty}`}
             onClick={dismissAmnesty}
-            className="dot shrink-0 rounded border border-ink px-2 py-1"
+            className="shrink-0 rounded border border-ink px-2 py-1 font-bold"
           >
             入力する
           </Link>
         </div>
       )}
 
-      {/* メインレシート：この画面の主役は1枚だけ（店名ヘッダ→金額→予測→内訳→バーコード） */}
-      <section className="zig zig-t zig-b px-5 pt-5 pb-4 shadow-sm">
-        <p className="dot text-center text-sm tracking-[0.42em]">CASHSYNC</p>
-        <p className="mt-1 text-center text-[11px] text-ink-faint">
+      {/* ヒーロー：今日あと使える（アーク・ゲージ＝信号機カラー） */}
+      <section className="rounded-3xl border border-rule bg-card px-5 pb-4 pt-5 shadow-sm">
+        <p className="text-center text-[11px] tracking-[0.14em] text-ink-faint">
           {fmtDateJa(todayLocal())} ・ {data.user.name} さん
         </p>
         {customRange && (
@@ -643,38 +674,27 @@ export default function HomePage() {
             {fmtMD(customRange.start)}〜{fmtMD(customRange.end)}の集計（{Number(data.month.slice(5))}月）
           </p>
         )}
-
-        <div className="cutline my-3.5" />
-
         {noIncomeSource ? (
-          /* C3: 収入未登録の新規ユーザーに巨大な ¥0 を出さず、収入登録へ導く */
           <>
-            <p className="dot text-center text-sm tracking-[0.18em] text-ink-faint">＊ 今日あと使える ＊</p>
-            <p className="dot mt-4 text-center text-2xl leading-snug">
+            <p className="mt-3 text-center text-sm font-bold tracking-[0.04em] text-ink-faint">今日あと使える</p>
+            <p className="mt-4 text-center text-2xl font-bold leading-snug">
               まず収入を登録すると
               <br />
               ここに金額が出ます
             </p>
             <div className="mt-4 flex justify-center gap-2">
-              <Link
-                href="/settings#jobs"
-                className="dot rounded border border-ink px-3 py-1.5 text-sm active:translate-y-0.5"
-              >
+              <Link href="/settings#jobs" className="rounded border border-ink px-3 py-1.5 text-sm font-bold active:translate-y-0.5">
                 シフトで登録
               </Link>
-              <Link
-                href="/settings#recurring"
-                className="dot rounded border border-ink px-3 py-1.5 text-sm active:translate-y-0.5"
-              >
+              <Link href="/settings#recurring" className="rounded border border-ink px-3 py-1.5 text-sm font-bold active:translate-y-0.5">
                 給料で登録
               </Link>
             </div>
           </>
         ) : budgetExhausted ? (
-          /* B2: 予算の土台がマイナス＝日割りしても意味がないので、数式ではなく文言カードに切り替える */
           <>
-            <p className="dot text-center text-sm tracking-[0.18em] text-ink-faint">＊ 今日あと使える ＊</p>
-            <p className="dot mt-4 text-center text-2xl leading-snug text-vermilion">
+            <p className="mt-3 text-center text-sm font-bold tracking-[0.04em] text-ink-faint">今日あと使える</p>
+            <p className="mt-4 text-center text-2xl font-bold leading-snug text-vermilion">
               今月使える残りが
               <br />
               ありません
@@ -691,21 +711,29 @@ export default function HomePage() {
           </>
         ) : (
           <>
-            <p className="dot text-center text-sm tracking-[0.18em] text-ink-faint">＊ 今日あと使える ＊</p>
-            <p
-              className={`dot mt-3 break-words px-1 text-center leading-none tabular-nums ${allowanceSize} ${signalColor}`}
-            >
-              {allowanceStr}
-            </p>
+            <p className="mt-1 text-center text-[11px] font-medium tracking-[0.12em] text-ink-faint">今日あと使える</p>
+            <div className="relative mx-auto mt-1 h-[128px] w-[230px]">
+              <svg width="230" height="132" viewBox="0 0 230 132" className="block">
+                <path d="M20 120 A95 95 0 0 1 210 120" fill="none" stroke="var(--rule)" strokeWidth="16" strokeLinecap="round" />
+                <path
+                  d="M20 120 A95 95 0 0 1 210 120"
+                  fill="none"
+                  stroke={signalHex}
+                  strokeWidth="16"
+                  strokeLinecap="round"
+                  pathLength={298}
+                  strokeDasharray={`${gaugePct * 298} 298`}
+                />
+              </svg>
+              <div className="absolute inset-x-0 top-[62px] text-center">
+                <p className={`font-black leading-none tracking-tight tabular-nums ${allowanceSize} ${signalColor}`}>
+                  {allowanceStr}
+                </p>
+              </div>
+            </div>
             {data.budget && (
-              <p className="mt-2 text-center text-xs text-ink-faint">
-                今日の予算 {fmtYen(data.budget.todayBudget)} − 今日使った{" "}
-                {fmtYen(data.budget.spentToday)}
-              </p>
-            )}
-            {(data.budget?.fixedTotal ?? 0) > 0 && (
-              <p className="mt-0.5 text-center text-[11px] text-ink-faint">
-                うち固定費 {fmtYen(data.budget!.fixedTotal!)}/月（先取り済み）
+              <p className="text-center text-[11px] text-ink-faint">
+                今日の予算 {fmtYen(data.budget.todayBudget)} − 使った {fmtYen(data.budget.spentToday)}
               </p>
             )}
             {data.allowance < 0 ? (
@@ -719,156 +747,180 @@ export default function HomePage() {
             )}
           </>
         )}
-
-        <div className="cutline my-4" />
-
-        {/* 月末予測 ＋ 判子（黒字/注意/赤字）：署名要素はここに1つだけ。
-            B3: 支出0件の間は判子・達成ペース文言を出さない（記録していないだけの虚偽の称賛になるため）
-            C3: 収入源が未登録だと予測は必ず赤字になり「赤字」判子＋挽回文言が
-                「まず収入を登録」と矛盾するので、収入登録を促す文言に寄せる */}
-        <div className={`relative ${hasExpenses && !noIncomeSource ? "pr-16" : ""}`}>
-          <div className="flex items-baseline text-sm">
-            <span className="text-ink-faint">月末までの予測</span>
-            <span className="leader" />
-            {noIncomeSource ? (
-              <span className="dot text-sm text-ink-faint">未定</span>
-            ) : (
-              <span className={`dot text-xl tabular-nums ${hasExpenses ? signalColor : ""}`}>
-                {forecast.forecast >= 0 ? "+" : ""}
-                {fmtYen(forecast.forecast)}
-              </span>
-            )}
-          </div>
-          {noIncomeSource ? (
-            <p className="mt-0.5 text-[11px] text-ink-faint">収入を登録すると予測が出ます</p>
-          ) : hasExpenses ? (
-            <p className={`mt-0.5 text-[11px] ${signal === "red" ? "text-vermilion" : "text-ink-faint"}`}>
-              {signal === "green" && "貯金目標を達成するペースです"}
-              {/* 赤=月末赤字ペースなら挽回額、今日の超過だけ（月は黒字ペース）ならその旨 */}
-              {signal === "red" &&
-                (forecast.forecast < 0
-                  ? `1日あと${fmtYen(recoverPerDay)}減らせば黒字`
-                  : "月全体では黒字ペースです")}
-              {signal === "yellow" && "黒字だが目標まであと少し"}
-            </p>
-          ) : (
-            <p className="mt-0.5 text-[11px] text-ink-faint">
-              支出を記録すると予測とペース判定が動き出します
-            </p>
-          )}
-          {hasExpenses && !noIncomeSource && (
-            <span
-              className={`stamp dot absolute right-0 top-1/2 -translate-y-1/2 px-2 py-1 text-sm ${signalColor}`}
-              style={{ borderColor: "currentColor" }}
-            >
-              {signal === "green" ? "黒字" : signal === "yellow" ? "注意" : "赤字"}
-            </span>
-          )}
-        </div>
-
-        {/* 貯金目標の進捗 */}
-        {savingsGoal > 0 && (
-          <div className="mt-3">
-            <div className="flex items-baseline justify-between text-xs text-ink-faint">
-              <span>貯金目標 {fmtYen(savingsGoal)}</span>
-              {/* C6: forecast/goal は「達成見込み率」。進捗率と誤読されないよう明示する */}
-              <span className="dot tabular-nums">このペースで達成見込み {goalPct}%</span>
-            </div>
-            <div className="mt-1 h-2 rounded-full bg-paper">
-              <div
-                className={`h-full rounded-full ${signal === "red" ? "bg-vermilion" : signal === "yellow" ? "bg-caution" : "bg-sage"}`}
-                style={{ width: `${goalPct}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="cutline my-4" />
-        <div className="flex items-baseline justify-between text-sm">
-          <span className="text-ink-faint">収入</span>
-          <span className="leader" />
-          <span className="dot text-base tabular-nums text-sage">{fmtYen(summary.incomeTotal)}</span>
-        </div>
-        {summary.shift.shiftCount > 0 && (
-          <p className="mt-0.5 text-right text-[11px] text-ink-faint">
-            うちバイト見込み {fmtYen(summary.shift.total)}（{summary.shift.shiftCount}回・
-            {Number(data.month.slice(5))}月に振り込まれる分）
-            <Link href="/calendar" className="ml-1 underline underline-offset-2">
-              シフトで確認
-            </Link>
-          </p>
-        )}
-        {/* C1: 次の給料日（金額は入力済みシフトから出る場合のみ） */}
-        {data.nextPayday && (
-          <div className="mt-2 flex items-baseline justify-between text-sm">
-            <span className="text-ink-faint">次の給料日</span>
-            <span className="leader" />
-            <span className="dot tabular-nums text-sage">
-              {fmtDateJa(data.nextPayday.date)}
-              {data.nextPayday.amount > 0 && ` +${fmtYen(data.nextPayday.amount)}`}
-            </span>
-          </div>
-        )}
-        {data.nextPayday && (
-          <p className="mt-0.5 text-right text-[11px] text-ink-faint">
-            {data.nextPayday.daysUntil === 0 ? "今日" : `あと${data.nextPayday.daysUntil}日`}
-            {data.nextPayday.amount > 0 && " ・ 入力済みシフトから計算"}
-          </p>
-        )}
-        <div className="mt-2 flex items-baseline justify-between text-sm">
-          <span className="text-ink-faint">支出</span>
-          <span className="leader" />
-          <span className="dot text-base tabular-nums text-vermilion">
-            {fmtYen(summary.expenseTotal)}
-          </span>
-        </div>
-        {/* B3: 支出0件の間は「今月◯日・◯日連続」が全日ノーマネー扱いになり嘘くさいので出さない */}
-        {hasExpenses && (
-          <div className="mt-2 flex items-baseline justify-between text-xs text-ink-faint">
-            <span>
-              <span className="mu">無</span> ノーマネーデー
-            </span>
-            <span className="leader" />
-            <span className="dot tabular-nums">
-              今月{noMoney.count}日{noMoney.streak >= 2 && `・${noMoney.streak}日連続`}
-            </span>
-          </div>
-        )}
-
-        <div className="barcode mt-4" />
-        <p className="dot mt-1 text-center text-[10px] tracking-[0.3em] text-ink-faint">
-          {data.month.replace("-", "")}
-        </p>
       </section>
 
-      {/* 支出の入力：3つの入口を1段のボタン列に圧縮（最近の支出を1画面に入れるため） */}
+      {/* 月末予測 ＋ 貯金目標 */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+          <p className="text-[11px] font-medium text-ink-faint">月末の予測</p>
+          <p className={`mt-1 text-2xl font-black tabular-nums ${hasExpenses && !noIncomeSource ? signalColor : ""}`}>
+            {noIncomeSource ? "未定" : `${forecast.forecast >= 0 ? "+" : ""}${fmtYen(forecast.forecast)}`}
+          </p>
+          <p className="mt-1 text-[10px] leading-tight text-ink-faint">
+            {noIncomeSource
+              ? "収入を登録すると出ます"
+              : !hasExpenses
+                ? "記録すると動き出します"
+                : signal === "green"
+                  ? "貯金目標を達成ペース"
+                  : signal === "red"
+                    ? forecast.forecast < 0
+                      ? `1日あと${fmtYen(recoverPerDay)}で黒字`
+                      : "月は黒字ペース"
+                    : "黒字だが目標まであと少し"}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+          <p className="text-[11px] font-medium text-ink-faint">貯金目標</p>
+          {savingsGoal > 0 ? (
+            <>
+              <p className="mt-1 text-2xl font-black tabular-nums">
+                {goalPct}
+                <span className="text-sm font-bold">%</span>
+              </p>
+              <div className="mt-2 h-1.5 rounded-full bg-paper">
+                <div
+                  className={`h-full rounded-full ${signal === "red" ? "bg-vermilion" : signal === "yellow" ? "bg-caution" : "bg-sage"}`}
+                  style={{ width: `${goalPct}%` }}
+                />
+              </div>
+              <p className="mt-1 text-[10px] text-ink-faint">{fmtYen(savingsGoal)} まで</p>
+            </>
+          ) : (
+            <Link href="/settings#goal" className="mt-2 inline-block rounded border border-ink px-2 py-1 text-xs font-bold active:translate-y-0.5">
+              目標を決める
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {/* 収入・次の給料日・ノーマネーデー */}
+      {!noIncomeSource && (
+        <div className="space-y-1.5 rounded-2xl border border-rule bg-card px-4 py-3 shadow-sm">
+          <div className="flex items-baseline text-sm">
+            <span className="text-xs text-ink-faint">収入</span>
+            <span className="leader" />
+            <span className="font-bold tabular-nums text-sage">{fmtYen(summary.incomeTotal)}</span>
+          </div>
+          {summary.shift.shiftCount > 0 && (
+            <p className="text-right text-[10px] text-ink-faint">
+              うちバイト見込み {fmtYen(summary.shift.total)}（{summary.shift.shiftCount}回）
+              <Link href="/calendar" className="ml-1 underline underline-offset-2">
+                シフトで確認
+              </Link>
+            </p>
+          )}
+          {data.nextPayday && (
+            <div className="flex items-baseline text-sm">
+              <span className="text-xs text-ink-faint">次の給料日</span>
+              <span className="leader" />
+              <span className="font-bold tabular-nums text-sage">
+                {fmtDateJa(data.nextPayday.date)}
+                {data.nextPayday.amount > 0 && ` +${fmtYen(data.nextPayday.amount)}`}
+                <span className="ml-1 text-[10px] text-ink-faint">
+                  {data.nextPayday.daysUntil === 0 ? "（今日）" : `あと${data.nextPayday.daysUntil}日`}
+                </span>
+              </span>
+            </div>
+          )}
+          {hasExpenses && (
+            <div className="flex items-baseline text-xs text-ink-faint">
+              <span>
+                <span>無</span> ノーマネーデー
+              </span>
+              <span className="leader" />
+              <span className="font-semibold tabular-nums">
+                今月{noMoney.count}日{noMoney.streak >= 2 && `・${noMoney.streak}日連続`}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* カテゴリ円グラフ（今月の支出） */}
       <section>
-        <h2 className="dot text-sm tracking-[0.14em]">支出を記録する</h2>
-        <div className="mt-2 grid grid-cols-3 gap-2">
+        <div className="flex items-baseline justify-between px-1">
+          <h2 className="text-sm font-bold tracking-[0.04em]">今月の支出</h2>
+          <span className="text-base font-bold tabular-nums text-vermilion">{fmtYen(summary.expenseTotal)}</span>
+        </div>
+        {catTotal > 0 ? (
+          <div className="mt-2 flex items-center gap-4 rounded-2xl border border-rule bg-card p-4 shadow-sm">
+            <div className="relative h-28 w-28 shrink-0">
+              <svg viewBox="0 0 42 42" className="h-28 w-28">
+                <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--paper)" strokeWidth="6" />
+                {donutArcs.map((a, i) => (
+                  <circle
+                    key={i}
+                    cx="21"
+                    cy="21"
+                    r="15.9"
+                    fill="none"
+                    stroke={a.color}
+                    strokeWidth="6"
+                    strokeDasharray={`${a.pct} ${100 - a.pct}`}
+                    strokeDashoffset={a.offset}
+                  />
+                ))}
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-[10px] text-ink-faint">支出</span>
+                <span className="text-[15px] font-bold tabular-nums">{fmtYen(catTotal)}</span>
+              </div>
+            </div>
+            <ul className="flex-1 space-y-1.5">
+              {donutArcs.map((a, i) => (
+                <li key={i} className="flex items-center gap-2 text-[13px]">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: a.color }} />
+                  <span className="flex-1 truncate">{a.name}</span>
+                  <span className="font-semibold tabular-nums text-ink-faint">{Math.round(a.pct)}%</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="mt-2 rounded-2xl border border-rule bg-card px-4 py-6 text-center text-xs text-ink-faint shadow-sm">
+            記録すると、カテゴリ別の内訳が円グラフで出ます
+          </p>
+        )}
+      </section>
+
+      {/* 支出の入力：3つの入口（撮る/スクショ/手入力）をカードで並べる */}
+      <section>
+        <h2 className="text-sm font-bold tracking-[0.04em]">支出を記録する</h2>
+        <div className="mt-2 grid grid-cols-3 gap-3">
           <button
             onClick={() => camRef.current?.click()}
-            className="rounded-sm border border-rule bg-card px-2 py-3 text-center shadow-sm active:translate-y-0.5"
+            className="rounded-2xl border border-rule bg-card px-2 py-4 text-center shadow-sm active:translate-y-0.5"
           >
-            <CameraIcon className="mx-auto h-6 w-6" />
-            <span className="dot mt-1 block text-[13px]">撮る</span>
+            <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-paper text-ink">
+              <CameraIcon className="h-6 w-6" />
+            </span>
+            <span className="mt-1.5 block text-[13px] font-bold">撮る</span>
+            <span className="block text-[10px] text-ink-faint">レシート</span>
           </button>
           <button
             onClick={onScreenshotTap}
-            className="rounded-sm border border-rule bg-card px-2 py-3 text-center shadow-sm active:translate-y-0.5"
+            className="rounded-2xl border border-rule bg-card px-2 py-4 text-center shadow-sm active:translate-y-0.5"
           >
-            <ScreenshotIcon className="mx-auto h-6 w-6" />
-            <span className="dot mt-1 block text-[13px]">スクショ</span>
+            <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-paper text-ink">
+              <ScreenshotIcon className="h-6 w-6" />
+            </span>
+            <span className="mt-1.5 block text-[13px] font-bold">スクショ</span>
+            <span className="block text-[10px] text-ink-faint">決済画面</span>
           </button>
           <Link
             href="/add"
-            className="rounded-sm border border-rule bg-card px-2 py-3 text-center shadow-sm active:translate-y-0.5"
+            className="rounded-2xl border border-rule bg-card px-2 py-4 text-center shadow-sm active:translate-y-0.5"
           >
-            <PencilIcon className="mx-auto h-6 w-6" />
-            <span className="dot mt-1 block text-[13px]">手入力</span>
+            <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-paper text-ink">
+              <PencilIcon className="h-6 w-6" />
+            </span>
+            <span className="mt-1.5 block text-[13px] font-bold">手入力</span>
+            <span className="block text-[10px] text-ink-faint">話してもOK</span>
           </Link>
         </div>
-        <p className="mt-1.5 text-center text-[11px] text-ink-faint">
-          レシートは撮るだけで自動入力・手入力は話すのもOK
+        <p className="mt-2 text-center text-[11px] text-ink-faint">
+          レシートも決済スクショも、撮るだけで自動入力
         </p>
 
         {/* かんたん入力ボタン：設定で登録した定型支出を1タップで即記録（0件なら非表示） */}
@@ -883,17 +935,17 @@ export default function HomePage() {
               >
                 <CategoryIcon icon={p.icon} className="mx-auto h-5 w-5 text-ink-faint" />
                 <span className="mt-1 block truncate text-xs">{p.label}</span>
-                <span className="dot block text-[13px] tabular-nums">{fmtYen(p.amount)}</span>
+                <span className="block text-[13px] font-bold tabular-nums">{fmtYen(p.amount)}</span>
               </button>
             ))}
           </div>
         )}
       </section>
 
-      {/* 直近の支出：カードにせず、地の上にそのまま印字（主役はメインレシート1枚） */}
+      {/* 最近の支出：アイコンチップ付きの行 */}
       <section>
-        <div className="flex items-baseline justify-between">
-          <h2 className="dot text-sm tracking-[0.14em]">最近の支出</h2>
+        <div className="flex items-baseline justify-between px-1">
+          <h2 className="text-sm font-bold tracking-[0.04em]">最近の支出</h2>
           <Link href="/history" className="text-[11px] text-ink-faint underline underline-offset-2">
             すべて見る
           </Link>
@@ -907,13 +959,13 @@ export default function HomePage() {
           {data.recent.map((e) =>
             confirmId === e.id ? (
               /* C7: 誤タップ対策。✕の直後にその場で確認してから削除する */
-              <li key={e.id} className="flex items-center gap-2 border-b border-rule/70 py-2 text-sm">
+              <li key={e.id} className="flex items-center gap-2 border-b border-rule/70 py-2.5 text-sm">
                 <span className="min-w-0 flex-1 truncate text-xs">
                   「{e.memo || e.category || "支出"} {fmtYen(e.amount)}」を削除しますか？
                 </span>
                 <button
                   onClick={() => removeExpense(e)}
-                  className="dot shrink-0 rounded border border-vermilion px-2 py-1 text-xs text-vermilion"
+                  className="shrink-0 rounded border border-vermilion px-2 py-1 text-xs font-bold text-vermilion"
                 >
                   削除する
                 </button>
@@ -925,17 +977,18 @@ export default function HomePage() {
                 </button>
               </li>
             ) : (
-              <li key={e.id} className="flex items-baseline gap-1 border-b border-rule/70 py-2 text-sm">
-                {e.category && (
-                  <CategoryIcon icon={e.icon} className="h-4 w-4 shrink-0 self-center text-ink-faint" />
-                )}
-                <span className="truncate">{e.memo || e.category || "支出"}</span>
-                <span className="ml-1.5 shrink-0 text-[10px] text-ink-faint">{e.category}</span>
-                <span className="leader" />
-                <span className="dot text-[15px] tabular-nums">{fmtYen(e.amount)}</span>
+              <li key={e.id} className="flex items-center gap-3 border-b border-rule/70 py-2.5">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-paper text-ink-faint">
+                  <CategoryIcon icon={e.icon} className="h-5 w-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm">{e.memo || e.category || "支出"}</p>
+                  {e.category && <p className="text-[11px] text-ink-faint">{e.category}</p>}
+                </div>
+                <span className="shrink-0 text-[15px] font-bold tabular-nums">{fmtYen(e.amount)}</span>
                 <button
                   onClick={() => setConfirmId(e.id)}
-                  className="-my-1.5 shrink-0 px-2.5 py-1.5 text-xs text-ink-faint"
+                  className="-my-1.5 shrink-0 px-2 py-1.5 text-xs text-ink-faint"
                   aria-label="削除"
                 >
                   ✕
@@ -953,10 +1006,10 @@ export default function HomePage() {
           onClick={() => setShortcutDialog(false)}
         >
           <div
-            className="zig zig-t mx-auto w-full max-w-md px-5 pb-8 pt-5"
+            className="rounded-2xl bg-card mx-auto w-full max-w-md px-5 pb-8 pt-5"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="dot text-center text-xs text-ink-faint">＊ スクショから記録 ＊</p>
+            <p className="text-center text-xs text-ink-faint">スクショから記録</p>
             <p className="mt-2 text-xs leading-relaxed text-ink-faint">
               ショートカット連携を設定すると、スクショの読み取りから記録・スクショ削除までワンタップになります。設定がまだの場合は「写真から選ぶ」でも記録できます。
             </p>
@@ -967,7 +1020,7 @@ export default function HomePage() {
                   setShortcutDialog(false);
                   runShortcut();
                 }}
-                className="dot w-full rounded-md bg-vermilion py-3 text-base text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none"
+                className="w-full rounded-xl bg-vermilion py-3 text-base font-bold text-card shadow-[0_2px_0_var(--vermilion-deep)] active:translate-y-0.5 active:shadow-none"
               >
                 ショートカットで開く（設定済みの方）
               </button>
