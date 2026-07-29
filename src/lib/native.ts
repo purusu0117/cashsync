@@ -51,6 +51,30 @@ function platform(): "ios" | "android" {
 }
 
 // ---------------------------------------------------------------------------
+// 端末内蔵OCR（Apple Vision / iOS）— AI API を使わずに画像→テキスト
+// ---------------------------------------------------------------------------
+interface VisionOcrPlugin {
+  recognize(opts: { image: string }): Promise<{ text: string }>;
+}
+
+/**
+ * iOS 端末内蔵の Apple Vision で画像（dataURL/base64）から日本語テキストを抽出する。
+ * AI/サーバー送信なし・端末内で完結。iOS ネイティブ以外、またはプラグイン未搭載/失敗時は null。
+ * （Android は将来 ML Kit を同 API で実装予定）
+ */
+export async function visionOcrRecognize(imageBase64: string): Promise<string | null> {
+  if (!isNativePlatform() || platform() !== "ios") return null;
+  const p = await nativePlugin<VisionOcrPlugin>("VisionOcr");
+  if (!p) return null;
+  try {
+    const r = await p.recognize({ image: imageBase64 });
+    return typeof r?.text === "string" ? r.text : null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // AdMob（無料プランのみ上部バナー＋リワード動画）
 // ---------------------------------------------------------------------------
 

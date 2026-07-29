@@ -16,7 +16,8 @@ import RewardCredit from "@/components/RewardCredit";
 import { cachedFetch } from "@/lib/cachedFetch";
 import { netFetch } from "@/lib/clientApi";
 import { fmtDateJa, fmtYen, todayLocal } from "@/lib/format";
-import { deletePhotos, isNativePlatform, listRecentScreenshots } from "@/lib/native";
+import { deletePhotos, isNativePlatform, listRecentScreenshots, visionOcrRecognize } from "@/lib/native";
+import { parseReceiptText } from "@/lib/localReceipt";
 import { takePendingImage } from "@/lib/pendingImage";
 import { track } from "@/lib/track";
 
@@ -32,6 +33,18 @@ interface Category {
   id: string;
   name: string;
   icon: string;
+}
+
+/** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
+async function sha256Hex(input: string): Promise<string> {
+  try {
+    const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+    return Array.from(new Uint8Array(h))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  } catch {
+    return "";
+  }
 }
 
 export default function ScanPage() {
@@ -140,6 +153,37 @@ export default function ScanPage() {
     setPreview(URL.createObjectURL(file));
     setElapsed(0);
     setPhase("scanning");
+    // 端末内蔵OCR（iOS/Apple Vision）：AI・サーバー送信なしで画像→テキスト→解析し、
+    // 読めたらそのまま確認シートへ。非対応/失敗時は従来のサーバー経路にフォールバック。
+    try {
+      if (isNativePlatform()) {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(String(r.result));
+          r.onerror = () => reject(new Error("read failed"));
+          r.readAsDataURL(file);
+        });
+        const text = await visionOcrRecognize(dataUrl);
+        if (text) {
+          const s = parseReceiptText(text, categories.map((c) => c.name), todayLocal());
+          if (s.total > 0 || (s.store ?? "").trim()) {
+            track("scan_used");
+            const catId = categories.find((c) => c.name === s.category)?.id ?? null;
+            setScan({ ...s, date: s.date || todayLocal() });
+            setImageHash(await sha256Hex(dataUrl));
+            setCategoryId(catId);
+            setSuggestedCategoryId(catId);
+            setLearned(false);
+            setPhase("confirm");
+            return;
+          }
+          setPhase("failed");
+          return;
+        }
+      }
+    } catch {
+      /* 端末OCR不可 → 従来のサーバー経路へ */
+    }
     try {
       // C5: 解析はサーバー側のジョブとして走らせる（アプリを閉じても中断しない）。
       // ここでは jobId を受け取り、開いている間だけ結果をポーリングする。
