@@ -86,8 +86,10 @@ export default function ScanPage() {
     { name: string; amount: number; categoryId: string | null }[]
   >([]);
 
+  const [onDevice, setOnDevice] = useState(false); // 端末内OCR搭載ビルド（build26+）＝AI/通信なし
   useEffect(() => {
     setNative(isNativePlatform());
+    setOnDevice(visionOcrAvailable());
   }, []);
 
   // B12: 今月のAI読み取り残量（無料プランのみ数値。無制限プランは非表示）
@@ -378,7 +380,8 @@ export default function ScanPage() {
     <div className="space-y-4">
       <div className="flex items-baseline justify-between gap-2">
         <h1 className="text-lg font-bold tracking-[0.04em]">レシート・スクショを読み取る</h1>
-        {scansLeft !== null && (
+        {/* 端末内OCR（build26+）は無制限・無料なので残量表示は出さない */}
+        {!onDevice && scansLeft !== null && (
           <span
             className={`shrink-0 text-[11px] tabular-nums ${
               scansLeft <= 5 ? "text-caution" : "text-ink-faint"
@@ -413,7 +416,9 @@ export default function ScanPage() {
             <CameraIcon className="mx-auto h-12 w-12" />
             <span className="mt-3 block text-lg font-bold">レシートを撮影</span>
             <span className="mt-1 block text-xs text-ink-faint">
-              店名・金額・カテゴリはAIが読み取ります
+              {onDevice
+                ? "店名・金額・カテゴリを端末内で読み取ります（AI・通信なし）"
+                : "店名・金額・カテゴリはAIが読み取ります"}
             </span>
           </button>
           <button
@@ -449,16 +454,20 @@ export default function ScanPage() {
             <img src={preview} alt="レシート" className="mx-auto max-h-64 rounded-xl border border-rule" />
           )}
           <div className="rounded-2xl border border-rule bg-card px-5 py-6 text-center shadow-sm">
-            <p className="text-lg font-bold">解析中</p>
+            <p className="text-lg font-bold">{onDevice ? "読み取り中" : "解析中"}</p>
             <p className="mt-2 text-xs text-ink-faint">
-              {elapsed > 30
-                ? "混雑していて少し時間がかかっています。もう少しお待ちください"
-                : "AIが読み取り中です（通常10〜30秒・混雑時は少しかかります）"}
+              {onDevice
+                ? "端末内で読み取っています（AIもサーバーも使いません）"
+                : elapsed > 30
+                  ? "混雑していて少し時間がかかっています。もう少しお待ちください"
+                  : "AIが読み取り中です（通常10〜30秒・混雑時は少しかかります）"}
             </p>
-            {/* C5: サーバー側で処理が続くので、閉じても消えないことを明示する */}
-            <p className="mt-1 text-xs text-sage">
-              このまま閉じても大丈夫です。終わったら通知でお知らせします
-            </p>
+            {/* C5: サーバー処理は閉じても続くと明示（端末内OCR時は一瞬で終わるので不要） */}
+            {!onDevice && (
+              <p className="mt-1 text-xs text-sage">
+                このまま閉じても大丈夫です。終わったら通知でお知らせします
+              </p>
+            )}
             <p className="mt-3 text-sm tabular-nums text-ink-faint">{elapsed}秒経過</p>
           </div>
         </div>
