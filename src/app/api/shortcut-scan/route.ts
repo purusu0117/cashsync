@@ -7,7 +7,7 @@ import os from "os";
 import path from "path";
 import { EMAIL_UNVERIFIED_MESSAGE, emailVerificationRequired, isUserVerified } from "@/lib/account";
 import { askClaudeReceipt } from "@/lib/ai";
-import { checkAndCountUsage, getUserPlan, limitMessage } from "@/lib/aiUsage";
+import { checkAndCountUsage, getUserPlan, limitMessage, refundUsage } from "@/lib/aiUsage";
 import { userFromBearer } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 import { fmtYen } from "@/lib/format";
@@ -20,6 +20,7 @@ export const maxDuration = 180;
 
 export async function POST(request: Request) {
   let tmp = "";
+  let counted = false; // 枠を実際に消費したか（消費した時だけ返金）
   try {
     // 注意: ok は boolean ではなく文字列 "true"/"false" で返す。
     // iOSショートカットのif文は JSON の boolean をテキスト "true" と比較すると一致しないため。
@@ -42,9 +43,12 @@ export async function POST(request: Request) {
         { status: 429 },
       );
     }
+    counted = true; // ここで1回分消費済み。AIを使わず終わる失敗は返金する
     const form = await request.formData();
     const file = form.get("image");
     if (!(file instanceof File)) {
+      counted = false;
+      await refundUsage(user.id, "scans").catch(() => {});
       return Response.json({ ok: "false", message: "画像がありません。" }, { status: 400 });
     }
     const buf = Buffer.from(await file.arrayBuffer());
@@ -52,6 +56,8 @@ export async function POST(request: Request) {
     const hash = imageHashOf(buf);
     const already = await recordedImage(user.id, hash);
     if (already) {
+      counted = false;
+      await refundUsage(user.id, "scans").catch(() => {});
       const msg = `⚠️このスクショは既に記録済みです（${already.date} ${fmtYen(already.amount)}${already.memo ? `／${already.memo}` : ""}）。重複しないよう記録しませんでした。`;
       await pushRecordResult(user.id, "CashSync 記録しませんでした", msg);
       return Response.json({ ok: "false", message: msg }, { status: 409 });
@@ -157,6 +163,8 @@ export async function POST(request: Request) {
     console.error("[shortcut-scan] failed:", e); // server.logに残す（原因調査用）
     const failUser = await userFromBearer(request);
     if (failUser) {
+      // 読み取り失敗＝結果を返せなかったので消費した枠を戻す（AIが走って読み取れた422は対象外）
+      if (counted) await refundUsage(failUser.id, "scans").catch(() => {});
       await pushRecordResult(
         failUser.id,
         "CashSync 記録できませんでした",

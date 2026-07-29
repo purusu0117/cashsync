@@ -25,8 +25,11 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 180;
 
 export async function POST(request: Request) {
+  let userId = ""; // 外側catchで返金するため try 外に保持
+  let counted = false; // 枠を実際に消費したか
   try {
     const user = await requireUser();
+    userId = user.id;
     // 不正対策①（フラグ制御）: 確認必須ON時のみ、未確認ユーザーのAIコスト系を拒否（無料枠farming防止）。
     if (emailVerificationRequired() && !(await isUserVerified(user.id))) {
       return Response.json({ error: "unverified", message: EMAIL_UNVERIFIED_MESSAGE }, { status: 403 });
@@ -36,6 +39,7 @@ export async function POST(request: Request) {
     if (!usage.allowed) {
       return Response.json(limitResponseBody("scans", usage, plan), { status: 429 });
     }
+    counted = true; // ここで1回分消費済み。after()前に例外で落ちたら外側catchで返金する
     const form = await request.formData();
     const file = form.get("image");
     if (!(file instanceof File)) {
@@ -149,6 +153,8 @@ export async function POST(request: Request) {
     return Response.json({ jobId });
   } catch (e) {
     if (e instanceof AuthError) return unauthorized();
+    // after() を仕込む前に落ちた＝AIは走っていないので消費した枠を戻す
+    if (counted && userId) await refundUsage(userId, "scans").catch(() => {});
     return Response.json({ error: e instanceof Error ? e.message : "scan failed" }, { status: 500 });
   }
 }

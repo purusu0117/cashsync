@@ -4,7 +4,7 @@
 // （Webアプリはバックグラウンドでマイクを使えないため、その代替手段）。
 // 認証は shortcut-scan と同じ Authorization: Bearer <api_token>。
 import { askClaudeParseShifts } from "@/lib/ai";
-import { checkAndCountUsage, getUserPlan, limitMessage } from "@/lib/aiUsage";
+import { checkAndCountUsage, getUserPlan, limitMessage, refundUsage } from "@/lib/aiUsage";
 import { userFromBearer } from "@/lib/auth";
 import { db, uid } from "@/lib/db";
 import { fmtDateJa, minToHHMM } from "@/lib/format";
@@ -13,6 +13,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 180;
 
 export async function POST(request: Request) {
+  let userId = ""; // catch で返金するため try 外に保持
+  let counted = false; // 枠を実際に消費したか
   try {
     // 注意: ok は boolean ではなく文字列 "true"/"false" で返す（iOSショートカットのif文対策・shortcut-scanと同じ）。
     const user = await userFromBearer(request);
@@ -22,6 +24,7 @@ export async function POST(request: Request) {
         { status: 401 },
       );
     }
+    userId = user.id;
     const { text } = (await request.json()) as { text?: string };
     if (!text || !text.trim()) {
       // 音声入力中に画面を離れる/無言のままだと、空テキストが送られてくる
@@ -30,14 +33,7 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    const plan = await getUserPlan(user.id);
-    const usage = await checkAndCountUsage(user.id, plan, "parses");
-    if (!usage.allowed) {
-      return Response.json(
-        { ok: "false", error: "limit", message: limitMessage("parses", plan) },
-        { status: 429 },
-      );
-    }
+    // バイト先の有無チェックは AI を呼ぶ前＝カウント前に行う（未登録で枠を消費させない）
     const d = await db();
     const jobs = await d.all<{ id: string; name: string }>(
       "SELECT id, name FROM jobs WHERE user_id = ?",
@@ -49,6 +45,15 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    const plan = await getUserPlan(user.id);
+    const usage = await checkAndCountUsage(user.id, plan, "parses");
+    if (!usage.allowed) {
+      return Response.json(
+        { ok: "false", error: "limit", message: limitMessage("parses", plan) },
+        { status: 429 },
+      );
+    }
+    counted = true; // ここで1回分消費済み。以降のAI失敗（例外）は返金する
     const shifts = await askClaudeParseShifts(text.trim(), jobs, plan);
     if (shifts.length === 0) {
       return Response.json(
@@ -86,6 +91,8 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     console.error("[shortcut-shift] failed:", e); // server.logに残す（原因調査用）
+    // 解析が例外で落ちた＝結果を返せないので消費した枠を戻す
+    if (counted && userId) await refundUsage(userId, "parses").catch(() => {});
     return Response.json(
       { ok: "false", message: `登録に失敗しました：${e instanceof Error ? e.message : "エラー"}` },
       { status: 500 },

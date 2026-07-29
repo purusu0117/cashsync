@@ -33,6 +33,11 @@ export async function deleteUserData(userId: string): Promise<void> {
       "DELETE FROM account_snapshots WHERE account_id IN (SELECT id FROM accounts WHERE user_id = ?)",
       userId,
     );
+    // expense_tags も user_id を持たないので expenses 経由で先に消す
+    await tx.run(
+      "DELETE FROM expense_tags WHERE expense_id IN (SELECT id FROM expenses WHERE user_id = ?)",
+      userId,
+    );
     const tables = [
       "accounts",
       "expenses",
@@ -45,10 +50,14 @@ export async function deleteUserData(userId: string): Promise<void> {
       "quick_presets",
       "category_budgets",
       "push_subscriptions",
+      "push_devices",
       "monthly_reviews",
       "merchant_categories",
       "ai_usage",
       "ai_reward_days",
+      "scan_jobs",
+      "tags",
+      "email_verifications",
       "password_resets",
       "sessions",
       "users",
