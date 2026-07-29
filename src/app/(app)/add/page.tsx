@@ -44,6 +44,7 @@ interface SpeechRecognitionLike {
 
 export default function AddPage() {
   const router = useRouter();
+  const onDevice = visionOcrAvailable(); // 端末内解析(build26+)＝解析中に「AI」と表示しない
   const [categories, setCategories] = useState<Category[]>([]);
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayLocal());
@@ -320,7 +321,13 @@ export default function AddPage() {
               <MicIcon className="mx-auto h-7 w-7" />
             )}
             <span className="block text-lg font-bold">
-              {listening ? "録音中… タップで確定" : parsing ? "AIが解析中・・・" : "話して記録"}
+              {listening
+                ? "録音中… タップで確定"
+                : parsing
+                  ? onDevice
+                    ? "解析中・・・"
+                    : "AIが解析中・・・"
+                  : "話して記録"}
             </span>
             <span className={`block text-[11px] ${listening || parsing ? "" : "opacity-80"}`}>
               {listening

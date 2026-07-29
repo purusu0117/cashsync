@@ -194,6 +194,7 @@ export default function CalendarPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobsLoaded, setJobsLoaded] = useState(false);
   const [jobId, setJobId] = useState("");
+  const onDevice = visionOcrAvailable(); // 端末内解析(build26+)＝解析中に「AI」と表示しない
 
   // 日別シートからの単発シフト追加（既存の「＋この日にシフトを追加」を維持）
   const [showShiftAdd, setShowShiftAdd] = useState(false);
@@ -1172,7 +1173,9 @@ export default function CalendarPage() {
                           {listening
                             ? "録音中… タップで確定"
                             : parsing
-                              ? "AIが解析中・・・"
+                              ? onDevice
+                                ? "解析中・・・"
+                                : "AIが解析中・・・"
                               : "話してシフトを追加"}
                         </span>
                       </button>
