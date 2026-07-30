@@ -36,6 +36,10 @@ interface Category {
 }
 
 /** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
+// 反映確認用の版マーカー。Web修正を出すたびに更新する。実機のスキャン画面下部に表示され、
+// 「端末が最新Webを読んでいるか」を一目で確認できる（古い文字列＝キャッシュ未更新）。
+const SCAN_ENGINE_VER = "T15-0730a";
+
 async function sha256Hex(input: string): Promise<string> {
   try {
     const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
@@ -479,6 +483,8 @@ export default function ScanPage() {
           <p className="text-center text-[11px] leading-relaxed text-ink-faint">
             読み取り結果は保存前に必ず確認できます。
           </p>
+          {/* 反映確認用の版マーカー（この文字列が古ければ端末が古いWebを読んでいる＝キャッシュ未更新）。 */}
+          <p className="text-center text-[10px] text-ink-faint">エンジン {SCAN_ENGINE_VER}</p>
         </div>
       )}
 
