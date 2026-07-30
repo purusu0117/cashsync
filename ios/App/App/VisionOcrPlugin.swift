@@ -63,9 +63,12 @@ public class VisionOcrPlugin: CAPPlugin, CAPBridgedPlugin {
             let lines = sorted.compactMap { $0.topCandidates(1).first?.string }
             done(["text": lines.joined(separator: "\n")], nil)
         }
-        // .fast は .accurate より桁違いに速い（レシート/スクショの活字には十分）。遅延/固まり対策。
-        request.recognitionLevel = .fast
-        request.usesLanguageCorrection = false
+        // 【重要】日本語(CJK)は .accurate 必須。.fast はラテン系専用で、日本語の文字を
+        // ほぼ丸ごと落とす（実機で「食パン/合計/店」等が全部消え数字だけになっていた真因）。
+        // 遅延/固まりは createImageBitmap 固まり＋プラグイン未登録が真因で既に解消済みのため、
+        // ここは日本語をきちんと読める .accurate に戻す（＋日本語補正ON）。
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
         if #available(iOS 16.0, *) {
             request.revision = VNRecognizeTextRequestRevision3
         }
