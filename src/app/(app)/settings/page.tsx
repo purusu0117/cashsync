@@ -18,7 +18,12 @@ import { CATEGORY_ICON_KEYS, DEFAULT_CATEGORY_ICON } from "@/lib/categoryIcons";
 import { cachedFetch, clearApiCache } from "@/lib/cachedFetch";
 import { apiCall, apiJson } from "@/lib/clientApi";
 import { fmtYen } from "@/lib/format";
-import { clearWidgetAuth, isNativePlatform, scheduleLocalReminder } from "@/lib/native";
+import {
+  clearWidgetAuth,
+  isNativePlatform,
+  removeTopBanner,
+  scheduleLocalReminder,
+} from "@/lib/native";
 import { isPurchasesAvailable, purchasePremium, restorePremium } from "@/lib/purchases";
 import { track } from "@/lib/track";
 
@@ -222,8 +227,15 @@ export default function SettingsPage() {
   async function syncPlan(active: boolean): Promise<PlanName> {
     const res = await apiCall<{ plan?: string }>("/api/purchases/sync", apiJson({ active }));
     clearApiCache(); // プロフィール等のキャッシュを新プランで引き直す
-    setPlan(planOf(res.plan));
-    return planOf(res.plan);
+    const p = planOf(res.plan);
+    setPlan(p);
+    // プレミアム/ファウンダーになったら、再起動を待たず上部バナー広告を即オフにする。
+    // （バナーはレイアウト側の plan で表示されるため、ここで直接消さないと再起動まで残る）
+    if (p !== "free" && isNativePlatform()) {
+      document.body.classList.remove("native-banner");
+      removeTopBanner().catch(() => {});
+    }
+    return p;
   }
 
   async function buyPremium() {
