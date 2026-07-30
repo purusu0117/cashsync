@@ -19,23 +19,26 @@ project = Xcodeproj::Project.open(PROJECT_PATH)
 app_target = project.targets.find { |t| t.name == APP_TARGET }
 raise "App ターゲットが見つかりません" unless app_target
 
-# --- 端末内OCR: VisionOcrPlugin.swift を App ターゲットのコンパイル対象へ（冪等・ウィジェット処理より前に必ず実行） ---
-# ファイルは ios/App/App/VisionOcrPlugin.swift にあるが project.pbxproj に未登録で、
-# build26 では一切コンパイルされていなかった（＝端末内OCRが存在せずサーバーAIに落ちていた）。
-VISION_FILE = "VisionOcrPlugin.swift"
-already_in_sources = app_target.source_build_phase.files.any? do |bf|
-  bf.file_ref && bf.file_ref.display_name.to_s == VISION_FILE
+# --- 端末内OCR: App直下の追加Swiftを App ターゲットのコンパイル対象へ（冪等・ウィジェット処理より前に必ず実行） ---
+# これらは ios/App/App/ にあるが project.pbxproj に未登録だと一切コンパイルされない。
+# VisionOcrPlugin.swift = 端末内OCR本体。MainViewController.swift = capacitorDidLoad()で
+# VisionOcrを明示登録するブリッジVC（Capacitor 8は自動登録が無いためこれが無いと
+# JS側で「not implemented on ios」になる）。
+APP_SWIFT_FILES = ["VisionOcrPlugin.swift", "MainViewController.swift"]
+app_group = project.main_group.find_subpath("App", true)
+APP_SWIFT_FILES.each do |fname|
+  in_sources = app_target.source_build_phase.files.any? do |bf|
+    bf.file_ref && bf.file_ref.display_name.to_s == fname
+  end
+  if in_sources
+    puts "#{fname} は既に App ターゲットに含まれています"
+  else
+    ref = app_group.files.find { |f| f.display_name.to_s == fname } || app_group.new_reference(fname)
+    app_target.add_file_references([ref])
+    puts "#{fname} を App ターゲットのソースに追加しました"
+  end
 end
-if already_in_sources
-  puts "#{VISION_FILE} は既に App ターゲットに含まれています"
-else
-  # AppDelegate.swift と同じ "App" グループ（path=App, SOURCE_ROOT=ios/App）に置く。
-  app_group = project.main_group.find_subpath("App", true)
-  ref = app_group.files.find { |f| f.display_name.to_s == VISION_FILE } || app_group.new_reference(VISION_FILE)
-  app_target.add_file_references([ref])
-  project.save
-  puts "#{VISION_FILE} を App ターゲットのソースに追加しました"
-end
+project.save
 
 if project.targets.any? { |t| t.name == WIDGET_TARGET }
   puts "既に #{WIDGET_TARGET} があります（何もしません）"
