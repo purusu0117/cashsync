@@ -23,6 +23,8 @@ export function normalizeText(raw: string): string {
   t = t.replace(/¥\s*[lI|](?=\d)/g, "¥"); // ¥直後の l/I/| は 1 の誤読ノイズ→除去
   t = t.replace(/(\d)[。．｡・･]+(?=[\d,])/g, "$1"); // 数字間に混入する中黒/句点を除去（6。,100→6,100）
   t = t.replace(/(\d{1,3})\.(\d{3})(?!\d)/g, "$1,$2"); // 千区切りのカンマを . と誤読（円は整数）
+  // 千区切りのカンマを「を/ヲ」等と誤読（PayPay等の大きな金額。例「1 を 480 円」→ 1,480円）。
+  t = t.replace(/(\d)\s*[をヲゎ]\s*(?=\d{3}(?:\D|$))/g, "$1,");
   // 「円」を "mn"/"m円"/"内" 等と誤読するケース：数字直後の mn/rn を 円 に（"ml"=500mlは除外）
   t = t.replace(/(\d)\s*(?:mn|rn|m円|内)\b/g, "$1円");
   // CJK文字に挟まれた空白を除去（日本語OCRは字ごとに空白を入れがち）
@@ -292,15 +294,89 @@ function guessCategory(store: string, items: { name: string }[], categoryNames: 
 
 // ---- 本体 ---------------------------------------------------------------
 
+// ---- 決済アプリ画面（PayPay/LINE Pay/送金/受け取り等）専用の抽出 -----------
+// 実物の決済画面は、上部に「相手/店名」「日付」「大きな金額」があり、その下に
+// ポイント・クーポン・達成条件など大量のノイズ（"金額100,000円""14pt"等）が続く。
+// レシート用の汎用ロジックだとノイズを合計に拾うため、専用に切り分ける。
+const PAYMENT_MARKERS =
+  /(支払い完了|受け取り完了|送金しました|受け取りました|さんから受け取る|さんに送る|残高を送る|PayPay|LINE\s?Pay|楽天ペイ|d払い|au\s?PAY|メルペイ)/i;
+const NOISE_LINE =
+  /(ポイント|pt\b|還元|付与|クーポン|達成|条件|回数|ステップ|おすすめ|獲得|上限|チャージ|登録する|お困り|詳細を表示|残高を送る|クレジット)/i;
+
+function isPaymentScreen(text: string): boolean {
+  return PAYMENT_MARKERS.test(text);
+}
+
+function paymentKind(text: string): "expense" | "income" {
+  if (/(受け取り完了|受け取りました|さんから受け取る|入金|返金|チャージ完了)/.test(text) && !/支払い完了/.test(text)) {
+    return "income";
+  }
+  return "expense";
+}
+
+/** 決済画面の金額＝日付行の直後〜完了マーカーの間にある最初の金額（ポイント等ノイズ行は除外）。 */
+function paymentTotal(lines: string[]): number {
+  const dateIdx = lines.findIndex((l) => /\d{2,4}\s*年.*\d{1,2}\s*月.*\d{1,2}\s*日/.test(l));
+  const markerIdx = lines.findIndex((l) => /(支払い完了|受け取り完了|送金しました|受け取りました)/.test(l));
+  const lo = dateIdx >= 0 ? dateIdx + 1 : 0;
+  const hi = markerIdx > lo ? markerIdx + 1 : Math.min(lines.length, lo + 5);
+  for (let i = lo; i < hi; i++) {
+    if (NOISE_LINE.test(lines[i])) continue;
+    const a = moneyIn(lines[i]);
+    if (a.length) return Math.max(...a);
+  }
+  // フォールバック：上部で最初の「円/¥付き」金額（ノイズ行除外）
+  for (let i = 0; i < Math.min(lines.length, 10); i++) {
+    if (NOISE_LINE.test(lines[i]) || !/円|¥/.test(lines[i])) continue;
+    const a = moneyIn(lines[i]);
+    if (a.length) return a[0];
+  }
+  return 0;
+}
+
+/** 決済画面の店名/送金相手。①お店/送金元等のラベルがあればそれ ②無ければ上部の名前行。 */
+function paymentStore(lines: string[]): string {
+  // 1) ラベル（お店/加盟店/送金元/送金先/宛先/店名/店舗）があればラベル方式を優先
+  if (lines.some((l) => /(お店|加盟店|送金元|送金先|宛先|店名|店舗)/.test(l))) {
+    const s = extractStore(lines);
+    if (s) return s;
+  }
+  // 2) ラベル無し（PayPay等）→ 上部の名前行。マーカー/金額/案内文は除外、「○○さん」抽出、アイコン誤読除去。
+  const dateIdx = lines.findIndex((l) => /\d{2,4}\s*年.*月.*日/.test(l));
+  const top = lines.slice(0, dateIdx > 0 ? dateIdx : 4);
+  for (const raw of top) {
+    let l = raw.trim();
+    if (!l || isStatusBar(l) || /^[\d\s¥,.\-:+]+円?$/.test(l)) continue;
+    if (/(支払い完了|受け取り完了|送金しました|受け取りました|お支払い|ご請求|完了|詳細|明細|残高)/.test(l)) continue;
+    const m = l.match(/(.+?)\s*さん(から|へ|に)/); // 「○○さんから受け取る」等
+    if (m) l = m[1];
+    l = l.replace(/^[ぁ-んァ-ヶ]\s+(?=[A-Za-z0-9])/u, ""); // 「イ Rocket」→「Rocket」（アイコン誤読1字）
+    l = l.replace(/\s{2,}/g, " ").trim();
+    if (l.length >= 1 && /[一-龠ぁ-んァ-ヶA-Za-z0-9]/.test(l)) return l.slice(0, 30);
+  }
+  return "";
+}
+
 export function parseReceiptText(rawText: string, categoryNames: string[], today: string): ReceiptScan {
   const text = normalizeText(rawText);
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.length > 0 && !isStatusBar(l));
+  const date = extractDate(lines.join("\n"), today);
+
+  // 決済アプリ画面は専用ロジックで（ノイズを合計に拾わないため）
+  if (isPaymentScreen(text)) {
+    const kind = paymentKind(text);
+    const store = paymentStore(lines) || extractStore(lines);
+    const total = paymentTotal(lines) || extractTotal(lines);
+    const category = kind === "income" ? "" : guessCategory(store, [], categoryNames);
+    return { kind, store, date, total, category, items: [] };
+  }
+
+  // 通常のレシート
   const kind = detectKind(text);
   const total = extractTotal(lines);
-  const date = extractDate(lines.join("\n"), today);
   const store = extractStore(lines);
   const items = kind === "income" ? [] : extractItems(lines);
   const category = kind === "income" ? "" : guessCategory(store, items, categoryNames);
