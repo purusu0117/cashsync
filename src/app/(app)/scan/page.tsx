@@ -187,16 +187,18 @@ export default function ScanPage() {
     setPreview(URL.createObjectURL(file));
     setElapsed(0);
     setPhase("scanning");
-    // 端末内OCR(Apple Vision)を"短時間だけ"試す。読めればAPI不使用で確定。
-    // 実機で読めない/遅い場合は return せず、下の"動作実績のあるサーバー読取"にフォールバックする
-    // （＝アプリが必ず動く。端末内OCRを実機で読めるよう修正できたら、この保険は外す）。
+    // 端末内OCR(Apple Vision)のみ。全体に15秒のハード上限を付け、絶対に無限「解析中」にしない。
+    // 15秒で必ず結果 or「認識できません(撮り直し/手入力)」に落ちる。サーバー(AI)へは一切行かない。
     if (isNativePlatform()) {
       try {
-        const small = await withTimeout(downscaleFile(file, 1600, 0.8), 5000);
-        const text = await visionOcrRecognize(small, 8000);
-        const s = text
-          ? parseReceiptText(text, categories.map((c) => c.name), todayLocal())
-          : null;
+        const s = await withTimeout(
+          (async () => {
+            const small = await downscaleFile(file, 1600, 0.8);
+            const text = await visionOcrRecognize(small, 12000);
+            return text ? parseReceiptText(text, categories.map((c) => c.name), todayLocal()) : null;
+          })(),
+          15000,
+        );
         if (s && (s.total > 0 || (s.store ?? "").trim())) {
           track("scan_used");
           const catId = categories.find((c) => c.name === s.category)?.id ?? null;
@@ -215,8 +217,10 @@ export default function ScanPage() {
           return;
         }
       } catch {
-        /* 端末内OCRが不調 → 下のサーバー読取へフォールバック（return しない） */
+        /* タイムアウト/失敗（15秒以内に必ず抜ける） */
       }
+      setPhase("failed"); // 無限「解析中」にしない。サーバー(AI)にも行かない。
+      return;
     }
     try {
       // C5: 解析はサーバー側のジョブとして走らせる（アプリを閉じても中断しない）。
