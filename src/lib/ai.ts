@@ -176,7 +176,10 @@ export interface ReceiptScan {
 
 function receiptPromptBody(categoryNames: string[], today: string): string {
   return [
-    "・kind: お金を【払った】画面（レシート・支払い完了・注文確認）なら expense、お金を【受け取った】画面（PayPay/LINE Payの受け取り・送金された・給与振込・フリマの売上）なら income。",
+    "・kind: お金を【払った/送った】画面なら expense、お金を【受け取った】画面なら income。方向で判断する:",
+    "  - expense（自分がお金を出した）: レシート・支払い完了・注文確認、および PayPay/LINE Pay 等で『◯◯さんに送る／◯◯へ送金／送金しました／送りました／お支払い』のように【自分が相手に送金した】画面。",
+    "  - income（自分がお金を受け取った）: 『◯◯さんから受け取る／受け取りました／送金されました／入金』や、給与振込・フリマの売上。",
+    "  - 決め手: 金額の先頭に【＋】が付く（＋¥1,450）なら受け取り＝income。付かない・『送る/送金しました』は expense。『送金』の語だけで income にしない（送る=expense / 受け取る=income と、必ず方向で判断する）。",
     "・store: 店名・支払い先（incomeの場合は送ってきた相手やサービス名。読めなければ空文字）。",
     `・date: 支払い日付を YYYY-MM-DD で（年が無ければ ${today} に近い過去の日付と解釈。読めなければ空文字）。`,
     "・total: 合計金額（税込・数値のみ。ポイント払い等は無視して支払総額）。",
