@@ -103,21 +103,25 @@ function firstAmt(lines: string[], key: RegExp): number {
   return 0;
 }
 
-function extractTotal(lines: string[]): number {
-  // 1) レシート：小計 + 税 が読めれば合算（合計行の桁誤読に強い）
-  const sub = firstAmt(lines, /小計/);
-  const tax = firstAmt(lines, /(消費税|税[込抜]?|内税|外税)/);
-  if (sub > 0 && tax > 0) return sub + tax;
+// 「合計」等に紛れるがTHE支払合計ではない行（非課税合計/小計/対象計/残高等）。
+const TOTAL_DISQUAL = /(非課税|非課稅|小計|中計|対象計|残高|手数料|お預|預り|お釣|釣|ポイント|point)/i;
 
-  // 2) 合計系キーワード
+function extractTotal(lines: string[]): number {
+  // 1) 印字された「合計」系ラベルの値を最優先する（割引後の“実際に支払った額”。
+  //    自前で 小計+税 を足すと、割引・非課税・内税/外税の混在で実額とズレるため、印字値を信じる）。
   for (const k of TOTAL_KEYS) {
     for (let i = 0; i < lines.length; i++) {
       if (!lines[i].includes(k)) continue;
-      if (k === "総額" && NEG_KEYS.test(lines[i])) continue;
+      if (TOTAL_DISQUAL.test(lines[i])) continue; // 非課税合計・小計 等は除外
       const a = amtNear(lines, i);
       if (a) return a;
     }
   }
+
+  // 2) 合計ラベルが読めない時だけ：小計 + 税 で合算（合計行の欠落/桁誤読の保険）
+  const sub = firstAmt(lines, /小計/);
+  const tax = firstAmt(lines, /(消費税|税[込抜]?|内税|外税)/);
+  if (sub > 0 && tax > 0) return sub + tax;
   // 3) マーカー付き金額の最大（控除行は除く）
   const marked: number[] = [];
   for (const line of lines) {
@@ -135,15 +139,14 @@ function extractTotal(lines: string[]): number {
 }
 
 /**
- * 検算：レシートの「お預かり−お釣り」や「小計/商品代金 −値引(+税)」から“あり得る合計”を割り出し、
- * 読み取った total がそのどれかに（±1円で）一致するか確認する。
- * ・信頼できる材料（お預かり&お釣り、または小計/商品代金）が無ければ検証不能として true を返す（疑わない）。
- * ・明細合計は誤読/取りこぼしが多いので、矛盾の“判定材料”には使わず、“一致の確認”にだけ使う
- *   （信頼材料があるのに total がどれとも合わない場合のみ false ＝読み取りミスの疑い）。
+ * 検算：金額の“読み取りミス”を検出する。判定に使うのは【お預かり − お釣り = 支払合計】という
+ * 会計上の恒等式だけ。割引/非課税/内税・外税の混在で「小計＋税」や「明細合計」は実額とズレやすく、
+ * それらで判定すると割引レシートを誤って弾いてしまう（例: 5%割引が"値引"の語なしで書かれる等）。
+ * お預かり・お釣りの両方が読めた時だけ検算し、一致しなければ false（＝読み取りミスの疑い）。
+ * どちらかでも読めなければ検証不能として true を返し、印字された「合計」ラベルの値を信頼する。
  */
-function totalLooksConsistent(lines: string[], items: { price: number }[], total: number): boolean {
+function totalLooksConsistent(lines: string[], total: number): boolean {
   if (!(total > 0)) return true;
-  // ラベル行〜2行先から ¥/円/カンマ付き金額を拾う（moneyIn は数字内の空白「4 , 000」も許容）。
   const moneyNear = (re: RegExp): number => {
     for (let i = 0; i < lines.length; i++) {
       if (!re.test(lines[i])) continue;
@@ -154,43 +157,10 @@ function totalLooksConsistent(lines: string[], items: { price: number }[], total
     }
     return 0;
   };
-  // 値引は「値引額」の値が次行に「-22」と記号なし/負数で分離することが多いので専用に拾う。
-  const discountNear = (): number => {
-    for (let i = 0; i < lines.length; i++) {
-      if (!/(値引|割引)/.test(lines[i])) continue;
-      for (let j = 0; j <= 2 && i + j < lines.length; j++) {
-        const mv = moneyIn(lines[i + j]);
-        if (mv.length) return Math.max(...mv);
-        const bm = lines[i + j].replace(/\s/g, "").match(/-?\d[\d,]*/);
-        if (bm) {
-          const v = Math.abs(Number(bm[0].replace(/,/g, "")));
-          if (v >= 1 && v < 100000) return v;
-        }
-      }
-    }
-    return 0;
-  };
-  const discount = discountNear();
-  const tax = moneyNear(/(消費税|内税|外税|税等|税額)/);
-  const subtotal = moneyNear(/(小計|商品代金)/);
   const paid = moneyNear(/(お預|預り|預かり)/);
   const change = moneyNear(/(お釣|おつり|釣り|釣銭)/);
-  const itemsSum = items.reduce((s, it) => s + (it.price > 0 ? Math.round(it.price) : 0), 0);
-  const addMods = (base: number, set: Set<number>) => {
-    if (base <= 0) return;
-    set.add(base);
-    if (discount > 0) set.add(base - discount);
-    if (tax > 0) set.add(base + tax);
-    if (discount > 0 && tax > 0) set.add(base - discount + tax);
-  };
-  const reliable = new Set<number>();
-  if (paid > 0 && change > 0) reliable.add(paid - change);
-  addMods(subtotal, reliable);
-  if (reliable.size === 0) return true; // 信頼できる検算材料が無い→疑わない
-  const all = new Set(reliable);
-  if (items.length >= 2) addMods(itemsSum, all); // 明細は確認にだけ使う
-  for (const c of all) if (Math.abs(c - total) <= 1) return true;
-  return false; // 信頼材料があるのに total がどれとも合わない＝金額の読み取りミスの疑い
+  if (paid > 0 && change > 0) return Math.abs(paid - change - total) <= 1;
+  return true; // お預かり/お釣りが揃わない＝検証不能→印字の合計を信頼して疑わない
 }
 
 // ---- 日付 ---------------------------------------------------------------
@@ -510,8 +480,8 @@ export function parseReceiptText(rawText: string, categoryNames: string[], today
   const store = extractStore(lines);
   const items = kind === "income" ? [] : extractItems(lines);
   const category = kind === "income" ? "" : guessCategory(store, items, categoryNames);
-  // 検算：明細/お預かり・お釣り等と合計が矛盾したら「読み取りミスの疑い」を立てる（撮り直し誘導用）。
-  const needsRecheck = kind === "expense" && !totalLooksConsistent(lines, items, total);
+  // 検算：お預かり−お釣りと合計が矛盾したら「読み取りミスの疑い」を立てる（撮り直し誘導用）。
+  const needsRecheck = kind === "expense" && !totalLooksConsistent(lines, total);
   return { kind, store, date, total, category, items, needsRecheck };
 }
 
