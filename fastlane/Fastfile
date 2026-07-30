@@ -234,6 +234,18 @@ platform :ios do
       comp = (b.uses_non_exempt_encryption rescue "?")
       UI.message("BUILD #{b.version} state=#{b.processing_state} compliance=#{comp.inspect} groups=[#{bg.map { |x| (x.name rescue x.id) }.join(', ')}]")
     end
+
+    UI.message("=== APP STORE VERSIONS (公開審査の状況) ===")
+    versions = (app.get_app_store_versions(limit: 8) rescue [])
+    if versions.empty?
+      UI.message("App Store版のバージョンは見つかりませんでした（公開審査を出していない可能性）")
+    end
+    versions.each do |v|
+      vs = (v.version_string rescue "?")
+      state = (v.app_store_state rescue "?")
+      bno = (v.build.version rescue nil)
+      UI.message("APPSTORE version=#{vs} state=#{state} build=#{bno.inspect}")
+    end
   end
 
   desc "対象ビルドを内部テスターグループに配布する（TestFlightで入手可能にする）"
