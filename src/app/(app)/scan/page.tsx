@@ -38,7 +38,7 @@ interface Category {
 /** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
 // 反映確認用の版マーカー。Web修正を出すたびに更新する。実機のスキャン画面下部に表示され、
 // 「端末が最新Webを読んでいるか」を一目で確認できる（古い文字列＝キャッシュ未更新）。
-const SCAN_ENGINE_VER = "T15-0730b";
+const SCAN_ENGINE_VER = "T16-0730c";
 
 async function sha256Hex(input: string): Promise<string> {
   try {
@@ -61,25 +61,34 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 
 /**
  * File を長辺 maxDim 以内の JPEG dataURL に縮小して返す。
- * フル解像度のスクショ/写真は base64 がMB級でブリッジ転送もVisionも重く"解析が終わらない"原因。
- * `new Image()`＋巨大dataURL は iOS WebView で load が返らず固まることがあるため、
- * より確実で速い createImageBitmap(File) を使う。
+ * iOS WebView では createImageBitmap(File) が返らず固まることがあった（画像がOCRに届かない主因）。
+ * そこで object URL＋<img> で確実にデコードする（PNG/JPEG/HEIC いずれもiOSのimgは表示可）。
+ * imgのload自体にも上限時間を付け、返らなければ即エラーにする（無限待ちにしない）。
  */
 async function downscaleFile(file: File, maxDim: number, quality: number): Promise<string> {
-  const bitmap = await createImageBitmap(file);
+  const url = URL.createObjectURL(file);
   try {
-    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
-    const w = Math.max(1, Math.round(bitmap.width * scale));
-    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const im = new Image();
+      const t = setTimeout(() => reject(new Error("img load timeout")), 8000);
+      im.onload = () => { clearTimeout(t); resolve(im); };
+      im.onerror = () => { clearTimeout(t); reject(new Error("img load error")); };
+      im.src = url;
+    });
+    const iw = img.naturalWidth || img.width;
+    const ih = img.naturalHeight || img.height;
+    const scale = Math.min(1, maxDim / Math.max(iw, ih, 1));
+    const w = Math.max(1, Math.round(iw * scale));
+    const h = Math.max(1, Math.round(ih * scale));
     const canvas = document.createElement("canvas");
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("no 2d context");
-    ctx.drawImage(bitmap, 0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
     return canvas.toDataURL("image/jpeg", quality);
   } finally {
-    bitmap.close();
+    URL.revokeObjectURL(url);
   }
 }
 
