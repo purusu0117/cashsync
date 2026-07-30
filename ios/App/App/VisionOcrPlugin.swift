@@ -2,6 +2,41 @@ import Foundation
 import Capacitor
 import Vision
 import UIKit
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
+
+// 端末内AI（Apple Intelligence / Foundation Models, iOS26+）でOCRテキストを家計簿1件に構造化する。
+// サーバー/APIは一切使わない・画像やテキストも端末外に出さない。guided generation で型に流し込む。
+#if canImport(FoundationModels)
+@available(iOS 26.0, *)
+@Generable
+enum AIKind { case expense; case income }
+
+@available(iOS 26.0, *)
+@Generable
+struct AIItem {
+    @Guide(description: "品目名") var name: String
+    @Guide(description: "金額（円・整数）") var price: Int
+}
+
+@available(iOS 26.0, *)
+@Generable
+struct AIReceipt {
+    @Guide(description: "支払い/レシート/注文なら expense、受け取り/入金/売上/送金された なら income")
+    var kind: AIKind
+    @Guide(description: "店名・支払い先。住所/電話/『見本』等の透かしは店名にしない。読めなければ空文字")
+    var store: String
+    @Guide(description: "日付 YYYY-MM-DD。和暦や崩れた表記も西暦に直す。読めなければ空文字")
+    var date: String
+    @Guide(description: "実際に支払った合計金額。円・整数。印字された『合計』があればその値。小計+税を自分で足さない")
+    var total: Int
+    @Guide(description: "最も合うカテゴリ名を渡した候補から1つだけ。該当が無ければ空文字")
+    var category: String
+    @Guide(description: "主な品目（最大20件）。小計/合計/値引/商品代金/お預り/お釣り/ポイント/部門コードは含めない")
+    var items: [AIItem]
+}
+#endif
 
 /// 端末内蔵の Apple Vision で画像から日本語テキストを抽出する Capacitor プラグイン。
 /// AI API を使わず、画像も端末外に出さずに OCR する（CashSync の自前OCR用）。
@@ -11,7 +46,9 @@ public class VisionOcrPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "VisionOcrPlugin"
     public let jsName = "VisionOcr"
     public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "recognize", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "recognize", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "aiAvailable", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "parseReceipt", returnType: CAPPluginReturnPromise)
     ]
 
     // UIImage を長辺 maxDim 以内に縮小（Visionの負荷を下げ、遅延/固まりを防ぐ）。
@@ -82,5 +119,83 @@ public class VisionOcrPlugin: CAPPlugin, CAPBridgedPlugin {
                 done(nil, "ocr perform failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    // 端末内AIが使えるか（対応端末＋Apple Intelligence ON＋モデル準備済み）を返す。
+    @objc func aiAvailable(_ call: CAPPluginCall) {
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            let (ok, reason) = VisionOcrPlugin.aiStatus()
+            call.resolve(["available": ok, "reason": reason])
+            return
+        }
+        #endif
+        call.resolve(["available": false, "reason": "os"]) // iOS26未満/フレームワーク無し
+    }
+
+    #if canImport(FoundationModels)
+    @available(iOS 26.0, *)
+    private static func aiStatus() -> (Bool, String) {
+        switch SystemLanguageModel.default.availability {
+        case .available:
+            return (true, "ok")
+        case .unavailable(let reason):
+            switch reason {
+            case .deviceNotEligible: return (false, "deviceNotEligible")
+            case .appleIntelligenceNotEnabled: return (false, "notEnabled")
+            case .modelNotReady: return (false, "modelNotReady")
+            @unknown default: return (false, "unknown")
+            }
+        }
+    }
+    #endif
+
+    // OCRテキスト → 家計簿1件（kind/store/date/total/category/items）を端末内AIで構造化。
+    // 使えない端末では available:false を返し、JS側はルール解析にフォールバックする。
+    @objc func parseReceipt(_ call: CAPPluginCall) {
+        let text = call.getString("text") ?? ""
+        let cats = (call.getArray("categories") ?? []).compactMap { $0 as? String }
+        if text.isEmpty {
+            call.resolve(["available": false, "reason": "empty"]); return
+        }
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            let (ok, reason) = VisionOcrPlugin.aiStatus()
+            if !ok {
+                call.resolve(["available": false, "reason": reason]); return
+            }
+            let resolveMain = { (obj: [String: Any]) in DispatchQueue.main.async { call.resolve(obj) } }
+            Task {
+                do {
+                    let instr = """
+                    あなたはレシートやQR決済画面のOCRテキストから、家計簿1件分の情報を抽出するアシスタントです。
+                    テキストに実際に書かれている事実だけを使い、値を創作しないこと。
+                    - store: 店名・支払い先。住所/電話番号/『見本』等の透かし文字は店名にしない。
+                    - date: 支払い日を YYYY-MM-DD。和暦や崩れた表記も西暦へ。読めなければ空。
+                    - total: 実際に支払った合計（割引後・税込）。レシートに『合計』が印字されていればその値を使い、
+                      小計＋税を自分で足し直さない。QR決済は画面に大きく出ている金額。円の整数。
+                    - category: 次の候補から最も合うものを1つだけ。該当が無ければ空。候補: \(cats.joined(separator: " / "))
+                      フードデリバリー(ロケットナウ/UberEats/出前館/セブンナウ等)は食費。
+                    - items: 主な品目のみ。小計/合計/値引/商品代金/お預り/お釣り/ポイント/部門コードは品目に入れない。
+                    """
+                    let session = LanguageModelSession { instr }
+                    let out = try await session.respond(to: text, generating: AIReceipt.self).content
+                    resolveMain([
+                        "available": true,
+                        "kind": out.kind == .income ? "income" : "expense",
+                        "store": out.store,
+                        "date": out.date,
+                        "total": out.total,
+                        "category": out.category,
+                        "items": out.items.map { ["name": $0.name, "price": $0.price] },
+                    ])
+                } catch {
+                    resolveMain(["available": false, "reason": "error", "message": String(describing: error)])
+                }
+            }
+            return
+        }
+        #endif
+        call.resolve(["available": false, "reason": "os"])
     }
 }

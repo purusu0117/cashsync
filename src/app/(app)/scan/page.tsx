@@ -18,6 +18,7 @@ import { netFetch } from "@/lib/clientApi";
 import { fmtDateJa, fmtYen, todayLocal } from "@/lib/format";
 import { capGlobal, deletePhotos, isNativePlatform, listRecentScreenshots } from "@/lib/native";
 import { parseReceiptText } from "@/lib/localReceipt";
+import type { ReceiptScan } from "@/lib/ai";
 import { takePendingImage } from "@/lib/pendingImage";
 import { track } from "@/lib/track";
 
@@ -35,10 +36,22 @@ interface Category {
   icon: string;
 }
 
+// 端末内AI(Apple Intelligence)プラグインの返り値。available:false のときはルール解析へフォールバック。
+interface AIParseResult {
+  available: boolean;
+  reason?: string;
+  kind?: "expense" | "income";
+  store?: string;
+  date?: string;
+  total?: number;
+  category?: string;
+  items?: { name: string; price: number }[];
+}
+
 /** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
 // 反映確認用の版マーカー。Web修正を出すたびに更新する。実機のスキャン画面下部に表示され、
 // 「端末が最新Webを読んでいるか」を一目で確認できる（古い文字列＝キャッシュ未更新）。
-const SCAN_ENGINE_VER = "T26-0730m";
+const SCAN_ENGINE_VER = "T27-0730n-AI";
 
 async function sha256Hex(input: string): Promise<string> {
   try {
@@ -229,7 +242,14 @@ export default function ScanPage() {
             // 返らず固まるのが真因だった）。window.Capacitor から直接 registerPlugin で掴む。
             const capg = capGlobal();
             let plugin = capg?.Plugins?.["VisionOcr"] as
-              | { recognize?: (o: { image: string }) => Promise<{ text?: string }> }
+              | {
+                  recognize?: (o: { image: string }) => Promise<{ text?: string }>;
+                  parseReceipt?: (o: {
+                    text: string;
+                    categories: string[];
+                    today: string;
+                  }) => Promise<AIParseResult>;
+                }
               | undefined;
             let acq = plugin ? "inj" : "";
             if ((!plugin || typeof plugin.recognize !== "function") && typeof capg?.registerPlugin === "function") {
@@ -264,12 +284,49 @@ export default function ScanPage() {
             }
             const text = outcome.text;
             setRawOcr(text); // 実機Visionの生出力を確認画面に出せるよう保持（解析ズレ時の調整用）
-            diag.msg = text.length
-              ? `OCR ${text.length}字 (${Date.now() - tR}ms) 先頭「${text.replace(/\n/g, " ").slice(0, 30)}」`
-              : `OCR=空文字 (${Date.now() - tR}ms) 画像${kb}KB`;
-            return text.length ? parseReceiptText(text, categories.map((c) => c.name), todayLocal()) : null;
+            if (!text.length) {
+              diag.msg = `OCR=空文字 (${Date.now() - tR}ms) 画像${kb}KB`;
+              return null;
+            }
+            const catNames = categories.map((c) => c.name);
+            // ① まず端末内AI(Apple Intelligence)で解釈を試す（サーバー/API不使用・端末外に出さない）。
+            //    非対応端末・未有効・エラー時は ② ルール解析にフォールバックする。
+            let aiTag = "AI無";
+            if (typeof plugin.parseReceipt === "function") {
+              try {
+                const ai = await Promise.race([
+                  plugin.parseReceipt({ text, categories: catNames, today: todayLocal() }),
+                  new Promise<AIParseResult>((res) =>
+                    setTimeout(() => res({ available: false, reason: "timeout" }), 10000),
+                  ),
+                ]);
+                if (ai && ai.available) {
+                  const items = Array.isArray(ai.items)
+                    ? ai.items
+                        .filter((it) => it && it.name)
+                        .map((it) => ({ name: String(it.name).slice(0, 40), price: Math.round(Number(it.price)) || 0 }))
+                    : [];
+                  diag.msg = `OCR ${text.length}字→端末内AI解析OK (${Date.now() - tR}ms)`;
+                  const aiScan: ReceiptScan = {
+                    kind: ai.kind === "income" ? "income" : "expense",
+                    store: String(ai.store ?? "").slice(0, 40),
+                    date: String(ai.date ?? ""),
+                    total: Math.round(Number(ai.total)) || 0,
+                    category: String(ai.category ?? ""),
+                    items,
+                  };
+                  return aiScan;
+                }
+                aiTag = `AI不可(${ai?.reason ?? "?"})`;
+              } catch (e) {
+                aiTag = `AIエラー:${es(e)}`;
+              }
+            }
+            // ② ルール解析（AI非対応端末のフォールバック）
+            diag.msg = `OCR ${text.length}字 ${aiTag}→ルール解析 (${Date.now() - tR}ms)`;
+            return parseReceiptText(text, catNames, todayLocal());
           })(),
-          15000,
+          25000,
         );
         // 検算で合計が明細と矛盾（数字の読み取りミスの疑い）→ 確認画面に進めず撮り直しへ誘導。
         if (s && s.needsRecheck) {
