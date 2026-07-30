@@ -13,7 +13,7 @@ interface CapacitorGlobal {
   Plugins?: Record<string, unknown>;
 }
 
-function capGlobal(): CapacitorGlobal | undefined {
+export function capGlobal(): CapacitorGlobal | undefined {
   if (typeof window === "undefined") return undefined;
   return (window as unknown as { Capacitor?: CapacitorGlobal }).Capacitor;
 }

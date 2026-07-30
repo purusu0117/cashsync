@@ -16,7 +16,7 @@ import RewardCredit from "@/components/RewardCredit";
 import { cachedFetch } from "@/lib/cachedFetch";
 import { netFetch } from "@/lib/clientApi";
 import { fmtDateJa, fmtYen, todayLocal } from "@/lib/format";
-import { deletePhotos, isNativePlatform, listRecentScreenshots, nativePlugin } from "@/lib/native";
+import { capGlobal, deletePhotos, isNativePlatform, listRecentScreenshots } from "@/lib/native";
 import { parseReceiptText } from "@/lib/localReceipt";
 import { takePendingImage } from "@/lib/pendingImage";
 import { track } from "@/lib/track";
@@ -38,7 +38,7 @@ interface Category {
 /** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
 // 反映確認用の版マーカー。Web修正を出すたびに更新する。実機のスキャン画面下部に表示され、
 // 「端末が最新Webを読んでいるか」を一目で確認できる（古い文字列＝キャッシュ未更新）。
-const SCAN_ENGINE_VER = "T19-0730f";
+const SCAN_ENGINE_VER = "T20-0730g";
 
 async function sha256Hex(input: string): Promise<string> {
   try {
@@ -219,19 +219,31 @@ export default function ScanPage() {
             }
             const kb = Math.round(small.length / 1024);
             diag.msg = `縮小OK ${Date.now() - t0}ms ${kb}KB → プラグイン取得中`;
-            const plugin = await nativePlugin<{ recognize: (o: { image: string }) => Promise<{ text?: string }> }>(
-              "VisionOcr",
-            );
-            if (!plugin) {
-              diag.msg = `縮小OK ${kb}KB → プラグインnull（VisionOcr未搭載）`;
+            // プラグイン取得は「同期のみ」。await/動的importを一切使わない（それらが iOS WebView で
+            // 返らず固まるのが真因だった）。window.Capacitor から直接 registerPlugin で掴む。
+            const capg = capGlobal();
+            let plugin = capg?.Plugins?.["VisionOcr"] as
+              | { recognize?: (o: { image: string }) => Promise<{ text?: string }> }
+              | undefined;
+            let acq = plugin ? "inj" : "";
+            if ((!plugin || typeof plugin.recognize !== "function") && typeof capg?.registerPlugin === "function") {
+              try {
+                plugin = capg.registerPlugin("VisionOcr");
+                acq = "reg";
+              } catch (e) {
+                acq = `regErr:${es(e)}`;
+              }
+            }
+            if (!plugin || typeof plugin.recognize !== "function") {
+              diag.msg = `プラグイン取得不可(${kb}KB) Cap=${!!capg} Plugins=${!!capg?.Plugins} regFn=${typeof capg?.registerPlugin} inj=${!!capg?.Plugins?.["VisionOcr"]} acq=${acq}`;
               return null;
             }
             // recognize を「成功/エラー/12秒無応答」で確実に切り分けて診断に残す。
             diag.msg = `縮小OK ${kb}KB → recognize呼出→応答待ち`;
             const tR = Date.now();
+            const recognize = plugin.recognize!;
             const outcome = await Promise.race([
-              plugin
-                .recognize({ image: small })
+              recognize({ image: small })
                 .then((r) => ({ kind: "ok" as const, text: r?.text ?? "" }))
                 .catch((e) => ({ kind: "err" as const, msg: es(e) })),
               new Promise<{ kind: "to" }>((res) => setTimeout(() => res({ kind: "to" }), 12000)),
