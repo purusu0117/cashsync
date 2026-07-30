@@ -14,6 +14,20 @@ public class VisionOcrPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "recognize", returnType: CAPPluginReturnPromise)
     ]
 
+    // UIImage を長辺 maxDim 以内に縮小（Visionの負荷を下げ、遅延/固まりを防ぐ）。
+    private static func downscale(_ image: UIImage, maxDim: CGFloat) -> UIImage {
+        let w = image.size.width, h = image.size.height
+        let m = max(w, h)
+        guard m > maxDim, m > 0 else { return image }
+        let scale = maxDim / m
+        let newSize = CGSize(width: w * scale, height: h * scale)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: newSize, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+    }
+
     @objc func recognize(_ call: CAPPluginCall) {
         guard let raw = call.getString("image") else {
             call.reject("image is required"); return
@@ -21,28 +35,37 @@ public class VisionOcrPlugin: CAPPlugin, CAPBridgedPlugin {
         // dataURL（data:image/png;base64,....）の接頭辞を除去
         let b64 = raw.contains(",") ? String(raw.split(separator: ",", maxSplits: 1).last ?? "") : raw
         guard let data = Data(base64Encoded: b64, options: .ignoreUnknownCharacters),
-              let uiImage = UIImage(data: data),
-              let cgImage = uiImage.cgImage else {
+              let uiImage = UIImage(data: data) else {
             call.reject("invalid image data"); return
+        }
+        // ネイティブ側でも縮小してから cgImage を作る（大きい画像で .accurate が返らない問題の回避）。
+        let resized = VisionOcrPlugin.downscale(uiImage, maxDim: 2500)
+        guard let cgImage = resized.cgImage else {
+            call.reject("no cgImage"); return
+        }
+
+        // resolve/reject は必ずメインスレッドで返す（結果がJSに届かず固まる事故を避ける）。
+        let done = { (result: [String: Any]?, err: String?) in
+            DispatchQueue.main.async {
+                if let err = err { call.reject(err) } else { call.resolve(result ?? [:]) }
+            }
         }
 
         let request = VNRecognizeTextRequest { req, err in
-            if let err = err {
-                call.reject("ocr failed: \(err.localizedDescription)"); return
-            }
+            if let err = err { done(nil, "ocr failed: \(err.localizedDescription)"); return }
             let observations = (req.results as? [VNRecognizedTextObservation]) ?? []
             // 上→下・左→右の読み順に並べて行ごとに結合（parseReceiptText が行単位で解析するため）。
-            // boundingBox は原点が左下・正規化座標なので y は大きいほど上。
             let sorted = observations.sorted { a, b in
                 let dy = b.boundingBox.origin.y - a.boundingBox.origin.y
                 if abs(dy) > 0.012 { return a.boundingBox.origin.y > b.boundingBox.origin.y }
                 return a.boundingBox.origin.x < b.boundingBox.origin.x
             }
             let lines = sorted.compactMap { $0.topCandidates(1).first?.string }
-            call.resolve(["text": lines.joined(separator: "\n")])
+            done(["text": lines.joined(separator: "\n")], nil)
         }
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = false // 金額・店名の勝手な補正を避ける
+        // .fast は .accurate より桁違いに速い（レシート/スクショの活字には十分）。遅延/固まり対策。
+        request.recognitionLevel = .fast
+        request.usesLanguageCorrection = false
         if #available(iOS 16.0, *) {
             request.revision = VNRecognizeTextRequestRevision3
         }
@@ -53,7 +76,7 @@ public class VisionOcrPlugin: CAPPlugin, CAPBridgedPlugin {
             do {
                 try handler.perform([request])
             } catch {
-                call.reject("ocr perform failed: \(error.localizedDescription)")
+                done(nil, "ocr perform failed: \(error.localizedDescription)")
             }
         }
     }

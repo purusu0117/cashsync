@@ -38,7 +38,7 @@ interface Category {
 /** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
 // 反映確認用の版マーカー。Web修正を出すたびに更新する。実機のスキャン画面下部に表示され、
 // 「端末が最新Webを読んでいるか」を一目で確認できる（古い文字列＝キャッシュ未更新）。
-const SCAN_ENGINE_VER = "T16-0730c";
+const SCAN_ENGINE_VER = "T17-0730d";
 
 async function sha256Hex(input: string): Promise<string> {
   try {
@@ -210,20 +210,24 @@ export default function ScanPage() {
         const s = await withTimeout(
           (async () => {
             let small: string;
+            const t0 = Date.now();
             try {
-              small = await downscaleFile(file, 1600, 0.8);
+              small = await downscaleFile(file, 1280, 0.7);
             } catch (e) {
               diag.msg = `画像の縮小に失敗（${file.type || "型不明"}）: ${es(e)}`;
               throw e;
             }
+            const kb = Math.round(small.length / 1024);
+            // recognizeが返らず固まった場合、この文字列が診断に残る（＝下処理は通過・画像サイズも判明）。
+            diag.msg = `縮小OK ${Date.now() - t0}ms ${kb}KB → OCR呼出中で停止`;
             const text = await visionOcrRecognize(small, 12000);
             if (text == null) {
-              diag.msg = "OCR結果=null（Visionが応答しない/エラー/未搭載）";
+              diag.msg = `OCR=null（応答なし/エラー）画像${kb}KB`;
               return null;
             }
             diag.msg = text.length
-              ? `OCR文字数=${text.length} 先頭「${text.replace(/\n/g, " ").slice(0, 40)}」`
-              : "OCR=空文字（Visionが文字を取り出せなかった）";
+              ? `OCR ${text.length}字 先頭「${text.replace(/\n/g, " ").slice(0, 40)}」`
+              : `OCR=空文字 画像${kb}KB`;
             return parseReceiptText(text, categories.map((c) => c.name), todayLocal());
           })(),
           15000,
