@@ -9,7 +9,7 @@ const TESTFLIGHT = "https://testflight.apple.com/join/mqJwAB7w";
 export const metadata: Metadata = {
   title: "CashSync ｜ スクショを撮るだけの家計簿",
   description:
-    "レシートやPayPayなどQR決済のスクショを撮るだけ。店名・カテゴリ・品目・金額をAIが自動入力。入力3秒の家計簿アプリ。iOSベータテスター募集中。",
+    "レシートやQR決済のスクショを撮るだけ。店名・カテゴリ・品目・金額をAIが自動入力。入力3秒の家計簿アプリ。iOSベータテスター募集中。",
   openGraph: {
     title: "CashSync ｜ スクショを撮るだけの家計簿",
     description:
