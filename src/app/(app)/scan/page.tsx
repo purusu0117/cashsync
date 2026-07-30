@@ -16,7 +16,7 @@ import RewardCredit from "@/components/RewardCredit";
 import { cachedFetch } from "@/lib/cachedFetch";
 import { netFetch } from "@/lib/clientApi";
 import { fmtDateJa, fmtYen, todayLocal } from "@/lib/format";
-import { deletePhotos, isNativePlatform, listRecentScreenshots, visionOcrRecognize } from "@/lib/native";
+import { deletePhotos, isNativePlatform, listRecentScreenshots, nativePlugin } from "@/lib/native";
 import { parseReceiptText } from "@/lib/localReceipt";
 import { takePendingImage } from "@/lib/pendingImage";
 import { track } from "@/lib/track";
@@ -38,7 +38,7 @@ interface Category {
 /** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
 // 反映確認用の版マーカー。Web修正を出すたびに更新する。実機のスキャン画面下部に表示され、
 // 「端末が最新Webを読んでいるか」を一目で確認できる（古い文字列＝キャッシュ未更新）。
-const SCAN_ENGINE_VER = "T17-0730d";
+const SCAN_ENGINE_VER = "T18-0730e";
 
 async function sha256Hex(input: string): Promise<string> {
   try {
@@ -218,17 +218,37 @@ export default function ScanPage() {
               throw e;
             }
             const kb = Math.round(small.length / 1024);
-            // recognizeが返らず固まった場合、この文字列が診断に残る（＝下処理は通過・画像サイズも判明）。
-            diag.msg = `縮小OK ${Date.now() - t0}ms ${kb}KB → OCR呼出中で停止`;
-            const text = await visionOcrRecognize(small, 12000);
-            if (text == null) {
-              diag.msg = `OCR=null（応答なし/エラー）画像${kb}KB`;
+            diag.msg = `縮小OK ${Date.now() - t0}ms ${kb}KB → プラグイン取得中`;
+            const plugin = await nativePlugin<{ recognize: (o: { image: string }) => Promise<{ text?: string }> }>(
+              "VisionOcr",
+            );
+            if (!plugin) {
+              diag.msg = `縮小OK ${kb}KB → プラグインnull（VisionOcr未搭載）`;
               return null;
             }
+            // recognize を「成功/エラー/12秒無応答」で確実に切り分けて診断に残す。
+            diag.msg = `縮小OK ${kb}KB → recognize呼出→応答待ち`;
+            const tR = Date.now();
+            const outcome = await Promise.race([
+              plugin
+                .recognize({ image: small })
+                .then((r) => ({ kind: "ok" as const, text: r?.text ?? "" }))
+                .catch((e) => ({ kind: "err" as const, msg: es(e) })),
+              new Promise<{ kind: "to" }>((res) => setTimeout(() => res({ kind: "to" }), 12000)),
+            ]);
+            if (outcome.kind === "to") {
+              diag.msg = `recognize 12秒無応答（Vision内部で停止）画像${kb}KB`;
+              return null;
+            }
+            if (outcome.kind === "err") {
+              diag.msg = `recognize エラー(${Date.now() - tR}ms): ${outcome.msg}`;
+              return null;
+            }
+            const text = outcome.text;
             diag.msg = text.length
-              ? `OCR ${text.length}字 先頭「${text.replace(/\n/g, " ").slice(0, 40)}」`
-              : `OCR=空文字 画像${kb}KB`;
-            return parseReceiptText(text, categories.map((c) => c.name), todayLocal());
+              ? `OCR ${text.length}字 (${Date.now() - tR}ms) 先頭「${text.replace(/\n/g, " ").slice(0, 30)}」`
+              : `OCR=空文字 (${Date.now() - tR}ms) 画像${kb}KB`;
+            return text.length ? parseReceiptText(text, categories.map((c) => c.name), todayLocal()) : null;
           })(),
           15000,
         );
