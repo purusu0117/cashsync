@@ -50,7 +50,11 @@ interface AIParseResult {
 /** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
 // 反映確認用の版マーカー。Web修正を出すたびに更新する。実機のスキャン画面下部に表示され、
 // 「端末が最新Webを読んでいるか」を一目で確認できる（古い文字列＝キャッシュ未更新）。
-const SCAN_ENGINE_VER = "T31-0730r-カテゴリ空欄防止";
+const SCAN_ENGINE_VER = "T32-0730s-Claude復帰";
+// 端末内OCR(Apple Vision＋Apple Intelligence)は精度が不足したため既定OFF。
+// false のときはネイティブでもサーバーの Claude 解析(/api/scan-jobs＝Build25と同じ)を使う。
+// 端末内コードは残してあるので、将来ここを true に戻せば端末内経路に切り替えられる。
+const USE_ON_DEVICE_OCR = false;
 
 async function sha256Hex(input: string): Promise<string> {
   try {
@@ -154,7 +158,8 @@ export default function ScanPage() {
   const [rawOcr, setRawOcr] = useState("");
   useEffect(() => {
     setNative(isNativePlatform());
-    setOnDevice(isNativePlatform());
+    // onDevice はUI表現（残量非表示・「AI不使用」寄りの文言）用。端末内OCRを実際に使う時だけ true。
+    setOnDevice(USE_ON_DEVICE_OCR && isNativePlatform());
   }, []);
 
   // B12: 今月のAI読み取り残量（無料プランのみ数値。無制限プランは非表示）
@@ -230,9 +235,9 @@ export default function ScanPage() {
     setPreview(URL.createObjectURL(file));
     setElapsed(0);
     setPhase("scanning");
-    // 端末内OCR(Apple Vision)のみ。全体に15秒のハード上限を付け、絶対に無限「解析中」にしない。
-    // 15秒で必ず結果 or「認識できません(撮り直し/手入力)」に落ちる。サーバー(AI)へは一切行かない。
-    if (isNativePlatform()) {
+    // 端末内OCR経路（既定OFF）。USE_ON_DEVICE_OCR=false の間はここを飛ばし、下のサーバー
+    // Claude 解析(/api/scan-jobs＝Build25と同じ高精度)に落ちる。
+    if (USE_ON_DEVICE_OCR && isNativePlatform()) {
       const es = (e: unknown) => (e instanceof Error ? e.message : String(e));
       const diag = { msg: "" };
       try {
