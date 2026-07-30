@@ -8,7 +8,10 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
     <div className="mx-auto max-w-md min-h-dvh px-4 py-8">
       <p className="text-center text-xs text-ink-faint">{LEGAL.serviceName}</p>
       <div className="mt-4 rounded-3xl border border-rule bg-card p-6 shadow-sm">{children}</div>
-      <nav className="mt-6 flex items-center justify-center gap-4 text-xs text-ink-faint">
+      <nav className="mt-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-ink-faint">
+        <Link href="/legal/support" className="underline underline-offset-4">
+          サポート・FAQ
+        </Link>
         <Link href="/legal/privacy" className="underline underline-offset-4">
           プライバシーポリシー
         </Link>

@@ -140,7 +140,12 @@ export default function LandingPage() {
         <p>
           <Dot>CashSync ｜ 入力3秒の家計簿</Dot>
         </p>
-        <p className="mt-1">© 2026 CashSync</p>
+        <p className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+          <a href="/legal/support" className="underline underline-offset-2">サポート・FAQ</a>
+          <a href="/legal/privacy" className="underline underline-offset-2">プライバシー</a>
+          <a href="/legal/terms" className="underline underline-offset-2">利用規約</a>
+        </p>
+        <p className="mt-2">© 2026 CashSync</p>
       </footer>
     </main>
   );
