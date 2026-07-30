@@ -134,6 +134,65 @@ function extractTotal(lines: string[]): number {
   return bare.length ? Math.max(...bare) : 0;
 }
 
+/**
+ * 検算：レシートの「お預かり−お釣り」や「小計/商品代金 −値引(+税)」から“あり得る合計”を割り出し、
+ * 読み取った total がそのどれかに（±1円で）一致するか確認する。
+ * ・信頼できる材料（お預かり&お釣り、または小計/商品代金）が無ければ検証不能として true を返す（疑わない）。
+ * ・明細合計は誤読/取りこぼしが多いので、矛盾の“判定材料”には使わず、“一致の確認”にだけ使う
+ *   （信頼材料があるのに total がどれとも合わない場合のみ false ＝読み取りミスの疑い）。
+ */
+function totalLooksConsistent(lines: string[], items: { price: number }[], total: number): boolean {
+  if (!(total > 0)) return true;
+  // ラベル行〜2行先から ¥/円/カンマ付き金額を拾う（moneyIn は数字内の空白「4 , 000」も許容）。
+  const moneyNear = (re: RegExp): number => {
+    for (let i = 0; i < lines.length; i++) {
+      if (!re.test(lines[i])) continue;
+      for (let j = 0; j <= 2 && i + j < lines.length; j++) {
+        const mv = moneyIn(lines[i + j]);
+        if (mv.length) return Math.max(...mv);
+      }
+    }
+    return 0;
+  };
+  // 値引は「値引額」の値が次行に「-22」と記号なし/負数で分離することが多いので専用に拾う。
+  const discountNear = (): number => {
+    for (let i = 0; i < lines.length; i++) {
+      if (!/(値引|割引)/.test(lines[i])) continue;
+      for (let j = 0; j <= 2 && i + j < lines.length; j++) {
+        const mv = moneyIn(lines[i + j]);
+        if (mv.length) return Math.max(...mv);
+        const bm = lines[i + j].replace(/\s/g, "").match(/-?\d[\d,]*/);
+        if (bm) {
+          const v = Math.abs(Number(bm[0].replace(/,/g, "")));
+          if (v >= 1 && v < 100000) return v;
+        }
+      }
+    }
+    return 0;
+  };
+  const discount = discountNear();
+  const tax = moneyNear(/(消費税|内税|外税|税等|税額)/);
+  const subtotal = moneyNear(/(小計|商品代金)/);
+  const paid = moneyNear(/(お預|預り|預かり)/);
+  const change = moneyNear(/(お釣|おつり|釣り|釣銭)/);
+  const itemsSum = items.reduce((s, it) => s + (it.price > 0 ? Math.round(it.price) : 0), 0);
+  const addMods = (base: number, set: Set<number>) => {
+    if (base <= 0) return;
+    set.add(base);
+    if (discount > 0) set.add(base - discount);
+    if (tax > 0) set.add(base + tax);
+    if (discount > 0 && tax > 0) set.add(base - discount + tax);
+  };
+  const reliable = new Set<number>();
+  if (paid > 0 && change > 0) reliable.add(paid - change);
+  addMods(subtotal, reliable);
+  if (reliable.size === 0) return true; // 信頼できる検算材料が無い→疑わない
+  const all = new Set(reliable);
+  if (items.length >= 2) addMods(itemsSum, all); // 明細は確認にだけ使う
+  for (const c of all) if (Math.abs(c - total) <= 1) return true;
+  return false; // 信頼材料があるのに total がどれとも合わない＝金額の読み取りミスの疑い
+}
+
 // ---- 日付 ---------------------------------------------------------------
 
 const WAREKI: Record<string, number> = { 令和: 2018, R: 2018, 平成: 1988, H: 1988 };
@@ -201,10 +260,12 @@ function extractStore(lines: string[]): string {
       if (!badStore(v) && /[一-龠ぁ-んァ-ヶA-Za-z]/.test(v)) return v.slice(0, 30);
     }
   }
-  // 無ければ上部の名前っぽい行（数値/記号のみ・案内文は除外）
-  const STOP = /(領収|レシート|明細|お客様|TEL|電話|〒|http|支払|合計|小計|クレジット|現金|ありがとう|受付|番号|日時|方法|完了|しました|ください|ご注文|ご利用明細)/;
-  for (const raw of lines.slice(0, 6)) {
-    const line = raw.trim();
+  // 無ければ上部の名前っぽい行（数値/記号のみ・案内文・帳票の見本透かしは除外）。
+  // 「見本/サンプル/記載例/フォーマット/仕組み」等はデモ帳票の透かし語で店名ではない。
+  const STOP = /(領収|レシート|明細|お客様|TEL|電話|〒|http|支払|合計|小計|クレジット|現金|ありがとう|受付|番号|日時|方法|完了|しました|ください|ご注文|ご利用明細|見本|サンプル|記載例|フォーマット|仕組み|ヘッダ|端末番号)/;
+  for (const raw of lines.slice(0, 12)) {
+    // 先頭の記号/中黒（「・スマレジ」→「スマレジ」）を落としてから判定
+    const line = raw.trim().replace(/^[・･:：\-—\s]+/, "").trim();
     if (line.length < 2 || line.length > 30) continue;
     if (/^[\d\s¥,.\-:/%]+$/.test(line)) continue;
     if (STOP.test(line)) continue;
@@ -449,7 +510,9 @@ export function parseReceiptText(rawText: string, categoryNames: string[], today
   const store = extractStore(lines);
   const items = kind === "income" ? [] : extractItems(lines);
   const category = kind === "income" ? "" : guessCategory(store, items, categoryNames);
-  return { kind, store, date, total, category, items };
+  // 検算：明細/お預かり・お釣り等と合計が矛盾したら「読み取りミスの疑い」を立てる（撮り直し誘導用）。
+  const needsRecheck = kind === "expense" && !totalLooksConsistent(lines, items, total);
+  return { kind, store, date, total, category, items, needsRecheck };
 }
 
 // =========================================================================

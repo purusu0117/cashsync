@@ -169,6 +169,9 @@ export interface ReceiptScan {
   total: number;
   category: string; // 全体としてのカテゴリ（候補から1つ・incomeなら空）
   items: { name: string; price: number }[];
+  // 端末内OCR専用：明細/お預かり・お釣り等で検算した合計と読み取った合計が矛盾する
+  //（＝数字の読み取りミスの疑いが濃い）とき true。確認画面でなく撮り直しへ誘導する。
+  needsRecheck?: boolean;
 }
 
 function receiptPromptBody(categoryNames: string[], today: string): string {

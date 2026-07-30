@@ -38,7 +38,7 @@ interface Category {
 /** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
 // 反映確認用の版マーカー。Web修正を出すたびに更新する。実機のスキャン画面下部に表示され、
 // 「端末が最新Webを読んでいるか」を一目で確認できる（古い文字列＝キャッシュ未更新）。
-const SCAN_ENGINE_VER = "T24-0730k";
+const SCAN_ENGINE_VER = "T25-0730l";
 
 async function sha256Hex(input: string): Promise<string> {
   try {
@@ -133,6 +133,7 @@ export default function ScanPage() {
 
   const [onDevice, setOnDevice] = useState(false); // 端末内OCR搭載ビルド（build26+）＝AI/通信なし
   const [scanDbg, setScanDbg] = useState(""); // 端末内OCRの実挙動診断（失敗時に画面表示して原因を可視化）
+  const [recheck, setRecheck] = useState(false); // 検算不一致（金額の読み取りミス疑い）で撮り直しを促す
   // 実機(Apple Vision)が実際に吐いた生OCRテキスト。確認画面に折りたたみ表示し、
   // 解析がずれたときにこの生テキストをそのまま開発側へ渡してパーサーを実機データに合わせる。
   const [rawOcr, setRawOcr] = useState("");
@@ -195,6 +196,7 @@ export default function ScanPage() {
   async function scanFile(file: File, lib = false) {
     setError("");
     setDupConfirm(false);
+    setRecheck(false); // 新しい読み取りのたびに検算フラグを戻す
     setRawOcr(""); // 新しい読み取りのたびに前回の生OCRテキストを消す
     setSplitMode(false); // 新しい読み取りのたびに分割モードは初期化
     setSplitRows([]);
@@ -269,6 +271,14 @@ export default function ScanPage() {
           })(),
           15000,
         );
+        // 検算で合計が明細と矛盾（数字の読み取りミスの疑い）→ 確認画面に進めず撮り直しへ誘導。
+        if (s && s.needsRecheck) {
+          setRecheck(true);
+          diag.msg = `明細の合計と読み取った金額(¥${s.total})が一致しません`;
+          setScanDbg(diag.msg);
+          setPhase("failed");
+          return;
+        }
         if (s && (s.total > 0 || (s.store ?? "").trim())) {
           track("scan_used");
           const catId = categories.find((c) => c.name === s.category)?.id ?? null;
@@ -586,9 +596,13 @@ export default function ScanPage() {
       {/* A4: 金額も店名も読み取れなかった（空フォームを出さず撮り直しを案内） */}
       {phase === "failed" && (
         <div className="rounded-2xl border border-rule bg-card px-5 py-6 text-center shadow-sm">
-          <p className="text-lg font-bold text-vermilion">レシートを認識できませんでした</p>
+          <p className="text-lg font-bold text-vermilion">
+            {recheck ? "金額を正しく読み取れませんでした" : "レシートを認識できませんでした"}
+          </p>
           <p className="mt-2 text-xs leading-relaxed text-ink-faint">
-            明るい場所で全体が写るように撮り直してください
+            {recheck
+              ? "明細の合計と金額が一致しません（数字の読み取りミスの可能性）。数字がはっきり写るように、明るい場所で撮り直してください。"
+              : "明るい場所で全体が写るように撮り直してください"}
           </p>
           {/* 端末内OCRの実挙動診断（原因可視化用）。この文字列を開発者に伝えれば原因が特定できる。 */}
           {onDevice && scanDbg && (
