@@ -38,7 +38,7 @@ interface Category {
 /** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
 // 反映確認用の版マーカー。Web修正を出すたびに更新する。実機のスキャン画面下部に表示され、
 // 「端末が最新Webを読んでいるか」を一目で確認できる（古い文字列＝キャッシュ未更新）。
-const SCAN_ENGINE_VER = "T15-0730a";
+const SCAN_ENGINE_VER = "T15-0730b";
 
 async function sha256Hex(input: string): Promise<string> {
   try {
@@ -123,6 +123,7 @@ export default function ScanPage() {
   >([]);
 
   const [onDevice, setOnDevice] = useState(false); // 端末内OCR搭載ビルド（build26+）＝AI/通信なし
+  const [scanDbg, setScanDbg] = useState(""); // 端末内OCRの実挙動診断（失敗時に画面表示して原因を可視化）
   useEffect(() => {
     setNative(isNativePlatform());
     setOnDevice(isNativePlatform());
@@ -194,12 +195,27 @@ export default function ScanPage() {
     // 端末内OCR(Apple Vision)のみ。全体に15秒のハード上限を付け、絶対に無限「解析中」にしない。
     // 15秒で必ず結果 or「認識できません(撮り直し/手入力)」に落ちる。サーバー(AI)へは一切行かない。
     if (isNativePlatform()) {
+      const es = (e: unknown) => (e instanceof Error ? e.message : String(e));
+      const diag = { msg: "" };
       try {
         const s = await withTimeout(
           (async () => {
-            const small = await downscaleFile(file, 1600, 0.8);
+            let small: string;
+            try {
+              small = await downscaleFile(file, 1600, 0.8);
+            } catch (e) {
+              diag.msg = `画像の縮小に失敗（${file.type || "型不明"}）: ${es(e)}`;
+              throw e;
+            }
             const text = await visionOcrRecognize(small, 12000);
-            return text ? parseReceiptText(text, categories.map((c) => c.name), todayLocal()) : null;
+            if (text == null) {
+              diag.msg = "OCR結果=null（Visionが応答しない/エラー/未搭載）";
+              return null;
+            }
+            diag.msg = text.length
+              ? `OCR文字数=${text.length} 先頭「${text.replace(/\n/g, " ").slice(0, 40)}」`
+              : "OCR=空文字（Visionが文字を取り出せなかった）";
+            return parseReceiptText(text, categories.map((c) => c.name), todayLocal());
           })(),
           15000,
         );
@@ -220,9 +236,12 @@ export default function ScanPage() {
           setPhase("confirm");
           return;
         }
-      } catch {
-        /* タイムアウト/失敗（15秒以内に必ず抜ける） */
+        if (s) diag.msg += " / 解析: 合計・店名を取れず";
+        if (!diag.msg) diag.msg = "15秒でタイムアウト（Visionが返らない）";
+      } catch (e) {
+        if (!diag.msg) diag.msg = `例外: ${es(e)}`;
       }
+      setScanDbg(diag.msg);
       setPhase("failed"); // 無限「解析中」にしない。サーバー(AI)にも行かない。
       return;
     }
@@ -521,6 +540,12 @@ export default function ScanPage() {
           <p className="mt-2 text-xs leading-relaxed text-ink-faint">
             明るい場所で全体が写るように撮り直してください
           </p>
+          {/* 端末内OCRの実挙動診断（原因可視化用）。この文字列を開発者に伝えれば原因が特定できる。 */}
+          {onDevice && scanDbg && (
+            <p className="mt-3 break-all rounded-lg bg-paper px-3 py-2 text-left text-[11px] leading-relaxed text-ink-faint">
+              診断 [{SCAN_ENGINE_VER}]: {scanDbg}
+            </p>
+          )}
           <button
             onClick={() => (fromLibrary ? libRef : fileRef).current?.click()}
             className="mt-4 w-full rounded-xl bg-vermilion py-3 text-base font-bold text-card shadow-sm active:translate-y-0.5 active:shadow-none"
