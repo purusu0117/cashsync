@@ -263,6 +263,50 @@ platform :ios do
     end
   end
 
+  desc "指定範囲のビルドを期限切れ(Expire)にして TestFlight から消す（削除はApple仕様上不可）"
+  lane :expire_builds do
+    issuer = ENV["APPSTORE_ISSUER_ID"].to_s.strip
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APPSTORE_KEY_ID"),
+      issuer_id: issuer.empty? ? nil : issuer,
+      key_content: ENV.fetch("APPSTORE_PRIVATE_KEY"),
+      is_key_content_base64: true,
+      in_house: false,
+    )
+    require "spaceship"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(**api_key)
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    from = (ENV["EXPIRE_FROM"] || "26").to_i
+    to = (ENV["EXPIRE_TO"] || "39").to_i
+    UI.message("Expire対象: build #{from}〜#{to}（それ以外は残す）")
+    builds = (app.get_builds(limit: 100) rescue [])
+    builds.each do |b|
+      num = b.version.to_i
+      next unless num >= from && num <= to
+      already = (b.expired rescue false)
+      if already
+        UI.message("SKIP build #{b.version}（既にexpired）")
+        next
+      end
+      begin
+        b.expire!
+        UI.message("EXPIRED build #{b.version}")
+      rescue => e
+        begin
+          Spaceship::ConnectAPI.patch_builds(build_id: b.id, expired: true)
+          UI.message("EXPIRED(patch) build #{b.version}")
+        rescue => e2
+          UI.message("expire失敗 build #{b.version}: #{e.message} / #{e2.message}")
+        end
+      end
+    end
+    UI.message("=== 残っている（有効な）ビルド ===")
+    (app.get_builds(limit: 100) rescue []).each do |b|
+      exp = (b.expired rescue "?")
+      UI.message("BUILD #{b.version} expired=#{exp}") unless exp == true
+    end
+  end
+
   desc "対象ビルドを内部テスターグループに配布する（TestFlightで入手可能にする）"
   lane :tf_distribute do
     issuer = ENV["APPSTORE_ISSUER_ID"].to_s.strip
