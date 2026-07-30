@@ -1,6 +1,7 @@
 "use client";
 
 // グラフ：月次の収入/支出バー（ページャで何ヶ月でも遡れる）＋選択月のカテゴリ内訳
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bar,
@@ -30,6 +31,7 @@ interface Breakdown {
   icon: string;
   amount: number;
   fixedAmount?: number; // C12: うち固定費（旧キャッシュには無いので optional）
+  categoryId?: string | null; // 内訳タップ→履歴の月内カテゴリ絞り込み（旧キャッシュには無いので optional）
 }
 interface CategoryDelta {
   category: string;
@@ -77,6 +79,7 @@ function shiftMonth(month: string, delta: number): string {
 }
 
 export default function StatsPage() {
+  const router = useRouter();
   // C9: 週次振り返りをグラフ画面に常設（「週/月/年/資産」切替。既定は月。C14: 年間ビュー・資産ビュー追加）
   const [view, setView] = useState<"month" | "week" | "year" | "assets">("month");
   const [before, setBefore] = useState(todayLocal().slice(0, 7));
@@ -520,21 +523,31 @@ export default function StatsPage() {
               const share = sel && sel.expense > 0 ? Math.round((b.amount / sel.expense) * 100) : 0;
               return (
                 <li key={b.category}>
-                  <div className="flex items-baseline text-sm">
-                    {b.category !== "未分類" && (
-                      <CategoryIcon icon={b.icon} className="mr-1 h-4 w-4 shrink-0 self-center text-ink-faint" />
-                    )}
-                    <span>{b.category}</span>
-                    <span className="ml-1.5 text-[10px] text-ink-faint">{share}%</span>
-                    <span className="leader" />
-                    <span className="font-bold tabular-nums text-[15px]">{fmtYen(b.amount)}</span>
-                  </div>
-                  <div className="mt-1 h-1 rounded-full bg-paper">
-                    <div
-                      className="h-full rounded-full bg-ink/50"
-                      style={{ width: `${(b.amount / maxBd) * 100}%` }}
-                    />
-                  </div>
+                  {/* タップでその月×このカテゴリだけに絞った履歴へ（内訳の内訳を見る導線） */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      router.push(`/history?month=${selected}&cat=${b.categoryId ?? "none"}`)
+                    }
+                    className="w-full text-left active:opacity-60"
+                  >
+                    <div className="flex items-baseline text-sm">
+                      {b.category !== "未分類" && (
+                        <CategoryIcon icon={b.icon} className="mr-1 h-4 w-4 shrink-0 self-center text-ink-faint" />
+                      )}
+                      <span>{b.category}</span>
+                      <span className="ml-1.5 text-[10px] text-ink-faint">{share}%</span>
+                      <span className="leader" />
+                      <span className="font-bold tabular-nums text-[15px]">{fmtYen(b.amount)}</span>
+                      <span className="ml-1 shrink-0 text-ink-faint">›</span>
+                    </div>
+                    <div className="mt-1 h-1 rounded-full bg-paper">
+                      <div
+                        className="h-full rounded-full bg-ink/50"
+                        style={{ width: `${(b.amount / maxBd) * 100}%` }}
+                      />
+                    </div>
+                  </button>
                 </li>
               );
             });

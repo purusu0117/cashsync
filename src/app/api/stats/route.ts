@@ -62,9 +62,10 @@ export async function GET(request: Request) {
     // C12: カテゴリごとに「うち固定費」も集計し、内訳を固定費/変動費に分離表示できるようにする
     // （Postgres の集約規則に合わせて GROUP BY に c.name / c.icon も含める。結果は sqlite と同一）
     const breakdown = (
-      await d.all<{ category: string; icon: string; amount: number; fixedamount?: number; fixedAmount?: number }>(
+      await d.all<{ category: string; icon: string; amount: number; fixedamount?: number; fixedAmount?: number; categoryId?: string | null; categoryid?: string | null }>(
         `SELECT COALESCE(c.name, '未分類') AS category, COALESCE(c.icon, '') AS icon, SUM(e.amount) AS amount,
-                SUM(CASE WHEN ${FIXED_EXPENSE_COND} THEN e.amount ELSE 0 END) AS "fixedAmount"
+                SUM(CASE WHEN ${FIXED_EXPENSE_COND} THEN e.amount ELSE 0 END) AS "fixedAmount",
+                e.category_id AS "categoryId"
          FROM expenses e LEFT JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
          WHERE e.user_id = ? AND e.date >= ? AND e.date <= ?
          GROUP BY e.category_id, c.name, c.icon ORDER BY amount DESC`,
@@ -77,6 +78,7 @@ export async function GET(request: Request) {
       icon: r.icon,
       amount: Number(r.amount),
       fixedAmount: Number(r.fixedAmount ?? r.fixedamount ?? 0),
+      categoryId: (r.categoryId ?? r.categoryid ?? null) as string | null, // 内訳タップ→履歴の月内カテゴリ絞り込み用
     }));
     // 前月比・前年同月比の比較（?compare=1。選択月＝bdMonth に対して算出）。
     // 既存の monthSummary / 内訳クエリを再利用するだけの軽い再集計。

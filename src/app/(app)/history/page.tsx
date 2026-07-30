@@ -84,6 +84,8 @@ export default function HistoryPage() {
   const [plan, setPlan] = useState<MonthPlan | null>(null);
   const [ready, setReady] = useState(false); // 初回データ（キャッシュ含む）が来るまでスケルトン表示
   const [loadStalled, setLoadStalled] = useState(false); // C2: 初回読み込みが失敗して固まったまま
+  // グラフの内訳からの遷移：その月×このカテゴリだけに絞る（id=null は未分類。null 自体は「絞り込みなし」）
+  const [catFilter, setCatFilter] = useState<{ id: string | null } | null>(null);
   const { toast, show, hide } = useToast(); // A6: 保存・削除・複製の完了フィードバック
 
   // --- B11: 検索 ---
@@ -182,6 +184,15 @@ export default function HistoryPage() {
     });
   }, []);
 
+  // グラフの内訳からの ?month=YYYY-MM & cat=<id|none> 指定を初回に反映
+  useEffect(() => {
+    const sp = new URLSearchParams(location.search);
+    const m = sp.get("month");
+    const cat = sp.get("cat");
+    if (m && /^\d{4}-\d{2}$/.test(m)) setMonth(m);
+    if (cat) setCatFilter({ id: cat === "none" ? null : cat });
+  }, []);
+
   useEffect(() => {
     load(month);
     cachedFetch<{ categories?: Category[] }>("/api/categories", (d) =>
@@ -204,9 +215,18 @@ export default function HistoryPage() {
     return () => clearTimeout(t);
   }, [ready]);
 
-  const total = expenses.reduce((s, e) => s + e.amount, 0);
+  // catFilter がある時はその月のこのカテゴリだけに絞る（内訳の金額と一致する明細を見せる）
+  const shown = catFilter
+    ? expenses.filter((e) => (e.category_id ?? null) === catFilter.id)
+    : expenses;
+  const catInfo = catFilter
+    ? catFilter.id === null
+      ? { name: "未分類", icon: null as string | null }
+      : (categories.find((c) => c.id === catFilter.id) ?? { name: "カテゴリ", icon: null as string | null })
+    : null;
+  const total = shown.reduce((s, e) => s + e.amount, 0);
   const byDate = new Map<string, Expense[]>();
-  for (const e of expenses) {
+  for (const e of shown) {
     const arr = byDate.get(e.date) ?? [];
     arr.push(e);
     byDate.set(e.date, arr);
@@ -417,26 +437,42 @@ export default function HistoryPage() {
         </p>
       )}
 
+      {/* グラフの内訳から来た時のカテゴリ絞り込み表示（解除でその月の全記録に戻る） */}
+      {catFilter && (
+        <div className="flex items-center justify-between rounded-xl border border-ink/20 bg-paper px-3 py-2">
+          <span className="flex items-center gap-1.5 text-sm font-bold">
+            {catInfo?.icon && <CategoryIcon icon={catInfo.icon} className="h-4 w-4 text-ink-faint" />}
+            「{catInfo?.name}」で絞り込み中
+          </span>
+          <button
+            onClick={() => setCatFilter(null)}
+            className="shrink-0 text-xs text-ink-faint underline underline-offset-2"
+          >
+            解除
+          </button>
+        </div>
+      )}
+
       {/* 月の支出合計とその月の記録一覧 */}
       <div className="rounded-3xl border border-rule bg-card p-5 shadow-sm">
         <div className="text-center">
           <p className="text-[11px] tracking-[0.14em] text-ink-faint">支出合計</p>
           <p className="mt-1 text-4xl font-black leading-none tabular-nums">{fmtYen(total)}</p>
-          <p className="mt-1 text-[11px] text-ink-faint">{expenses.length}件の記録</p>
+          <p className="mt-1 text-[11px] text-ink-faint">{shown.length}件の記録</p>
           {/* C9: ホームは行末✕、履歴はタップ→編集シート内削除。導線の違いを一言で示す */}
-          {(expenses.length > 0 || incomes.length > 0) && (
+          {(shown.length > 0 || (!catFilter && incomes.length > 0)) && (
             <p className="text-[10px] text-ink-faint">記録をタップで編集・削除できます</p>
           )}
-          {/* C15: 未来月は予定の合計も添える */}
-          {plan && (plan.expenseTotal > 0 || plan.incomeTotal > 0) && (
+          {/* C15: 未来月は予定の合計も添える（カテゴリ絞り込み中は隠す） */}
+          {!catFilter && plan && (plan.expenseTotal > 0 || plan.incomeTotal > 0) && (
             <p className="mt-1 text-[11px] text-ink-faint">
               予定：支出 −{fmtYen(plan.expenseTotal)} ・ 収入 +{fmtYen(plan.incomeTotal)}
             </p>
           )}
         </div>
 
-        {/* 収入（シフト給与以外：スクショ収入・仕送り等） */}
-        {incomes.length > 0 && (
+        {/* 収入（シフト給与以外：スクショ収入・仕送り等）。カテゴリ絞り込み中は支出だけに集中するため隠す */}
+        {!catFilter && incomes.length > 0 && (
           <section className="mt-4 border-t border-rule pt-4">
             <h2 className="text-sm font-bold tracking-[0.04em] text-sage">その他の収入（バイト給与を除く）</h2>
             <ul className="mt-1">
@@ -496,20 +532,31 @@ export default function HistoryPage() {
             </section>
           );
         })}
-        {expenses.length === 0 && incomes.length === 0 && planItems.length === 0 && (
-          <div className="mt-4 border-t border-rule py-8 pt-8 text-center">
-            <p className="text-xs text-ink-faint">この月の記録はありません。</p>
-            <Link
-              href="/add"
-              className="mt-3 inline-block rounded-xl border border-ink px-5 py-2 text-sm active:translate-y-0.5"
-            >
-              記録する
-            </Link>
-          </div>
-        )}
+        {/* カテゴリ絞り込み中は「このカテゴリの記録なし」、通常はその月の記録なし */}
+        {catFilter
+          ? shown.length === 0 && (
+              <div className="mt-4 border-t border-rule py-8 pt-8 text-center">
+                <p className="text-xs text-ink-faint">
+                  この月に「{catInfo?.name}」の記録はありません。
+                </p>
+              </div>
+            )
+          : expenses.length === 0 &&
+            incomes.length === 0 &&
+            planItems.length === 0 && (
+              <div className="mt-4 border-t border-rule py-8 pt-8 text-center">
+                <p className="text-xs text-ink-faint">この月の記録はありません。</p>
+                <Link
+                  href="/add"
+                  className="mt-3 inline-block rounded-xl border border-ink px-5 py-2 text-sm active:translate-y-0.5"
+                >
+                  記録する
+                </Link>
+              </div>
+            )}
 
-        {/* C15: 予定（定期・分割・給料日）。カレンダーと同じデータを薄字で表示する */}
-        {planItems.length > 0 && (
+        {/* C15: 予定（定期・分割・給料日）。カレンダーと同じデータを薄字で表示する（カテゴリ絞り込み中は隠す） */}
+        {!catFilter && planItems.length > 0 && (
           <section className="mt-4 border-t border-rule pt-4">
             <h2 className="text-sm font-bold tracking-[0.04em] text-ink-faint">予定（まだ記帳前）</h2>
             <div className="mt-1 opacity-80">
