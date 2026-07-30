@@ -619,7 +619,7 @@ export default function ScanPage() {
             <ImageIcon className="mx-auto h-8 w-8" />
             <span className="mt-1 block text-base font-bold">スクショ・画像から読み取る</span>
             <span className="mt-1 block text-xs text-ink-faint">
-              PayPayの支払い画面・ネット注文の確認画面などもOK
+              QRコード決済・ネット注文の確認画面などもOK
             </span>
           </button>
           {error && <p className="text-center text-sm text-vermilion">{error}</p>}
@@ -635,8 +635,6 @@ export default function ScanPage() {
           <p className="text-center text-[11px] leading-relaxed text-ink-faint">
             読み取り結果は保存前に必ず確認できます。
           </p>
-          {/* 反映確認用の版マーカー（この文字列が古ければ端末が古いWebを読んでいる＝キャッシュ未更新）。 */}
-          <p className="text-center text-[10px] text-ink-faint">エンジン {SCAN_ENGINE_VER}</p>
         </div>
       )}
 
