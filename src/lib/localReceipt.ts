@@ -485,6 +485,65 @@ export function parseReceiptText(rawText: string, categoryNames: string[], today
   return { kind, store, date, total, category, items, needsRecheck };
 }
 
+/** 端末内AIの入力用の生テキスト（正規化前でよい）。AI出力の“接地”に使う数字列とテキスト。 */
+export interface AiReceiptRaw {
+  kind?: string;
+  store?: string;
+  date?: string;
+  total?: number;
+  category?: string;
+  items?: { name?: string; price?: number }[];
+}
+
+/**
+ * 端末内AI(Apple Intelligence)の出力を、OCRテキストとルール解析で“接地(grounding)”する。
+ * 小型オンデバイスLLMは本文に無い店名/金額/品目を創作(ハルシネーション)しがちなので、
+ *  - 事実（種別・合計・日付・品目）は【本文から直接抽出したルール結果】を正とする（創作しない）
+ *  - AIは【意味判断＝カテゴリ】と【本文に実在する整った店名】だけ採用する
+ *  - AIの店名/金額/品目は、OCRテキストに実在する時だけ通す（"ファミマ""8万"等の創作を排除）
+ * これによりAIの利点（カテゴリ判定・表記整形）を活かしつつ、暴走を止める。
+ */
+export function groundReceipt(
+  ai: AiReceiptRaw | null | undefined,
+  rule: ReceiptScan,
+  rawText: string,
+  categoryNames: string[],
+): ReceiptScan {
+  if (!ai) return rule;
+  const digits = rawText.replace(/[^\d]/g, "");
+  const normText = kanaNorm(normalizeText(rawText).toLowerCase().replace(/[\s　]/g, ""));
+  const inText = (n: number) => n > 0 && digits.includes(String(Math.round(n)));
+
+  // 種別：本文の markers に基づくルール判定を信頼（AIはレシートを収入と誤判定しがち）。
+  const kind = rule.kind;
+
+  // 合計：印字された「合計」を最優先（ルール）。ルールが取れない時だけ、本文に実在するならAI値を許容。
+  const aiTotal = Number(ai.total) || 0;
+  const total = rule.total > 0 ? rule.total : inText(aiTotal) ? Math.round(aiTotal) : 0;
+
+  // 店名：AIの店名がOCR本文に（かな正規化で）実在する時だけ採用。無ければルール（本文由来）。
+  const aiStore = String(ai.store ?? "").trim();
+  const aiStoreNorm = kanaNorm(aiStore.toLowerCase().replace(/\s+/g, ""));
+  const store = aiStoreNorm.length >= 2 && normText.includes(aiStoreNorm) ? aiStore.slice(0, 40) : rule.store;
+
+  // 日付：本文から決定的に取れるルールを優先。無ければAI。
+  const aiDate = typeof ai.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(ai.date) ? ai.date : "";
+  const date = rule.date || aiDate;
+
+  // 品目：AIの品名は活かしたいが価格の創作を防ぐため、価格がOCR本文に実在する品目だけ通す。
+  //       1件も残らなければ本文由来のルール品目にフォールバック。収入は空。
+  const aiItems = (Array.isArray(ai.items) ? ai.items : [])
+    .filter((it) => it && it.name && Number(it.price) > 0 && inText(Number(it.price)))
+    .map((it) => ({ name: String(it.name).slice(0, 40), price: Math.round(Number(it.price)) }));
+  const items = kind === "income" ? [] : aiItems.length >= 1 ? aiItems : rule.items;
+
+  // カテゴリ：意味判断はAIが得意。候補に実在する時だけ採用、無ければルール。
+  const aiCat = String(ai.category ?? "").trim();
+  const category = kind === "income" ? "" : categoryNames.includes(aiCat) ? aiCat : rule.category;
+
+  return { kind, store, date, total, category, items, needsRecheck: rule.needsRecheck };
+}
+
 // =========================================================================
 // 手入力の自然文 / シフトメモ の端末内解析（AI API 無し）
 // =========================================================================

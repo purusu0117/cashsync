@@ -17,8 +17,7 @@ import { cachedFetch } from "@/lib/cachedFetch";
 import { netFetch } from "@/lib/clientApi";
 import { fmtDateJa, fmtYen, todayLocal } from "@/lib/format";
 import { capGlobal, deletePhotos, isNativePlatform, listRecentScreenshots } from "@/lib/native";
-import { parseReceiptText } from "@/lib/localReceipt";
-import type { ReceiptScan } from "@/lib/ai";
+import { groundReceipt, parseReceiptText } from "@/lib/localReceipt";
 import { takePendingImage } from "@/lib/pendingImage";
 import { track } from "@/lib/track";
 
@@ -51,7 +50,7 @@ interface AIParseResult {
 /** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
 // 反映確認用の版マーカー。Web修正を出すたびに更新する。実機のスキャン画面下部に表示され、
 // 「端末が最新Webを読んでいるか」を一目で確認できる（古い文字列＝キャッシュ未更新）。
-const SCAN_ENGINE_VER = "T27-0730n-AI";
+const SCAN_ENGINE_VER = "T28-0730o-AI接地";
 
 async function sha256Hex(input: string): Promise<string> {
   try {
@@ -289,33 +288,34 @@ export default function ScanPage() {
               return null;
             }
             const catNames = categories.map((c) => c.name);
-            // ① まず端末内AI(Apple Intelligence)で解釈を試す（サーバー/API不使用・端末外に出さない）。
-            //    非対応端末・未有効・エラー時は ② ルール解析にフォールバックする。
+            // ルール解析は常に実行する（AIの“接地”の土台＋AI非対応端末のフォールバック）。
+            const rule = parseReceiptText(text, catNames, todayLocal());
+            // ① 端末内AI(Apple Intelligence)で解釈を試し、出力をOCR本文＋ルールで“接地”して創作を排除する。
+            //    非対応端末・未有効・エラー時は ② ルール解析をそのまま使う（サーバー/API不使用）。
             let aiTag = "AI無";
             if (typeof plugin.parseReceipt === "function") {
               try {
                 const ai = await Promise.race([
                   plugin.parseReceipt({ text, categories: catNames, today: todayLocal() }),
                   new Promise<AIParseResult>((res) =>
-                    setTimeout(() => res({ available: false, reason: "timeout" }), 10000),
+                    setTimeout(() => res({ available: false, reason: "timeout" }), 12000),
                   ),
                 ]);
                 if (ai && ai.available) {
-                  const items = Array.isArray(ai.items)
-                    ? ai.items
-                        .filter((it) => it && it.name)
-                        .map((it) => ({ name: String(it.name).slice(0, 40), price: Math.round(Number(it.price)) || 0 }))
-                    : [];
-                  diag.msg = `OCR ${text.length}字→端末内AI解析OK (${Date.now() - tR}ms)`;
-                  const aiScan: ReceiptScan = {
-                    kind: ai.kind === "income" ? "income" : "expense",
-                    store: String(ai.store ?? "").slice(0, 40),
-                    date: String(ai.date ?? ""),
-                    total: Math.round(Number(ai.total)) || 0,
-                    category: String(ai.category ?? ""),
-                    items,
-                  };
-                  return aiScan;
+                  diag.msg = `OCR ${text.length}字→端末内AI解析OK＋接地 (${Date.now() - tR}ms)`;
+                  return groundReceipt(
+                    {
+                      kind: ai.kind,
+                      store: ai.store,
+                      date: ai.date,
+                      total: ai.total,
+                      category: ai.category,
+                      items: ai.items,
+                    },
+                    rule,
+                    text,
+                    catNames,
+                  );
                 }
                 aiTag = `AI不可(${ai?.reason ?? "?"})`;
               } catch (e) {
@@ -324,7 +324,7 @@ export default function ScanPage() {
             }
             // ② ルール解析（AI非対応端末のフォールバック）
             diag.msg = `OCR ${text.length}字 ${aiTag}→ルール解析 (${Date.now() - tR}ms)`;
-            return parseReceiptText(text, catNames, todayLocal());
+            return rule;
           })(),
           25000,
         );
