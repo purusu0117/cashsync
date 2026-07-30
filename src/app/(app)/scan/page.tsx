@@ -50,7 +50,7 @@ interface AIParseResult {
 /** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
 // 反映確認用の版マーカー。Web修正を出すたびに更新する。実機のスキャン画面下部に表示され、
 // 「端末が最新Webを読んでいるか」を一目で確認できる（古い文字列＝キャッシュ未更新）。
-const SCAN_ENGINE_VER = "T29-0730p-接地強化";
+const SCAN_ENGINE_VER = "T30-0730q-カテゴリ";
 
 async function sha256Hex(input: string): Promise<string> {
   try {
@@ -322,9 +322,9 @@ export default function ScanPage() {
                 aiTag = `AIエラー:${es(e)}`;
               }
             }
-            // ② ルール解析（AI非対応端末のフォールバック）
+            // ② ルール解析（AI非対応端末のフォールバック）。groundReceipt(null,…)でカテゴリ既定等の仕上げも通す。
             diag.msg = `OCR ${text.length}字 ${aiTag}→ルール解析 (${Date.now() - tR}ms)`;
-            return rule;
+            return groundReceipt(null, rule, text, catNames);
           })(),
           25000,
         );

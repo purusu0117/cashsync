@@ -303,8 +303,8 @@ const CATEGORY_RULES: { cat: string; kw: RegExp }[] = [
   { cat: "医療", kw: /(病院|クリニック|歯科|医院|診療|処方|調剤|皮膚科|眼科|内科|外科)/ },
   { cat: "通信", kw: /(docomo|ドコモ|au |au$|kddi|softbank|ソフトバンク|楽天モバイル|ワイモバイル|携帯|通信料|プロバイダ)/i },
   { cat: "住まい", kw: /(家賃|管理費|電気|電力|ガス|水道|光熱|不動産|賃貸|電力会社)/ },
-  { cat: "日用品", kw: /(ドラッグ|マツモト|マツキヨ|ウエルシア|サンドラッグ|ツルハ|ココカラ|ホームセンター|カインズ|コーナン|ニトリ|ダイソー|セリア|キャンドゥ|100円|無印良品|洗剤|ティッシュ|日用品|雑貨)/i },
-  { cat: "洋服", kw: /(ユニクロ|uniqlo|GU |gu$|ジーユー|zara|h&m|しまむら|ABCマート|abc-mart|スニーカー|衣料|アパレル|洋服|ファッション)/i },
+  { cat: "日用品", kw: /(ドラッグ|マツモト|マツキヨ|ウエルシア|サンドラッグ|ツルハ|ココカラ|ホームセンター|カインズ|コーナン|ニトリ|ダイソー|セリア|キャンドゥ|100円|無印良品|洗剤|柔軟剤|シャンプー|リンス|ボディソープ|石鹸|石けん|歯ブラシ|歯磨き|ティッシュ|トイレット|キッチンペーパー|ラップ|ゴミ袋|マスク|乾電池|電池|日用品|雑貨|万年筆|ボールペン|シャープペン|鉛筆|ノート|文房具|文具|付箋|ファイル|封筒|ホチキス|コンバータ|インク)/i },
+  { cat: "洋服", kw: /(ユニクロ|uniqlo|GU |gu$|ジーユー|zara|h&m|しまむら|ABCマート|abc-mart|スニーカー|衣料|アパレル|洋服|ファッション|ジャケット|レザー|コート|ブルゾン|パーカー|カーディガン|セーター|ニット|シャツ|ブラウス|Tシャツ|ワンピース|スカート|パンツ|ズボン|スラックス|デニム|ジーンズ|チノパン|ブーツ|パンプス|ローファー|革靴|サンダル|バッグ|かばん|鞄|財布|ベルト|帽子|キャップ|ニット帽|マフラー|手袋|靴下|ソックス|下着|インナー|肌着)/i },
   { cat: "美容", kw: /(美容室|美容院|ヘアサロン|ネイル|理容|バーバー|コスメ|化粧|資生堂|ロクシタン|サロン)/ },
   { cat: "娯楽", kw: /(ゲーム|映画|シネマ|TOHO|カラオケ|書店|本屋|紀伊國屋|ブックオフ|TSUTAYA|ゲオ|steam|ラウンドワン|遊園|アミューズ|ヨドバシ|ビックカメラ)/i },
   { cat: "交際", kw: /(ギフト|贈答|プレゼント|お祝い|ご祝儀|会費|花屋)/ },
@@ -509,8 +509,7 @@ export function groundReceipt(
   rawText: string,
   categoryNames: string[],
 ): ReceiptScan {
-  if (!ai) return rule;
-  void categoryNames;
+  const a: AiReceiptRaw = ai ?? {}; // ai が無い（非対応端末等）時もカテゴリ既定などの仕上げは通す
   const norm = normalizeText(rawText);
   const digits = norm.replace(/[^\d]/g, "");
   const normText = kanaNorm(norm.toLowerCase().replace(/[\s　]/g, ""));
@@ -526,31 +525,26 @@ export function groundReceipt(
   const kind = rule.kind;
 
   // 合計：印字された「合計」を最優先（ルール）。ルールが取れない時だけ、本文に実在するならAI値を許容。
-  const aiTotal = Number(ai.total) || 0;
+  const aiTotal = Number(a.total) || 0;
   const total = rule.total > 0 ? rule.total : inText(aiTotal) ? Math.round(aiTotal) : 0;
 
   // 店名：AIの店名がOCR本文に実在する時だけ採用（"ファミマ"等の創作を排除）。無ければルール（本文由来）。
-  const aiStore = String(ai.store ?? "").trim();
+  const aiStore = String(a.store ?? "").trim();
   const store = strInText(aiStore) ? aiStore.slice(0, 40) : rule.store;
 
   // 日付：本文から決定的に取れるルールを優先。無ければAI。
-  const aiDate = typeof ai.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(ai.date) ? ai.date : "";
+  const aiDate = typeof a.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.date) ? a.date : "";
   const date = rule.date || aiDate;
 
-  // 品目：決済画面(PayPay/d払い等)は明細が無いので必ず空にする。
-  //       レシートは、AI品目のうち「品名も金額も両方OCR本文に実在」するものだけ採用（"ラーメン""Coke"等の
-  //       創作を排除）。1件も残らなければ本文由来のルール品目にフォールバック。収入も空。
-  let items: { name: string; price: number }[] = [];
-  if (!isPayment && kind !== "income") {
-    const aiItems = (Array.isArray(ai.items) ? ai.items : [])
-      .filter((it) => it && it.name && Number(it.price) > 0 && inText(Number(it.price)) && strInText(String(it.name)))
-      .map((it) => ({ name: String(it.name).slice(0, 40), price: Math.round(Number(it.price)) }));
-    items = aiItems.length >= 1 ? aiItems : rule.items;
-  }
+  // 品目：決済画面(PayPay/d払い等)は明細が無いので必ず空。レシートは本文の行から直接抽出したルール品目を使う
+  //       （AI品目は創作・スペル差で欠落しやすいので使わない。ルール品目は本文由来で創作しない）。
+  const items = isPayment || kind === "income" ? [] : rule.items;
 
-  // カテゴリ：AIの意味推測は「万年筆→食費」等 不安定なので採用しない。キーワードで接地したルール判定を使う
-  //           （確信が持てなければ空にして人に選ばせる＝誤ったカテゴリを付けるより良い）。
-  const category = kind === "income" ? "" : rule.category;
+  // カテゴリ：必ず埋める（大翔要望）。キーワードで接地したルール判定を使い、当たらなければ「その他」。
+  //   AIの意味推測は「万年筆→食費」「カシオ→食費」等の誤りが多く、誤カテゴリは その他 より悪いので採用しない
+  //   （宅配→食費／衣類→洋服／文具→日用品 等はルールのキーワードを広く持って当てる）。
+  const category =
+    kind === "income" ? "" : rule.category || (categoryNames.includes("その他") ? "その他" : "");
 
   return { kind, store, date, total, category, items, needsRecheck: rule.needsRecheck };
 }
