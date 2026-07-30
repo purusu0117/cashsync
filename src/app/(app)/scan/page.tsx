@@ -50,7 +50,7 @@ interface AIParseResult {
 /** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
 // 反映確認用の版マーカー。Web修正を出すたびに更新する。実機のスキャン画面下部に表示され、
 // 「端末が最新Webを読んでいるか」を一目で確認できる（古い文字列＝キャッシュ未更新）。
-const SCAN_ENGINE_VER = "T32-0730s-Claude復帰";
+const SCAN_ENGINE_VER = "T33-0730t";
 // 端末内OCR(Apple Vision＋Apple Intelligence)は精度が不足したため既定OFF。
 // false のときはネイティブでもサーバーの Claude 解析(/api/scan-jobs＝Build25と同じ)を使う。
 // 端末内コードは残してあるので、将来ここを true に戻せば端末内経路に切り替えられる。
@@ -652,7 +652,7 @@ export default function ScanPage() {
               <p className="mt-2 text-xs text-ink-faint">
                 {elapsed > 30
                   ? "混雑していて少し時間がかかっています。もう少しお待ちください"
-                  : "AIが読み取り中です（通常10〜30秒・混雑時は少しかかります）"}
+                  : "AIが読み取っています…"}
               </p>
             )}
             {/* C5: サーバー処理は閉じても続くと明示（端末内OCR時は一瞬で終わるので不要） */}
