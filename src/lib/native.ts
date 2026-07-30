@@ -29,15 +29,31 @@ function capGlobal(): CapacitorGlobal | undefined {
 export async function nativePlugin<T>(name: string): Promise<T | null> {
   if (!isNativePlatform()) return null;
   const cap = capGlobal();
+  // 1) 注入済み Plugins プロキシ（あれば即返る）
   const injected = cap?.Plugins?.[name];
   if (injected) return injected as T;
-  try {
-    const core = await import("@capacitor/core");
-    if (core?.registerPlugin) return core.registerPlugin<T>(name) as T;
-  } catch {
-    /* パッケージが解決できない場合は次へ */
+  // 2) 注入された Capacitor.registerPlugin（同期）を、動的importより先に試す。
+  //    remote URL の iOS WebView では `import("@capacitor/core")` が返らず固まる事故があったため、
+  //    まず同期で取れる経路を使う（これが取れれば固まらない）。
+  if (typeof cap?.registerPlugin === "function") {
+    try {
+      const p = cap.registerPlugin<T>(name);
+      if (p) return p;
+    } catch {
+      /* 次へ */
+    }
   }
-  if (cap?.registerPlugin) return cap.registerPlugin<T>(name);
+  // 3) 最後の手段として @capacitor/core を動的import（返らないことがあるので3秒で打ち切る）
+  try {
+    const core = await Promise.race([
+      import("@capacitor/core").catch(() => null),
+      new Promise<null>((r) => setTimeout(() => r(null), 3000)),
+    ]);
+    const reg = (core as { registerPlugin?: <U>(n: string) => U } | null)?.registerPlugin;
+    if (typeof reg === "function") return reg<T>(name);
+  } catch {
+    /* ignore */
+  }
   return null;
 }
 
