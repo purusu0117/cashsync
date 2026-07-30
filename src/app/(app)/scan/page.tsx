@@ -50,7 +50,7 @@ interface AIParseResult {
 /** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
 // 反映確認用の版マーカー。Web修正を出すたびに更新する。実機のスキャン画面下部に表示され、
 // 「端末が最新Webを読んでいるか」を一目で確認できる（古い文字列＝キャッシュ未更新）。
-const SCAN_ENGINE_VER = "T30-0730q-カテゴリ";
+const SCAN_ENGINE_VER = "T31-0730r-カテゴリ空欄防止";
 
 async function sha256Hex(input: string): Promise<string> {
   try {
@@ -119,6 +119,9 @@ export default function ScanPage() {
   const [imageHash, setImageHash] = useState(""); // 読み取った画像のsha256（保存時に渡す）
   const [jobId, setJobId] = useState(""); // C5: 読み取りジョブのID（保存/破棄時に消す）
   const [categories, setCategories] = useState<Category[]>([]);
+  // scanFile はマウント時のクロージャで走ることがあり、その時点の categories が空だと
+  // カテゴリを解決できない。常に最新の一覧を参照できるよう ref に写しておく。
+  const categoriesRef = useRef<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   // 確認シートに最初に表示した提案（AI or 学習値）。保存時にサーバーへ渡し、
   // ユーザーがここから変更していたら「この店の正しいカテゴリ」として学習される。
@@ -158,9 +161,17 @@ export default function ScanPage() {
   const [scansLeft, setScansLeft] = useState<number | null>(null);
 
   useEffect(() => {
+    categoriesRef.current = categories;
+  }, [categories]);
+
+  useEffect(() => {
     fetch("/api/categories")
       .then((r) => r.json())
-      .then((d) => setCategories(d.categories ?? []));
+      .then((d) => {
+        const list: Category[] = d.categories ?? [];
+        categoriesRef.current = list;
+        setCategories(list);
+      });
     cachedFetch<{ aiUsage?: { scans: { used: number; limit: number | null } } }>(
       "/api/profile",
       (d) => {
@@ -287,7 +298,8 @@ export default function ScanPage() {
               diag.msg = `OCR=空文字 (${Date.now() - tR}ms) 画像${kb}KB`;
               return null;
             }
-            const catNames = categories.map((c) => c.name);
+            // 最新のカテゴリ一覧を ref から取る（マウント時クロージャの stale な空配列を避ける）。
+            const catNames = categoriesRef.current.map((c) => c.name);
             // ルール解析は常に実行する（AIの“接地”の土台＋AI非対応端末のフォールバック）。
             const rule = parseReceiptText(text, catNames, todayLocal());
             // ① 端末内AI(Apple Intelligence)で解釈を試し、出力をOCR本文＋ルールで“接地”して創作を排除する。
@@ -332,7 +344,12 @@ export default function ScanPage() {
           track("scan_used");
           // 検算で合計が明細と矛盾する時は、ブロックせず確認画面に警告だけ出す（人が最終確認/修正）。
           setRecheck(!!s.needsRecheck);
-          const catId = categories.find((c) => c.name === s.category)?.id ?? null;
+          // カテゴリID解決は最新の一覧(ref)で行い、支出は必ずどれか選択済みにする（名前が一致しなければ
+          // 「その他」にフォールバック＝チップ未選択＝空欄を防ぐ）。収入はカテゴリ不要。
+          const catList = categoriesRef.current;
+          const otherId = catList.find((c) => c.name === "その他")?.id ?? null;
+          const matchedId = catList.find((c) => c.name === s.category)?.id ?? null;
+          const catId = s.kind === "income" ? null : (matchedId ?? otherId);
           setScan({ ...s, date: s.date || todayLocal() });
           const dataUrl = await new Promise<string>((resolve) => {
             const r = new FileReader();

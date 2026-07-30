@@ -319,15 +319,18 @@ function kanaNorm(s: string): string {
 }
 
 function guessCategory(store: string, items: { name: string }[], categoryNames: string[]): string {
+  // カテゴリ一覧(categoryNames)が未取得(空)でも判定できるようにする。標準カテゴリは全アカウント共通なので、
+  // 一覧が空の時はゲートを掛けない（＝一覧の読み込みタイミングでカテゴリが空欄になる不具合の防止）。
+  const has = (cat: string) => categoryNames.length === 0 || categoryNames.includes(cat);
   const s = kanaNorm(store.toLowerCase().replace(/\s+/g, "")); // 空白差＋かな差を無視して店名照合
   // 1) 店名で判定（最優先）
   for (const r of CATEGORY_RULES) {
-    if (categoryNames.includes(r.cat) && r.kw.test(s)) return r.cat;
+    if (has(r.cat) && r.kw.test(s)) return r.cat;
   }
   // 2) 店名で決まらなければ品目で
   const it = kanaNorm(items.map((i) => i.name).join(" ").toLowerCase());
   if (it) for (const r of CATEGORY_RULES) {
-    if (categoryNames.includes(r.cat) && r.kw.test(it)) return r.cat;
+    if (has(r.cat) && r.kw.test(it)) return r.cat;
   }
   return "";
 }
@@ -540,11 +543,11 @@ export function groundReceipt(
   //       （AI品目は創作・スペル差で欠落しやすいので使わない。ルール品目は本文由来で創作しない）。
   const items = isPayment || kind === "income" ? [] : rule.items;
 
-  // カテゴリ：必ず埋める（大翔要望）。キーワードで接地したルール判定を使い、当たらなければ「その他」。
-  //   AIの意味推測は「万年筆→食費」「カシオ→食費」等の誤りが多く、誤カテゴリは その他 より悪いので採用しない
-  //   （宅配→食費／衣類→洋服／文具→日用品 等はルールのキーワードを広く持って当てる）。
-  const category =
-    kind === "income" ? "" : rule.category || (categoryNames.includes("その他") ? "その他" : "");
+  // カテゴリ：支出は必ず埋める（大翔要望・絶対に空欄にしない）。キーワードで接地したルール判定を
+  //   最終の店名＋品目で取り直し、当たらなければ「その他」を無条件で入れる（一覧の有無に依存しない）。
+  //   AIの意味推測は「万年筆→食費」「カシオ→食費」等の誤りが多いので採用しない（宅配→食費／衣類→洋服／
+  //   文具→日用品 はルールのキーワードで当てる）。
+  const category = kind === "income" ? "" : guessCategory(store, items, categoryNames) || "その他";
 
   return { kind, store, date, total, category, items, needsRecheck: rule.needsRecheck };
 }
