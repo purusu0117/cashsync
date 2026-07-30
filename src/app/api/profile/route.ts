@@ -51,6 +51,7 @@ export async function POST(request: Request) {
   try {
     const user = await requireUser();
     const body = (await request.json()) as {
+      name?: string; // 表示名の変更（1〜40文字）
       savingsGoal?: number;
       monthStartDay?: number;
       reminderHour?: number; // C3: 0〜23＝その時刻に通知、-1＝OFF
@@ -59,6 +60,11 @@ export async function POST(request: Request) {
       workStyle?: string; // 働き方: hourly | salary | daily
     };
     const d = await db();
+    // 表示名の変更（空は無視・40文字で切り詰め）
+    if (body.name !== undefined) {
+      const nm = String(body.name).trim().slice(0, 40);
+      if (nm) await d.run("UPDATE users SET name = ? WHERE id = ?", nm, user.id);
+    }
     if (body.savingsGoal !== undefined) {
       const goal = Math.max(0, Math.round(Number(body.savingsGoal) || 0));
       await d.run("UPDATE users SET savings_goal = ? WHERE id = ?", goal, user.id);
