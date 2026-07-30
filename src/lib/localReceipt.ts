@@ -299,60 +299,118 @@ function guessCategory(store: string, items: { name: string }[], categoryNames: 
 // ポイント・クーポン・達成条件など大量のノイズ（"金額100,000円""14pt"等）が続く。
 // レシート用の汎用ロジックだとノイズを合計に拾うため、専用に切り分ける。
 const PAYMENT_MARKERS =
-  /(支払い完了|受け取り完了|送金しました|受け取りました|さんから受け取る|さんに送る|残高を送る|PayPay|LINE\s?Pay|楽天ペイ|d払い|au\s?PAY|メルペイ)/i;
+  /(支払い完了|受け取り完了|送金しました|受け取りました|さんから受け取る|さんに送る|残高を送る|Pay\s?Pay|LINE\s?Pay|楽天ペイ|d払い|au\s?PAY|メルペイ)/i;
 const NOISE_LINE =
   /(ポイント|pt\b|還元|付与|クーポン|達成|条件|回数|ステップ|おすすめ|獲得|上限|チャージ|登録する|お困り|詳細を表示|残高を送る|クレジット)/i;
 
+// 決済画面の日付行。実機のApple Visionは「年月日」を *R S E ● 等に化けさせるため、
+// 「20xx＋区切り＋月＋区切り＋日」の緩いパターンでも拾う（漢字の年月日にも当たる）。
+const PAY_DATE_RE = /20\d{2}[^\d\n]{0,3}\d{1,2}[^\d\n]{1,3}\d{1,2}/;
+
+function payDateIdx(lines: string[]): number {
+  return lines.findIndex((l) => PAY_DATE_RE.test(l));
+}
+
+/** 決済画面の日付。Vision誤読の「2026*7R28E」→2026-07-28 も拾う。取れなければ ""。 */
+function extractPayDate(lines: string[]): string {
+  for (const l of lines) {
+    const m = l.match(/20(\d\d)[^\d\n]{0,3}(\d{1,2})[^\d\n]{1,3}(\d{1,2})/);
+    if (!m) continue;
+    const mo = Number(m[2]), da = Number(m[3]);
+    if (mo >= 1 && mo <= 12 && da >= 1 && da <= 31) {
+      return `20${m[1]}-${pad(mo)}-${pad(da)}`;
+    }
+  }
+  return "";
+}
+
+// 紙レシートを決済アプリ画面と誤判定しないためのガード（PayPay決済の"紙"レシート等）。
+// 注: 「レジ」は「クレジット」に、「税率」は決済画面にも出るため入れない（誤って紙レシート扱いになる）。
+// 紙レシート"固有"の語だけに絞る。
+const RECEIPT_MARKERS = /(小計|お買上|お買い上げ|軽減税率|外税|内税|レシート番号|レジ袋)/;
+
 function isPaymentScreen(text: string): boolean {
+  if (RECEIPT_MARKERS.test(text)) return false; // 紙レシートは通常ロジックへ
   return PAYMENT_MARKERS.test(text);
 }
 
+/**
+ * 収入(受け取り)/支出(支払い)の判定。
+ * 実機Visionは「受け取り完了/支払い完了」の日本語を破壊するので、日本語マーカーは"あれば"優先し、
+ * 無い場合は「金額の頭に + が付く（PayPayの受取表示 +¥1,450）」ことを収入の決め手にする。
+ */
 function paymentKind(text: string): "expense" | "income" {
-  if (/(受け取り完了|受け取りました|さんから受け取る|入金|返金|チャージ完了)/.test(text) && !/支払い完了/.test(text)) {
+  if (/(受け取り完了|受け取りました|さんから受け取る|入金|返金|チャージ完了|送金されました)/.test(text) && !/支払い完了/.test(text)) {
     return "income";
   }
+  if (/(支払い完了|送金しました|お支払い)/.test(text)) return "expense";
+  // マーカーが化けている場合：受取額は先頭に + が付く（+1,450 / +¥1,450）。誤検知を避けるため
+  // 「+ の直後がカンマ区切りの千以上の金額」または「+¥ に続く数字」に限定する（+14pt等のノイズは拾わない）。
+  if (/[+＋]\s?[¥￥]?\s?\d{1,3},\d{3}/.test(text) || /[+＋]\s?[¥￥]\s?\d{2,}/.test(text)) return "income";
   return "expense";
 }
 
-/** 決済画面の金額＝日付行の直後〜完了マーカーの間にある最初の金額（ポイント等ノイズ行は除外）。 */
+/** 店名候補の行から、先頭の"きれいなトークン"だけ残す（Visionが付ける末尾ゴミ記号を落とす）。
+ *  例「777 èklJ)b*¢*H%」→「777」／「Rocket Now」→「Rocket Now」。 */
+function cleanStoreToken(line: string): string {
+  const tokens = line.trim().split(/\s+/);
+  const kept: string[] = [];
+  for (const tk of tokens) {
+    if (/^[A-Za-z0-9ぁ-んァ-ヶ一-龠ー々]+$/.test(tk)) kept.push(tk);
+    else break;
+  }
+  return kept.join(" ").trim();
+}
+
+/** 決済画面の金額＝日付行から下に見て最初の金額（ポイント等ノイズ行は除外）。 */
 function paymentTotal(lines: string[]): number {
-  const dateIdx = lines.findIndex((l) => /\d{2,4}\s*年.*\d{1,2}\s*月.*\d{1,2}\s*日/.test(l));
-  const markerIdx = lines.findIndex((l) => /(支払い完了|受け取り完了|送金しました|受け取りました)/.test(l));
-  const lo = dateIdx >= 0 ? dateIdx + 1 : 0;
-  const hi = markerIdx > lo ? markerIdx + 1 : Math.min(lines.length, lo + 5);
+  const di = payDateIdx(lines);
+  const lo = di >= 0 ? di : 0;
+  const hi = Math.min(lines.length, lo + 6);
   for (let i = lo; i < hi; i++) {
     if (NOISE_LINE.test(lines[i])) continue;
     const a = moneyIn(lines[i]);
     if (a.length) return Math.max(...a);
   }
-  // フォールバック：上部で最初の「円/¥付き」金額（ノイズ行除外）
-  for (let i = 0; i < Math.min(lines.length, 10); i++) {
-    if (NOISE_LINE.test(lines[i]) || !/円|¥/.test(lines[i])) continue;
-    const a = moneyIn(lines[i]);
-    if (a.length) return a[0];
+  // フォールバック：ノイズ行を除いた全体でのカンマ区切り金額の最大
+  const all: number[] = [];
+  for (const l of lines) {
+    if (NOISE_LINE.test(l)) continue;
+    all.push(...moneyIn(l));
   }
-  return 0;
+  return all.length ? Math.max(...all) : 0;
 }
 
-/** 決済画面の店名/送金相手。①お店/送金元等のラベルがあればそれ ②無ければ上部の名前行。 */
+/** 決済画面の店名/送金相手。①お店/送金元等のラベル ②日付行の直前の行 ③上部の名前行。 */
 function paymentStore(lines: string[]): string {
   // 1) ラベル（お店/加盟店/送金元/送金先/宛先/店名/店舗）があればラベル方式を優先
   if (lines.some((l) => /(お店|加盟店|送金元|送金先|宛先|店名|店舗)/.test(l))) {
     const s = extractStore(lines);
     if (s) return s;
   }
-  // 2) ラベル無し（PayPay等）→ 上部の名前行。マーカー/金額/案内文は除外、「○○さん」抽出、アイコン誤読除去。
-  const dateIdx = lines.findIndex((l) => /\d{2,4}\s*年.*月.*日/.test(l));
-  const top = lines.slice(0, dateIdx > 0 ? dateIdx : 4);
-  for (const raw of top) {
+  const takeName = (raw: string): string => {
     let l = raw.trim();
-    if (!l || isStatusBar(l) || /^[\d\s¥,.\-:+]+円?$/.test(l)) continue;
-    if (/(支払い完了|受け取り完了|送金しました|受け取りました|お支払い|ご請求|完了|詳細|明細|残高)/.test(l)) continue;
+    if (!l || isStatusBar(l) || /^[\d\s¥,.\-:+●]+円?$/.test(l)) return "";
+    if (/(支払い完了|受け取り完了|送金しました|受け取りました|お支払い|ご請求|完了|詳細|明細|残高|Google\s?Play)/.test(l)) return "";
     const m = l.match(/(.+?)\s*さん(から|へ|に)/); // 「○○さんから受け取る」等
     if (m) l = m[1];
     l = l.replace(/^[ぁ-んァ-ヶ]\s+(?=[A-Za-z0-9])/u, ""); // 「イ Rocket」→「Rocket」（アイコン誤読1字）
-    l = l.replace(/\s{2,}/g, " ").trim();
-    if (l.length >= 1 && /[一-龠ぁ-んァ-ヶA-Za-z0-9]/.test(l)) return l.slice(0, 30);
+    const cleaned = cleanStoreToken(l) || l.replace(/\s{2,}/g, " ").trim();
+    return cleaned.length >= 1 && /[一-龠ぁ-んァ-ヶA-Za-z0-9]/.test(cleaned) ? cleaned.slice(0, 30) : "";
+  };
+  // 2) 日付行の直前の行（PayPayは 相手名→日付→金額 の順）を最優先で見る
+  const di = payDateIdx(lines);
+  if (di > 0) {
+    for (let k = di - 1; k >= 0; k--) {
+      const name = takeName(lines[k]);
+      if (name) return name;
+    }
+  }
+  // 3) フォールバック：上部の名前行
+  const top = lines.slice(0, di > 0 ? di : 4);
+  for (const raw of top) {
+    const name = takeName(raw);
+    if (name) return name;
   }
   return "";
 }
@@ -370,8 +428,10 @@ export function parseReceiptText(rawText: string, categoryNames: string[], today
     const kind = paymentKind(text);
     const store = paymentStore(lines) || extractStore(lines);
     const total = paymentTotal(lines) || extractTotal(lines);
+    // 日付：通常抽出でダメなら、Vision誤読（2026*7R28E 等）向けの緩い抽出で拾う
+    const payDate = date || extractPayDate(lines);
     const category = kind === "income" ? "" : guessCategory(store, [], categoryNames);
-    return { kind, store, date, total, category, items: [] };
+    return { kind, store, date: payDate, total, category, items: [] };
   }
 
   // 通常のレシート
