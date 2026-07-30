@@ -510,9 +510,17 @@ export function groundReceipt(
   categoryNames: string[],
 ): ReceiptScan {
   if (!ai) return rule;
-  const digits = rawText.replace(/[^\d]/g, "");
-  const normText = kanaNorm(normalizeText(rawText).toLowerCase().replace(/[\s　]/g, ""));
+  void categoryNames;
+  const norm = normalizeText(rawText);
+  const digits = norm.replace(/[^\d]/g, "");
+  const normText = kanaNorm(norm.toLowerCase().replace(/[\s　]/g, ""));
   const inText = (n: number) => n > 0 && digits.includes(String(Math.round(n)));
+  // AIが返した文字列が、OCR本文に（空白/かな差を吸収して）実在するか。創作(ハルシネーション)排除の要。
+  const strInText = (s: string) => {
+    const n = kanaNorm(String(s).toLowerCase().replace(/[\s　]/g, ""));
+    return n.length >= 2 && normText.includes(n);
+  };
+  const isPayment = isPaymentScreen(norm);
 
   // 種別：本文の markers に基づくルール判定を信頼（AIはレシートを収入と誤判定しがち）。
   const kind = rule.kind;
@@ -521,25 +529,28 @@ export function groundReceipt(
   const aiTotal = Number(ai.total) || 0;
   const total = rule.total > 0 ? rule.total : inText(aiTotal) ? Math.round(aiTotal) : 0;
 
-  // 店名：AIの店名がOCR本文に（かな正規化で）実在する時だけ採用。無ければルール（本文由来）。
+  // 店名：AIの店名がOCR本文に実在する時だけ採用（"ファミマ"等の創作を排除）。無ければルール（本文由来）。
   const aiStore = String(ai.store ?? "").trim();
-  const aiStoreNorm = kanaNorm(aiStore.toLowerCase().replace(/\s+/g, ""));
-  const store = aiStoreNorm.length >= 2 && normText.includes(aiStoreNorm) ? aiStore.slice(0, 40) : rule.store;
+  const store = strInText(aiStore) ? aiStore.slice(0, 40) : rule.store;
 
   // 日付：本文から決定的に取れるルールを優先。無ければAI。
   const aiDate = typeof ai.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(ai.date) ? ai.date : "";
   const date = rule.date || aiDate;
 
-  // 品目：AIの品名は活かしたいが価格の創作を防ぐため、価格がOCR本文に実在する品目だけ通す。
-  //       1件も残らなければ本文由来のルール品目にフォールバック。収入は空。
-  const aiItems = (Array.isArray(ai.items) ? ai.items : [])
-    .filter((it) => it && it.name && Number(it.price) > 0 && inText(Number(it.price)))
-    .map((it) => ({ name: String(it.name).slice(0, 40), price: Math.round(Number(it.price)) }));
-  const items = kind === "income" ? [] : aiItems.length >= 1 ? aiItems : rule.items;
+  // 品目：決済画面(PayPay/d払い等)は明細が無いので必ず空にする。
+  //       レシートは、AI品目のうち「品名も金額も両方OCR本文に実在」するものだけ採用（"ラーメン""Coke"等の
+  //       創作を排除）。1件も残らなければ本文由来のルール品目にフォールバック。収入も空。
+  let items: { name: string; price: number }[] = [];
+  if (!isPayment && kind !== "income") {
+    const aiItems = (Array.isArray(ai.items) ? ai.items : [])
+      .filter((it) => it && it.name && Number(it.price) > 0 && inText(Number(it.price)) && strInText(String(it.name)))
+      .map((it) => ({ name: String(it.name).slice(0, 40), price: Math.round(Number(it.price)) }));
+    items = aiItems.length >= 1 ? aiItems : rule.items;
+  }
 
-  // カテゴリ：意味判断はAIが得意。候補に実在する時だけ採用、無ければルール。
-  const aiCat = String(ai.category ?? "").trim();
-  const category = kind === "income" ? "" : categoryNames.includes(aiCat) ? aiCat : rule.category;
+  // カテゴリ：AIの意味推測は「万年筆→食費」等 不安定なので採用しない。キーワードで接地したルール判定を使う
+  //           （確信が持てなければ空にして人に選ばせる＝誤ったカテゴリを付けるより良い）。
+  const category = kind === "income" ? "" : rule.category;
 
   return { kind, store, date, total, category, items, needsRecheck: rule.needsRecheck };
 }

@@ -50,7 +50,7 @@ interface AIParseResult {
 /** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
 // 反映確認用の版マーカー。Web修正を出すたびに更新する。実機のスキャン画面下部に表示され、
 // 「端末が最新Webを読んでいるか」を一目で確認できる（古い文字列＝キャッシュ未更新）。
-const SCAN_ENGINE_VER = "T28-0730o-AI接地";
+const SCAN_ENGINE_VER = "T29-0730p-接地強化";
 
 async function sha256Hex(input: string): Promise<string> {
   try {
@@ -328,16 +328,10 @@ export default function ScanPage() {
           })(),
           25000,
         );
-        // 検算で合計が明細と矛盾（数字の読み取りミスの疑い）→ 確認画面に進めず撮り直しへ誘導。
-        if (s && s.needsRecheck) {
-          setRecheck(true);
-          diag.msg = `明細の合計と読み取った金額(¥${s.total})が一致しません`;
-          setScanDbg(diag.msg);
-          setPhase("failed");
-          return;
-        }
         if (s && (s.total > 0 || (s.store ?? "").trim())) {
           track("scan_used");
+          // 検算で合計が明細と矛盾する時は、ブロックせず確認画面に警告だけ出す（人が最終確認/修正）。
+          setRecheck(!!s.needsRecheck);
           const catId = categories.find((c) => c.name === s.category)?.id ?? null;
           setScan({ ...s, date: s.date || todayLocal() });
           const dataUrl = await new Promise<string>((resolve) => {
@@ -653,13 +647,9 @@ export default function ScanPage() {
       {/* A4: 金額も店名も読み取れなかった（空フォームを出さず撮り直しを案内） */}
       {phase === "failed" && (
         <div className="rounded-2xl border border-rule bg-card px-5 py-6 text-center shadow-sm">
-          <p className="text-lg font-bold text-vermilion">
-            {recheck ? "金額を正しく読み取れませんでした" : "レシートを認識できませんでした"}
-          </p>
+          <p className="text-lg font-bold text-vermilion">レシートを認識できませんでした</p>
           <p className="mt-2 text-xs leading-relaxed text-ink-faint">
-            {recheck
-              ? "明細の合計と金額が一致しません（数字の読み取りミスの可能性）。数字がはっきり写るように、明るい場所で撮り直してください。"
-              : "明るい場所で全体が写るように撮り直してください"}
+            明るい場所で全体が写るように撮り直してください
           </p>
           {/* 端末内OCRの実挙動診断（原因可視化用）。この文字列を開発者に伝えれば原因が特定できる。 */}
           {onDevice && scanDbg && (
@@ -749,17 +739,11 @@ export default function ScanPage() {
       {(phase === "confirm" || phase === "saving") && scan && (
         <div className="rounded-2xl border border-rule bg-card px-5 py-5 shadow-sm">
           <p className="text-center text-xs text-ink-faint">読み取り結果（修正できます）</p>
-          {/* 実機Visionの生OCRテキスト。解析がずれたときにこれを開いてスクショで送ってもらえば、
-              端末が実際に読んだ文字列にパーサーを合わせられる（開発側の調整用・普段は閉じている）。 */}
-          {onDevice && rawOcr && (
-            <details className="mt-2 rounded-lg bg-paper px-3 py-2 text-left">
-              <summary className="cursor-pointer text-[11px] text-ink-faint">
-                認識テキストを表示（解析がずれたとき用） [{SCAN_ENGINE_VER}]
-              </summary>
-              <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-relaxed text-ink">
-{rawOcr}
-              </pre>
-            </details>
+          {/* 検算で「お預かり−お釣り≠合計」だった時の非ブロック警告。ブロックせず確認・修正を促すだけ。 */}
+          {recheck && (
+            <p className="mt-2 rounded-lg bg-paper px-3 py-2 text-left text-[11px] leading-relaxed text-caution">
+              ⚠️ 金額が明細と一致しないようです。合計が正しいかご確認ください。
+            </p>
           )}
           <div className="mt-3 flex justify-center gap-1.5">
             <button
