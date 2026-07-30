@@ -187,14 +187,13 @@ export default function ScanPage() {
     setPreview(URL.createObjectURL(file));
     setElapsed(0);
     setPhase("scanning");
-    // 端末内蔵OCR搭載ビルド（build26+）：Apple Vision＋自前解析で完結し、
-    // どんな場合もサーバー(API)へは画像・テキストを一切送らない（端末内で完結・費用0・プライバシー◎）。
-    // ※ build25/Web（VisionOcr未搭載）は下の従来サーバー経路をそのまま使う（挙動不変）。
+    // 端末内OCR(Apple Vision)を"短時間だけ"試す。読めればAPI不使用で確定。
+    // 実機で読めない/遅い場合は return せず、下の"動作実績のあるサーバー読取"にフォールバックする
+    // （＝アプリが必ず動く。端末内OCRを実機で読めるよう修正できたら、この保険は外す）。
     if (isNativePlatform()) {
       try {
-        // 端末内OCR。各ステップに上限時間を付け、固まらないようにする（超えたら「認識できません」へ）。
-        const small = await withTimeout(downscaleFile(file, 1600, 0.8), 15000);
-        const text = await visionOcrRecognize(small, 20000);
+        const small = await withTimeout(downscaleFile(file, 1600, 0.8), 5000);
+        const text = await visionOcrRecognize(small, 8000);
         const s = text
           ? parseReceiptText(text, categories.map((c) => c.name), todayLocal())
           : null;
@@ -216,10 +215,8 @@ export default function ScanPage() {
           return;
         }
       } catch {
-        /* 端末内OCRに失敗/タイムアウトしても、サーバー(API)へは送らない */
+        /* 端末内OCRが不調 → 下のサーバー読取へフォールバック（return しない） */
       }
-      setPhase("failed"); // 読めなければ撮り直し/手入力へ（APIは使わない）
-      return;
     }
     try {
       // C5: 解析はサーバー側のジョブとして走らせる（アプリを閉じても中断しない）。
