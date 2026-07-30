@@ -34,8 +34,11 @@ export function normalizeText(raw: string): string {
 
 /** スマホのステータスバー行（左上の時計＋電波/電池）を落とす。 */
 function isStatusBar(line: string): boolean {
-  if (/^\s*\d{1,2}:\d{2}\b/.test(line)) return true; // 先頭が時刻
-  if (/^[\s\d:]*(5G|4G|LTE|Wi-?Fi)?\s*\d{1,3}%/.test(line) && line.length <= 16) return true;
+  const t = line.trim();
+  if (/^\d{1,2}:\d{2}\b/.test(t)) return true; // 先頭が時刻
+  if (/(5G|4G|LTE|Wi-?Fi)/i.test(t) && t.length <= 20) return true; // 電波表示
+  if (/\d{1,3}\s*%/.test(t) && t.length <= 12) return true; // バッテリー残量
+  if (/[△▲▼]/.test(t) && t.length <= 16) return true; // アンテナ/電波記号だけの行
   return false;
 }
 
@@ -68,7 +71,8 @@ function bareCandidates(line: string): number[] {
   let m: RegExpExecArray | null;
   while ((m = re.exec(line))) {
     const n = Number(m[1]);
-    if (n >= 100 && n <= 9_999_999 && !/^(19|20)\d{2}$/.test(m[1])) out.push(n); // 年(19xx/20xx)は除外
+    // 年(19xx/20xx)と、カンマ無しの7桁以上(≒取引番号/電話等のID)は金額候補にしない。
+    if (n >= 100 && n < 1_000_000 && !/^(19|20)\d{2}$/.test(m[1])) out.push(n);
   }
   return out;
 }
@@ -165,14 +169,30 @@ function detectKind(text: string): "expense" | "income" {
 
 const STORE_LABELS = /(?:お店|店名|加盟店|ご利用店舗|利用店舗|ショップ|送金元|送金先|宛先|店舗)[\s:：　]*([^\n]+)/;
 
+const STORE_LABEL_ONLY = /^(お店|店名|加盟店|加盟店名|ご利用店舗|利用店舗|ショップ|送金元|送金先|宛先|店舗)$/;
+function badStore(v: string): boolean {
+  return (
+    !v || v.length < 2 || /^[\d¥\\,.\-\s]+$/.test(v) ||
+    /(残高|クレジット|現金|コード決済|支払|方法|日時|取引|番号|完了|ポイント|お預|釣)/.test(v)
+  );
+}
+
 function extractStore(lines: string[]): string {
-  // ラベル付き（お店/加盟店/ショップ/送金元…）を最優先
+  const clean = (v: string) => v.trim().replace(/\s{2,}/g, " ");
+  // 1) ラベル同一行（お店: ○○）を最優先
   for (const raw of lines) {
     const mm = raw.match(STORE_LABELS);
     if (mm) {
-      const v = mm[1].trim().replace(/\s{2,}/g, " ");
-      if (v.length >= 2 && !/^[\d¥,.\-]+$/.test(v) && !/^(残高|クレジット|現金|コード決済)$/.test(v))
-        return v.slice(0, 30);
+      const v = clean(mm[1]);
+      if (!badStore(v)) return v.slice(0, 30);
+    }
+  }
+  // 2) ラベルが単独行（決済スクショはOCRで「お店」と値が別行になりがち）→ 直前/直後の行を店名に
+  for (let i = 0; i < lines.length; i++) {
+    if (!STORE_LABEL_ONLY.test(lines[i].trim())) continue;
+    for (const j of [i - 1, i + 1]) {
+      const v = clean(lines[j] ?? "");
+      if (!badStore(v) && /[一-龠ぁ-んァ-ヶA-Za-z]/.test(v)) return v.slice(0, 30);
     }
   }
   // 無ければ上部の名前っぽい行（数値/記号のみ・案内文は除外）
@@ -192,26 +212,42 @@ function extractStore(lines: string[]): string {
 const ITEM_SKIP = /(小計|合計|計|税|お預|預り|釣|おつり|ポイント|point|値引|割引|残高|クレジット|現金|お客様|レシート|TEL|電話|〒|http|受付|番号|日時|支払|方法|税込|税抜|ジ0|レジ)/i;
 const ADDR_DATE = /(\d{3}-?\d{4}|\d{2,4}[年/\-]\d{1,2}[月/\-]\d{1,2}|\d{1,2}:\d{2})/;
 
+function cleanItemName(line: string): string {
+  return line
+    .replace(/¥\s*[\d\s,]*\d/g, "") // ¥金額（カンマ・スペース混じり）を丸ごと除去
+    .replace(/[\d\s,]*\d\s*円/g, "")
+    .replace(/\b\d{2,7}\b/g, "")
+    .replace(/[*#×xX@]\s*\d+/g, "")
+    .replace(/[¥\\\s,]{1,}$/g, "")
+    .replace(/^[\s,]+/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function extractItems(lines: string[]): { name: string; price: number }[] {
   const items: { name: string; price: number }[] = [];
+  // OCRは「品目名」と「金額」を別行に分けて出すことが多い（列の間隔が広いと行が割れる）。
+  // 直前の"名前だけの行"を覚えておき、"金額だけの行"が来たらペアにする。同一行に両方あるなら従来通り。
+  let pendingName = "";
   for (const raw of lines) {
     const line = raw.trim();
-    if (line.length < 3 || ITEM_SKIP.test(line) || ADDR_DATE.test(line)) continue;
+    if (!line) continue;
+    if (ITEM_SKIP.test(line) || ADDR_DATE.test(line)) { pendingName = ""; continue; }
     const amts = moneyIn(line);
-    if (!amts.length) continue;
-    const price = amts[amts.length - 1];
-    if (price <= 0 || price > 1_000_000) continue;
-    const name = line
-      .replace(/¥\s*\d[\d,]*/g, "")
-      .replace(/\d[\d,]*\s*円/g, "")
-      .replace(/\b\d{2,7}\b/g, "")
-      .replace(/[*#×xX@]\s*\d+/g, "")
-      .replace(/[¥\\\s]{1,}$/g, "")
-      .replace(/\s{2,}/g, " ")
-      .trim();
-    if (name.length >= 1 && /[一-龠ぁ-んァ-ヶA-Za-z]/.test(name)) {
-      items.push({ name: name.slice(0, 40), price });
-      if (items.length >= 15) break;
+    if (amts.length) {
+      const price = amts[amts.length - 1];
+      if (price > 0 && price <= 1_000_000) {
+        const inline = cleanItemName(line);
+        // 同一行に品名があればそれ。無ければ（金額だけの行なら）直前の名前行を使う。
+        const name = /[一-龠ぁ-んァ-ヶA-Za-z]/.test(inline) ? inline : pendingName;
+        if (name.length >= 1 && /[一-龠ぁ-んァ-ヶA-Za-z]/.test(name)) {
+          items.push({ name: name.slice(0, 40), price });
+          if (items.length >= 15) break;
+        }
+      }
+      pendingName = "";
+    } else if (line.length >= 2 && /[一-龠ぁ-んァ-ヶA-Za-z]/.test(line) && !/^[\d\s¥\\,.\-:/%]+$/.test(line)) {
+      pendingName = line.replace(/\s{2,}/g, " "); // 名前だけの行を保持
     }
   }
   return items;
@@ -220,7 +256,7 @@ function extractItems(lines: string[]): { name: string; price: number }[] {
 // ---- カテゴリ（店名優先→品目） -----------------------------------------
 
 const CATEGORY_RULES: { cat: string; kw: RegExp }[] = [
-  { cat: "交通", kw: /(JR|メトロ|地下鉄|私鉄|小田急|京王|東急|西武|京成|バス|タクシー|日本交通|鉄道|電車|駅|suica|icoca|pasmo|定期|ガソリン|給油|ENEOS|出光|コスモ石油|高速|ETC|駐車|パーキング|タイムズ)/i },
+  { cat: "交通", kw: /(JR|メトロ|地下鉄|私鉄|小田急|京王|東急|西武|京成|バス|タクシー|日本交通|鉄道|電車|駅|suica|icoca|pasmo|定期|ガソリン|給油|ガソリンスタンド|石油|レギュラー|ハイオク|軽油|エネオス|ENEOS|出光|コスモ石油|高速|ETC|駐車|パーキング|タイムズ)/i },
   { cat: "医療", kw: /(病院|クリニック|歯科|医院|診療|処方|調剤|皮膚科|眼科|内科|外科)/ },
   { cat: "通信", kw: /(docomo|ドコモ|au |au$|kddi|softbank|ソフトバンク|楽天モバイル|ワイモバイル|携帯|通信料|プロバイダ)/i },
   { cat: "住まい", kw: /(家賃|管理費|電気|電力|ガス|水道|光熱|不動産|賃貸|電力会社)/ },
@@ -229,17 +265,24 @@ const CATEGORY_RULES: { cat: string; kw: RegExp }[] = [
   { cat: "美容", kw: /(美容室|美容院|ヘアサロン|ネイル|理容|バーバー|コスメ|化粧|資生堂|ロクシタン|サロン)/ },
   { cat: "娯楽", kw: /(ゲーム|映画|シネマ|TOHO|カラオケ|書店|本屋|紀伊國屋|ブックオフ|TSUTAYA|ゲオ|steam|ラウンドワン|遊園|アミューズ|ヨドバシ|ビックカメラ)/i },
   { cat: "交際", kw: /(ギフト|贈答|プレゼント|お祝い|ご祝儀|会費|花屋)/ },
-  { cat: "食費", kw: /(スーパー|マーケット|まいばすけっと|マルエツ|イオン|ライフ|西友|オーケー|業務スーパー|コンビニ|セブン|ローソン|ファミリー?マート|ファミマ|ミニストップ|デイリー|青果|精肉|鮮魚|食品|弁当|パン|ベーカリー|カフェ|コーヒー|スターバックス|ドトール|タリーズ|コメダ|レストラン|食堂|居酒屋|ラーメン|バーガー|マクドナルド|モス|ケンタッキー|牛丼|吉野家|松屋|すき家|寿司|スシロー|くら寿司|そば|うどん|サイゼリヤ|ガスト|デニーズ|ジョナサン|王将|ミスタードーナツ|ドーナツ)/i },
+  { cat: "食費", kw: /(スーパー|マーケット|まいばすけっと|マルエツ|イオン|ライフ|西友|オーケー|業務スーパー|コンビニ|セブン|ローソン|ファミリー?マート|ファミマ|ミニストップ|デイリー|青果|精肉|鮮魚|食品|弁当|パン|ベーカリー|カフェ|コーヒー|スターバックス|ドトール|タリーズ|コメダ|レストラン|食堂|居酒屋|ラーメン|バーガー|マクドナルド|モス|ケンタッキー|牛丼|吉野家|松屋|すき家|寿司|スシロー|くら寿司|そば|うどん|サイゼリヤ|ガスト|デニーズ|ジョナサン|王将|ミスタードーナツ|ドーナツ|おにぎり|サラダ|チキン|惣菜|お茶|緑茶|牛乳|ヨーグルト|野菜|果物|菓子|スイーツ|サンドイッチ|おでん|飲料|ジュース|ビール|水)/i },
 ];
 
+/** かな正規化：ひらがな→カタカナ、OCRが「ー」を「一」と誤読する分も吸収。カテゴリ照合の頑健化。 */
+function kanaNorm(s: string): string {
+  return s
+    .replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))
+    .replace(/一/g, "ー");
+}
+
 function guessCategory(store: string, items: { name: string }[], categoryNames: string[]): string {
-  const s = store.toLowerCase().replace(/\s+/g, ""); // OCRの空白差を無視して店名照合
+  const s = kanaNorm(store.toLowerCase().replace(/\s+/g, "")); // 空白差＋かな差を無視して店名照合
   // 1) 店名で判定（最優先）
   for (const r of CATEGORY_RULES) {
     if (categoryNames.includes(r.cat) && r.kw.test(s)) return r.cat;
   }
   // 2) 店名で決まらなければ品目で
-  const it = items.map((i) => i.name).join(" ").toLowerCase();
+  const it = kanaNorm(items.map((i) => i.name).join(" ").toLowerCase());
   if (it) for (const r of CATEGORY_RULES) {
     if (categoryNames.includes(r.cat) && r.kw.test(it)) return r.cat;
   }
