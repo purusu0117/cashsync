@@ -246,6 +246,21 @@ platform :ios do
       bno = (v.build.version rescue nil)
       UI.message("APPSTORE version=#{vs} state=#{state} build=#{bno.inspect}")
     end
+
+    UI.message("=== TestFlight Beta App Review (外部テスター用の審査) ===")
+    breb = (app.get_builds(limit: 12) rescue [])
+    breb.each do |b|
+      sub = (b.get_beta_app_review_submission rescue nil)
+      st = sub ? ((sub.beta_review_state rescue nil) || "?") : "なし"
+      ext = (b.uses_non_exempt_encryption rescue "?")
+      UI.message("BUILD #{b.version} betaReview=#{st} export_compliance=#{ext.inspect}")
+    end
+
+    UI.message("=== グループ別の割当ビルド ===")
+    groups.each do |g|
+      gb = (g.get_builds(limit: 6) rescue [])
+      UI.message("GROUP #{g.name.inspect} builds=[#{gb.map { |x| (x.version rescue '?') }.join(', ')}]")
+    end
   end
 
   desc "対象ビルドを内部テスターグループに配布する（TestFlightで入手可能にする）"
