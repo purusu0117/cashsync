@@ -38,7 +38,7 @@ interface Category {
 /** 端末内OCR経路の重複判定用に画像内容のsha256を返す（サーバーに画像は送らない）。 */
 // 反映確認用の版マーカー。Web修正を出すたびに更新する。実機のスキャン画面下部に表示され、
 // 「端末が最新Webを読んでいるか」を一目で確認できる（古い文字列＝キャッシュ未更新）。
-const SCAN_ENGINE_VER = "T21-0730h";
+const SCAN_ENGINE_VER = "T22-0730i";
 
 async function sha256Hex(input: string): Promise<string> {
   try {
@@ -133,6 +133,9 @@ export default function ScanPage() {
 
   const [onDevice, setOnDevice] = useState(false); // 端末内OCR搭載ビルド（build26+）＝AI/通信なし
   const [scanDbg, setScanDbg] = useState(""); // 端末内OCRの実挙動診断（失敗時に画面表示して原因を可視化）
+  // 実機(Apple Vision)が実際に吐いた生OCRテキスト。確認画面に折りたたみ表示し、
+  // 解析がずれたときにこの生テキストをそのまま開発側へ渡してパーサーを実機データに合わせる。
+  const [rawOcr, setRawOcr] = useState("");
   useEffect(() => {
     setNative(isNativePlatform());
     setOnDevice(isNativePlatform());
@@ -192,6 +195,7 @@ export default function ScanPage() {
   async function scanFile(file: File, lib = false) {
     setError("");
     setDupConfirm(false);
+    setRawOcr(""); // 新しい読み取りのたびに前回の生OCRテキストを消す
     setSplitMode(false); // 新しい読み取りのたびに分割モードは初期化
     setSplitRows([]);
     setLimitHit(false);
@@ -257,6 +261,7 @@ export default function ScanPage() {
               return null;
             }
             const text = outcome.text;
+            setRawOcr(text); // 実機Visionの生出力を確認画面に出せるよう保持（解析ズレ時の調整用）
             diag.msg = text.length
               ? `OCR ${text.length}字 (${Date.now() - tR}ms) 先頭「${text.replace(/\n/g, " ").slice(0, 30)}」`
               : `OCR=空文字 (${Date.now() - tR}ms) 画像${kb}KB`;
@@ -591,6 +596,15 @@ export default function ScanPage() {
               診断 [{SCAN_ENGINE_VER}]: {scanDbg}
             </p>
           )}
+          {/* 認識はできたが解析で落ちた場合の生テキスト（開発側の調整用）。 */}
+          {onDevice && rawOcr && (
+            <details className="mt-2 rounded-lg bg-paper px-3 py-2 text-left">
+              <summary className="cursor-pointer text-[11px] text-ink-faint">認識テキストを表示</summary>
+              <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-relaxed text-ink">
+{rawOcr}
+              </pre>
+            </details>
+          )}
           <button
             onClick={() => (fromLibrary ? libRef : fileRef).current?.click()}
             className="mt-4 w-full rounded-xl bg-vermilion py-3 text-base font-bold text-card shadow-sm active:translate-y-0.5 active:shadow-none"
@@ -664,6 +678,18 @@ export default function ScanPage() {
       {(phase === "confirm" || phase === "saving") && scan && (
         <div className="rounded-2xl border border-rule bg-card px-5 py-5 shadow-sm">
           <p className="text-center text-xs text-ink-faint">読み取り結果（修正できます）</p>
+          {/* 実機Visionの生OCRテキスト。解析がずれたときにこれを開いてスクショで送ってもらえば、
+              端末が実際に読んだ文字列にパーサーを合わせられる（開発側の調整用・普段は閉じている）。 */}
+          {onDevice && rawOcr && (
+            <details className="mt-2 rounded-lg bg-paper px-3 py-2 text-left">
+              <summary className="cursor-pointer text-[11px] text-ink-faint">
+                認識テキストを表示（解析がずれたとき用） [{SCAN_ENGINE_VER}]
+              </summary>
+              <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-relaxed text-ink">
+{rawOcr}
+              </pre>
+            </details>
+          )}
           <div className="mt-3 flex justify-center gap-1.5">
             <button
               onClick={() => setScan({ ...scan, kind: "expense" })}
