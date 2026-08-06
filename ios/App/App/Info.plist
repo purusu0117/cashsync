@@ -5,7 +5,11 @@
     <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>en</string>
+	<string>ja</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>ja</string>
+	</array>
 	<key>CFBundleDisplayName</key>
         <string>CashSync</string>
 	<key>CFBundleExecutable</key>
