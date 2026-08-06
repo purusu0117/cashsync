@@ -1004,6 +1004,40 @@ export async function runSuite(d: Db): Promise<{ passed: number; failed: number 
   bb = dailyBudget(await monthSummary(budgetUser, bMonth), 0, 6000, `${bMonth}-30`);
   check("貯金目標6,000を先取り: 予算(30,000−6,000−18,000)÷2=3,000", bb.todayBudget === 3000, bb);
 
+  // 臨時収入（お小遣い等）を足すと、その月の土台が増えて日次予算も増える。
+  // ホームの64pxの数字が動く経路そのものなので、機能追加時にここを固定しておく。
+  const incomeId = uid();
+  await d.run(
+    "INSERT INTO incomes (id, user_id, date, amount, type, memo, created_at) VALUES (?, ?, ?, ?, 'other', ?, ?)",
+    incomeId,
+    budgetUser,
+    `${bMonth}-30`,
+    6000,
+    "お小遣い",
+    Date.now(),
+  );
+  bb = await bCalc(`${bMonth}-30`);
+  check(
+    "臨時収入6,000で予算(36,000−18,000)÷2=9,000に増える",
+    bb.todayBudget === 9000 && bb.remainingToday === 9000,
+    bb,
+  );
+
+  // 「元に戻す」の削除先を間違えると消えないことの確認。
+  // expenses 側に収入IDを渡しても0件削除で、収入は残ったままになる（＝APIは成功を返すのに消えない）。
+  await d.run("DELETE FROM expenses WHERE id = ? AND user_id = ?", incomeId, budgetUser);
+  check(
+    "収入IDを expenses から消しても収入は残る（削除先の振り分けが必要な理由）",
+    (await monthSummary(budgetUser, bMonth)).incomeTotal === 36000,
+  );
+  await d.run("DELETE FROM incomes WHERE id = ? AND user_id = ?", incomeId, budgetUser);
+  check(
+    "収入IDを incomes から消すとサマリーが元に戻る",
+    (await monthSummary(budgetUser, bMonth)).incomeTotal === 30000,
+  );
+  bb = await bCalc(`${bMonth}-30`);
+  check("取り消し後は予算(30,000−18,000)÷2=6,000に戻る", bb.todayBudget === 6000, bb);
+
   // --- 15b. 固定費（定期計上）の先取り分離 ---
   // 家賃などの定期計上（source='recurring'）は「今日使った」に含めず、今月分を満額土台から先取りする。
   // → 計上日に「今日あと使える額」が家賃分だけ一気にマイナスへ崩壊しない。

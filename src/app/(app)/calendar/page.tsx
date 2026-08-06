@@ -9,7 +9,7 @@
 // シフト系ロジックは旧 /shifts ページから移植。
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ExpenseEditSheet } from "@/components/EditSheets";
+import { type EditableIncome, ExpenseEditSheet, IncomeEditSheet } from "@/components/EditSheets";
 import { CalendarIcon, CategoryIcon, MicIcon, PencilIcon } from "@/components/Icons";
 import Loading from "@/components/Loading";
 import { Toast, useToast } from "@/components/Toast";
@@ -184,6 +184,7 @@ export default function CalendarPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [tags, setTags] = useState<{ id: string; name: string }[]>([]);
   const [editing, setEditing] = useState<CalExpense | null>(null);
+  const [editingIncome, setEditingIncome] = useState<EditableIncome | null>(null);
   const [loadStalled, setLoadStalled] = useState(false); // 初回読み込みが失敗して固まったまま
   const [monthLoadFailed, setMonthLoadFailed] = useState(false); // 月切替後のfetchが全滅（前月データのまま空月に見える）
   const { toast, show, hide } = useToast();
@@ -1479,11 +1480,24 @@ export default function CalendarPage() {
             {selInc.length > 0 && (
               <ul className="mt-3">
                 {selInc.map((x) => (
-                  <li key={x.id} className="flex items-baseline py-1 text-sm">
-                    <span className="text-sage">＋</span>
-                    <span className="ml-1 truncate">{x.memo || "収入"}</span>
-                    <span className="leader" />
-                    <span className="font-bold tabular-nums text-sage">+{fmtYen(x.amount)}</span>
+                  <li key={x.id}>
+                    {/* 支出行と同じく、行タップで編集シート（削除もシート内から） */}
+                    <button
+                      onClick={() =>
+                        setEditingIncome({
+                          id: x.id,
+                          date: x.date,
+                          amount: x.amount,
+                          memo: x.memo ?? "",
+                        })
+                      }
+                      className="flex w-full items-baseline py-1 text-left text-sm"
+                    >
+                      <span className="text-sage">＋</span>
+                      <span className="ml-1 truncate">{x.memo || "収入"}</span>
+                      <span className="leader" />
+                      <span className="font-bold tabular-nums text-sage">+{fmtYen(x.amount)}</span>
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -1893,6 +1907,32 @@ export default function CalendarPage() {
                 show("記録を取り消しました");
               } catch (e) {
                 show(e instanceof Error ? e.message : "取り消しに失敗しました。");
+              }
+            });
+          }}
+        />
+      )}
+
+      {/* 収入編集シート（履歴画面と同じもの） */}
+      {editingIncome && (
+        <IncomeEditSheet
+          income={editingIncome}
+          onClose={() => setEditingIncome(null)}
+          onSaved={() => {
+            setEditingIncome(null);
+            loadCal(month);
+            show("保存しました");
+          }}
+          onDeleted={(undo) => {
+            setEditingIncome(null);
+            loadCal(month);
+            show("収入を削除しました", async () => {
+              try {
+                await undo();
+                loadCal(month);
+                show("元に戻しました");
+              } catch (e) {
+                show(e instanceof Error ? e.message : "元に戻せませんでした。");
               }
             });
           }}

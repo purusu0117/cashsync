@@ -204,10 +204,13 @@ export default function HomePage() {
     }
   }
 
-  // 「元に戻す」：直前のかんたん入力を削除
-  async function undoPreset(expenseId: string) {
+  // 「元に戻す」：直前の記録を削除
+  // ⚠️ 収入を消すときに /api/expenses を叩くと、0件削除でも 200 が返るため
+  //    「取り消しました」と表示されるのに収入が残る。必ず kind で振り分ける。
+  async function undoPreset(recordId: string, kind: "expense" | "income" = "expense") {
     try {
-      await apiCall(`/api/expenses?id=${expenseId}`, { method: "DELETE" });
+      const path = kind === "income" ? "/api/incomes" : "/api/expenses";
+      await apiCall(`${path}?id=${recordId}`, { method: "DELETE" });
       show("記録を取り消しました");
       load();
     } catch (e) {
@@ -305,10 +308,14 @@ export default function HomePage() {
     if (!saved) return;
     const amt = Number(saved);
     const undoId = sp.get("undo");
+    const undoKind = sp.get("kind") === "income" ? "income" : "expense";
     // 再読み込み・戻る操作でトーストが再表示されないよう、URLからパラメータを消す
     window.history.replaceState(null, "", "/");
     if (Number.isFinite(amt) && amt > 0) {
-      show(`記録しました ${fmtYen(amt)}`, undoId ? () => undoPreset(undoId) : undefined);
+      show(
+        `${undoKind === "income" ? "収入を記録しました" : "記録しました"} ${fmtYen(amt)}`,
+        undoId ? () => undoPreset(undoId, undoKind) : undefined,
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -886,7 +893,7 @@ export default function HomePage() {
 
       {/* 支出の入力：3つの入口（撮る/スクショ/手入力）をカードで並べる */}
       <section>
-        <h2 className="text-sm font-bold tracking-[0.04em]">支出を記録する</h2>
+        <h2 className="text-sm font-bold tracking-[0.04em]">記録する</h2>
         <div className="mt-2 grid grid-cols-3 gap-3">
           <button
             onClick={() => camRef.current?.click()}
@@ -922,6 +929,13 @@ export default function HomePage() {
         <p className="mt-2 text-center text-[11px] text-ink-faint">
           レシートも決済スクショも、撮るだけで自動入力
         </p>
+        {/* 収入の入口。3ボタンのグリッドは触らず、細いテキストリンクを1本だけ足す。 */}
+        <Link
+          href="/add?kind=income"
+          className="mt-1.5 block text-center text-[11px] font-semibold text-sage underline underline-offset-2"
+        >
+          ＋ 収入を記録（お小遣い・臨時収入）
+        </Link>
 
         {/* かんたん入力ボタン：設定で登録した定型支出を1タップで即記録（0件なら非表示） */}
         {presets.length > 0 && (

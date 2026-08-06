@@ -46,6 +46,10 @@ export default function AddPage() {
   const router = useRouter();
   const onDevice = isNativePlatform(); // ネイティブは端末内解析のみ＝解析中に「AI」と表示しない
   const [categories, setCategories] = useState<Category[]>([]);
+  // 支出／収入の切り替え。収入は incomes テーブル（カテゴリもタグも持たない）に入るので、
+  // 金額・日付・メモの3項目だけを出す。?kind=income で直接開ける。
+  const [kind, setKind] = useState<"expense" | "income">("expense");
+  const isIncome = kind === "income";
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayLocal());
   const [categoryId, setCategoryId] = useState<string | null>(null);
@@ -71,8 +75,10 @@ export default function AddPage() {
 
   useEffect(() => {
     // つけ忘れ赦免カード等からの ?date=YYYY-MM-DD 指定
-    const qd = new URLSearchParams(location.search).get("date");
+    const qs = new URLSearchParams(location.search);
+    const qd = qs.get("date");
     if (qd && /^\d{4}-\d{2}-\d{2}$/.test(qd)) setDate(qd);
+    if (qs.get("kind") === "income") setKind("income");
     fetch("/api/categories")
       .then((r) => r.json())
       .then((d) => {
@@ -229,24 +235,35 @@ export default function AddPage() {
     setBusy(true);
     setError("");
     try {
-      const res = await netFetch("/api/expenses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount: n,
-          date,
-          categoryId,
-          memo,
-          source: text ? "text" : "manual",
-          // 横断タグ：選択が無ければ空配列（従来と同じ支出が保存されるだけ）
-          tagIds: [...selectedTags],
-        }),
-      });
+      // 収入は incomes へ。カテゴリ・タグ・source は持たないので送らない。
+      const res = isIncome
+        ? await netFetch("/api/incomes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ amount: n, date, memo }),
+          })
+        : await netFetch("/api/expenses", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              amount: n,
+              date,
+              categoryId,
+              memo,
+              source: text ? "text" : "manual",
+              // 横断タグ：選択が無ければ空配列（従来と同じ支出が保存されるだけ）
+              tagIds: [...selectedTags],
+            }),
+          });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "保存に失敗しました。");
-      track("manual_add", { source: text ? "text" : "manual" }); // 自前計測：手入力/文章からの記録
+      track("manual_add", { source: isIncome ? "income" : text ? "text" : "manual" }); // 自前計測：手入力/文章からの記録
       // R5: ホームで「記録しました＋元に戻す」トーストを出す（かんたん入力と同じ様式に統一）
-      router.push(`/?saved=${n}${d?.id ? `&undo=${d.id}` : ""}`);
+      // 収入は削除先APIが違うので kind を必ず渡す（付け忘れると expenses 側を0件DELETEして
+      // 「取り消しました」と出るのに収入が消えない）
+      router.push(
+        `/?saved=${n}${d?.id ? `&undo=${d.id}` : ""}${isIncome ? "&kind=income" : ""}`,
+      );
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存に失敗しました。");
@@ -296,10 +313,42 @@ export default function AddPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-lg font-bold tracking-[0.04em]">支出を記録</h1>
+      <h1 className="text-lg font-bold tracking-[0.04em]">{isIncome ? "収入を記録" : "支出を記録"}</h1>
 
-      {/* 音声/文章で入力（マイクが主役：話す→自動でフォームに反映） */}
-      <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm">
+      {/* 支出／収入の切り替え。既定は支出のままなので、今までの操作は1タップも増えない。 */}
+      <div className="grid grid-cols-2 gap-2 rounded-2xl border border-rule bg-card p-1.5 shadow-sm">
+        {(["expense", "income"] as const).map((k) => (
+          <button
+            key={k}
+            onClick={() => {
+              setKind(k);
+              setError("");
+              setParsedNote("");
+              // 未来日の収入は「もらっていないお金」で今日の予算が増えてしまうので今日まで戻す
+              if (k === "income" && date > todayLocal()) setDate(todayLocal());
+            }}
+            className={`rounded-xl py-2 text-sm font-bold transition-colors ${
+              kind === k
+                ? k === "income"
+                  ? "bg-sage text-card"
+                  : "bg-vermilion text-card"
+                : "bg-paper text-ink-faint"
+            }`}
+          >
+            {k === "income" ? "収入" : "支出"}
+          </button>
+        ))}
+      </div>
+      {isIncome && (
+        <p className="-mt-2 text-[11px] text-ink-faint">
+          お小遣い・仕送り・臨時収入など。金額と日付だけで記録できます。
+        </p>
+      )}
+
+      {/* 音声/文章で入力（マイクが主役：話す→自動でフォームに反映）
+          収入では出さない：/api/parse-entry は支出前提でカテゴリを返す設計で、
+          収入では使わない情報のためにAI枠を1回消費してしまうため。 */}
+      <section className={`rounded-2xl border border-rule bg-card p-4 shadow-sm ${isIncome ? "hidden" : ""}`}>
         <h2 className="mb-2 text-sm font-bold tracking-[0.04em]">
           {speechOk ? "話す・書くで自動入力" : "文章から自動入力"}
         </h2>
@@ -382,7 +431,9 @@ export default function AddPage() {
 
       {/* 手入力フォーム */}
       <section className="rounded-2xl border border-rule bg-card p-4 shadow-sm space-y-3">
-        <h2 className="text-sm font-bold tracking-[0.04em]">手入力フォーム</h2>
+        <h2 className="text-sm font-bold tracking-[0.04em]">
+          {isIncome ? "収入の入力" : "手入力フォーム"}
+        </h2>
         <label className="block">
           <span className="text-xs text-ink-faint">金額</span>
           <input
@@ -402,6 +453,9 @@ export default function AddPage() {
           <input
             type="date"
             value={date}
+            // 収入は今日まで。未来日を入れると、まだ受け取っていないお金で
+            // 「今日あと使える」が増えてしまう（サーバー側は日付を絞っていない）。
+            max={isIncome ? todayLocal() : undefined}
             onChange={(e) => {
               setDate(e.target.value);
               setParsedNote("");
@@ -409,7 +463,7 @@ export default function AddPage() {
             className="mt-1 w-full rounded-xl border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
           />
         </label>
-        <div>
+        <div className={isIncome ? "hidden" : ""}>
           <span className="text-xs text-ink-faint">カテゴリ</span>
           {!showAllCats && categories.length > 6 && (
             <span className="ml-1.5 text-[10px] text-ink-faint">よく使う順</span>
@@ -438,8 +492,8 @@ export default function AddPage() {
             )}
           </div>
         </div>
-        {/* 横断タグ（任意）：カテゴリとは別に複数付けて後でまとめて集計できる */}
-        <div>
+        {/* 横断タグ（任意）：カテゴリとは別に複数付けて後でまとめて集計できる（収入は非対応） */}
+        <div className={isIncome ? "hidden" : ""}>
           <span className="text-xs text-ink-faint">タグ（任意・複数可）</span>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {tags.map((t) => (
@@ -478,7 +532,7 @@ export default function AddPage() {
           <input
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
-            placeholder="セブンイレブン"
+            placeholder={isIncome ? "お小遣い・仕送りなど" : "セブンイレブン"}
             className="mt-1 w-full rounded-xl border border-rule bg-paper px-3 py-2.5 text-base outline-none focus:border-ink"
           />
         </label>
@@ -488,7 +542,9 @@ export default function AddPage() {
           <button
             onClick={save}
             disabled={busy}
-            className="w-full rounded-xl bg-vermilion py-3 text-lg font-bold text-card active:translate-y-0.5 active:shadow-none disabled:opacity-50"
+            className={`w-full rounded-xl py-3 text-lg font-bold text-card active:translate-y-0.5 active:shadow-none disabled:opacity-50 ${
+              isIncome ? "bg-sage" : "bg-vermilion"
+            }`}
           >
             {busy ? "保存中・・・" : Number(amount) > 0 ? `${fmtYen(Number(amount))} で記録` : "記録する"}
           </button>
