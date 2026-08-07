@@ -3,17 +3,18 @@ import Link from "next/link";
 
 // CashSync 製品詳細ページ（Sync Apps LP 配下の1アプリページ）。
 // 親＝ /lp（Sync Apps ハブ）。アプリが増えるたび /lp/<app> を足していく。
-// アプリ本体と同じ「感熱紙レシート」の世界観。TestFlightベータへの導線を主役に。
-const TESTFLIGHT = "https://testflight.apple.com/join/mqJwAB7w";
+// アプリ本体と同じ「感熱紙レシート」の世界観。App Store への導線を主役に。
+// ⚠️ このページは AdMob のデベロッパーサイト候補でもあるので、価格表現（無料・今なら等）を書かない。
+const APP_STORE = "https://apps.apple.com/jp/app/id6795074083";
 
 export const metadata: Metadata = {
   title: "CashSync ｜ スクショを撮るだけの家計簿",
   description:
-    "レシートやQR決済のスクショを撮るだけ。店名・カテゴリ・品目・金額をAIが自動入力。入力3秒の家計簿アプリ。iOSベータテスター募集中。",
+    "レシートやQR決済のスクショを撮るだけ。店名・カテゴリ・品目・金額をAIが自動入力。入力3秒の家計簿アプリ。App Store で配信中。",
   openGraph: {
     title: "CashSync ｜ スクショを撮るだけの家計簿",
     description:
-      "レシート・QR決済のスクショを撮るだけで、店名・カテゴリ・品目・金額をAIが自動入力。入力3秒の家計簿。iOSベータ募集中。",
+      "レシート・QR決済のスクショを撮るだけで、店名・カテゴリ・品目・金額をAIが自動入力。入力3秒の家計簿。App Store で配信中。",
     siteName: "Sync Apps",
     type: "website",
   },
@@ -21,7 +22,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "CashSync ｜ スクショを撮るだけの家計簿",
     description:
-      "レシート・QR決済のスクショを撮るだけで、店名・カテゴリ・品目・金額をAIが自動入力。入力3秒の家計簿。iOSベータ募集中。",
+      "レシート・QR決済のスクショを撮るだけで、店名・カテゴリ・品目・金額をAIが自動入力。入力3秒の家計簿。App Store で配信中。",
   },
 };
 
@@ -58,13 +59,13 @@ export default function CashSyncPage() {
           AIが自動で入力します。入力3秒。
         </p>
         <a
-          href={TESTFLIGHT}
+          href={APP_STORE}
           className="mt-6 inline-block w-full rounded-2xl bg-vermilion px-6 py-4 text-base font-bold text-card shadow-sm active:translate-y-0.5"
         >
-          iOSベータに参加する（無料）
+          App Store でダウンロード
         </a>
         <p className="mt-2 text-[11px] text-ink-faint">
-          ※ TestFlightアプリで開きます。iPhone対応。
+          ※ App Store が開きます。iPhone対応。
         </p>
       </header>
 
@@ -132,17 +133,17 @@ export default function CashSyncPage() {
 
       {/* CTA 再掲 */}
       <section className="mt-12 rounded-2xl border border-vermilion bg-card px-6 py-8 text-center shadow-sm">
-        <p className="text-lg font-bold">いま、ベータテスター募集中</p>
+        <p className="text-lg font-bold">App Store で公開中</p>
         <p className="mt-2 text-sm leading-relaxed text-ink-faint">
-          正式リリース前のアプリを、ひと足先に無料で使えます。
+          iPhone でそのまま使えます。
           <br />
           感想やご要望も大歓迎です。
         </p>
         <a
-          href={TESTFLIGHT}
+          href={APP_STORE}
           className="mt-5 inline-block w-full rounded-2xl bg-vermilion px-6 py-4 text-base font-bold text-card shadow-sm active:translate-y-0.5"
         >
-          TestFlightで参加する
+          App Store で見る
         </a>
       </section>
 

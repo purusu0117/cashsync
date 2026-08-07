@@ -69,7 +69,7 @@ export default function SyncAppsHome() {
               <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-faint">
                 <span className="rounded-full bg-paper px-2 py-0.5">家計簿</span>
                 <span className="rounded-full bg-sage/10 px-2 py-0.5 font-bold text-sage">
-                  iOSベータ配信中
+                  App Store で配信中
                 </span>
               </p>
             </div>
