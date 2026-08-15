@@ -7,6 +7,8 @@
 // OAuth Client ID は前作と共用（Google Cloud Console 側で
 // http://localhost:3004 と https://node.tail41e069.ts.net:8448 を承認済みオリジンに追加すること）。
 
+import { getNativeCalendarToken, isNativeApp } from "./calendarAuthNative";
+
 const CLIENT_ID =
   process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
   "781974345385-o19aokomoquiv7mrnenduprs7ng841n0.apps.googleusercontent.com";
@@ -53,6 +55,14 @@ function loadGis(): Promise<void> {
 export async function getCalendarToken(): Promise<string> {
   if (cachedToken && Date.now() - cachedToken.at < 50 * 60 * 1000) {
     return cachedToken.token;
+  }
+  // 🔴 アプリ（App Store版）は WKWebView なので、Googleのポップアップ方式が
+  // ポリシーで禁止されている（disallowed_useragent）。端末のSafariで認証する経路へ回す。
+  // 2026-08-15 大翔の報告「アプリでカレンダー連携できない」の対応。
+  if (isNativeApp()) {
+    const token = await getNativeCalendarToken();
+    cachedToken = { token, at: Date.now() };
+    return token;
   }
   await loadGis();
   const w = window as GisWindow;

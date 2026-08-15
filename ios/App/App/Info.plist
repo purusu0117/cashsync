@@ -28,6 +28,16 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!-- Googleカレンダー連携（OAuth）の戻り先。iOSクライアントIDの逆順 -->
+				<string>com.googleusercontent.apps.781974345385-4i0asbd7gsntj3v0c7ijjr5jd1ha1u5k</string>
+			</array>
+		</dict>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
