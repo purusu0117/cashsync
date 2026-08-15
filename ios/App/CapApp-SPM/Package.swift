@@ -14,6 +14,8 @@ let package = Package(
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.4.2"),
         .package(name: "AparajitaCapacitorBiometricAuth", path: "..\..\..\node_modules\@aparajita\capacitor-biometric-auth"),
         .package(name: "CapacitorCommunityAdmob", path: "..\..\..\node_modules\@capacitor-community\admob"),
+        .package(name: "CapacitorApp", path: "..\..\..\node_modules\@capacitor\app"),
+        .package(name: "CapacitorBrowser", path: "..\..\..\node_modules\@capacitor\browser"),
         .package(name: "CapacitorPushNotifications", path: "..\..\..\node_modules\@capacitor\push-notifications"),
         .package(name: "RevenuecatPurchasesCapacitor", path: "..\..\..\node_modules\@revenuecat\purchases-capacitor"),
         .package(name: "CashsyncPhotoCleaner", path: "..\..\..\plugins\photo-cleaner")
@@ -26,6 +28,8 @@ let package = Package(
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
                 .product(name: "AparajitaCapacitorBiometricAuth", package: "AparajitaCapacitorBiometricAuth"),
                 .product(name: "CapacitorCommunityAdmob", package: "CapacitorCommunityAdmob"),
+                .product(name: "CapacitorApp", package: "CapacitorApp"),
+                .product(name: "CapacitorBrowser", package: "CapacitorBrowser"),
                 .product(name: "CapacitorPushNotifications", package: "CapacitorPushNotifications"),
                 .product(name: "RevenuecatPurchasesCapacitor", package: "RevenuecatPurchasesCapacitor"),
                 .product(name: "CashsyncPhotoCleaner", package: "CashsyncPhotoCleaner")
