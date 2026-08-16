@@ -227,6 +227,8 @@ export default function CalendarPage() {
   const [linkExcludes, setLinkExcludes] = useState(DEFAULT_EXCLUDES.join(", "));
   const [linkBusy, setLinkBusy] = useState(false);
   const [linkError, setLinkError] = useState("");
+  /** 直近の同期で「何を見て何件だったか」。原因調査のために画面に出す（2026-08-16） */
+  const [linkDiag, setLinkDiag] = useState("");
   const [autoOn, setAutoOn] = useState(false);
 
   // 音声/文章シフト入力（音声が主役：話す→自動解析→1タップ登録）
@@ -546,7 +548,11 @@ export default function CalendarPage() {
 
   async function startLink() {
     const job = jobs.find((j) => j.id === jobId) ?? jobs[0];
-    if (!job) return;
+    if (!job) {
+      // 🔴 黙って何もしないのをやめる（2026-08-16）。バイト先が無いと同期先が決まらない
+      setLinkError("先に「バイト先」を1つ登録してください（時給の設定と同じ画面です）。");
+      return;
+    }
     setLinkBusy(true);
     setLinkError("");
     try {
@@ -579,6 +585,10 @@ export default function CalendarPage() {
       setAutoOn(true);
       syncedRef.current.clear();
       setLinkOpen(false);
+      const scanNow = getLastScan();
+      setLinkDiag(
+        `キーワード「${linkKeywords}」／今月の予定 ${scanNow.scanned}件（時間あり ${scanNow.timed}件）→ 取り込み 追加${added}・変更${updated}・削除${removed}`,
+      );
       if (added + updated + removed === 0) {
         // 🔴 「追加0」で黙って終わらない。何を見て0だったかを出す（2026-08-16 大翔の指摘）
         const scan = getLastScan();
@@ -1841,6 +1851,13 @@ export default function CalendarPage() {
                 ほかに1時間未満・12時間超の予定は自動でシフト扱いしません。
               </p>
               {linkError && <p className="text-sm text-vermilion">{linkError}</p>}
+              {/* 🔴 直近の同期で「何を見て何件だったか」を必ず出す（2026-08-16 大翔の指摘：
+                  「追加0」で静かに終わると、原因がユーザーにもClaudeにも分からない） */}
+              {linkDiag && (
+                <p className="rounded-md bg-paper-dim px-3 py-2 text-[11px] leading-relaxed text-ink-faint">
+                  {linkDiag}
+                </p>
+              )}
               {linkBusy && (
                 <p className="text-[11px] text-ink-faint">
                   Googleのログインポップアップが開きます。表示されないときはポップアップブロックを確認してください。
