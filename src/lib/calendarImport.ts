@@ -203,22 +203,38 @@ export async function fetchShiftCandidates(
   const [y, m] = month.split("-").map(Number);
   const timeMin = new Date(y, m - 1, 1).toISOString();
   const timeMax = new Date(y, m, 1).toISOString();
-  const params = new URLSearchParams({
-    timeMin,
-    timeMax,
-    singleEvents: "true",
-    orderBy: "startTime",
-    maxResults: "250",
-  });
-  const res = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  if (!res.ok) {
-    if (res.status === 401) cachedToken = null;
-    throw new Error(`カレンダーの取得に失敗しました (${res.status})`);
-  }
-  const data = (await res.json()) as { items?: GcalEvent[] };
+  // 🔴 2026-08-16 の不具合の原因はここだった。
+  // maxResults=250 の1ページだけ取って打ち切っていたため、
+  // 予定が多い月（大翔のカレンダーは定期予定が1日に何件もある）では
+  // **月の前半で250件を使い切り、後半のシフトに到達しなかった**。
+  // 実測: 8月は250件で頭打ち → 8/19以降の「🍜 キミハン」が1件も見えていなかった。
+  // → nextPageToken を辿って**その月を最後まで**読む。
+  const items: GcalEvent[] = [];
+  let pageToken: string | undefined;
+  let pages = 0;
+  do {
+    const params = new URLSearchParams({
+      timeMin,
+      timeMax,
+      singleEvents: "true",
+      orderBy: "startTime",
+      maxResults: "250",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) {
+      if (res.status === 401) cachedToken = null;
+      throw new Error(`カレンダーの取得に失敗しました (${res.status})`);
+    }
+    const page = (await res.json()) as { items?: GcalEvent[]; nextPageToken?: string };
+    items.push(...(page.items ?? []));
+    pageToken = page.nextPageToken;
+    pages++;
+  } while (pageToken && pages < 20); // 20ページ＝最大5,000件で打ち切り（暴走防止）
+  const data = { items };
   const kws = keywords.map((k) => normalizeForMatch(k)).filter(Boolean);
   const exs = excludes.map((k) => normalizeForMatch(k)).filter(Boolean);
   const out: ShiftCandidate[] = [];
