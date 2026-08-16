@@ -17,6 +17,7 @@ import { cachedFetch } from "@/lib/cachedFetch";
 import {
   DEFAULT_EXCLUDES,
   getCalendarToken,
+  getLastScan,
   isAutoSyncOn,
   setAutoSync,
   syncMonth,
@@ -578,7 +579,16 @@ export default function CalendarPage() {
       setAutoOn(true);
       syncedRef.current.clear();
       setLinkOpen(false);
-      show(`連携ON: 追加${added}・変更${updated}・削除${removed}。今後は開くたびに自動同期します`);
+      if (added + updated + removed === 0) {
+        // 🔴 「追加0」で黙って終わらない。何を見て0だったかを出す（2026-08-16 大翔の指摘）
+        const scan = getLastScan();
+        const ex = scan.samples.length ? `。カレンダーにはこんな予定があります: ${scan.samples.slice(0, 3).join(" / ")}` : "";
+        show(
+          `連携はONにしました。ただし今回は取り込めるシフトが0件でした（時間指定の予定${scan.timed}件を確認）${ex}。バイト先名と予定名が違う場合は、下の「カレンダー上の呼び名」に予定名の一部（例: キミハン）を入れてください`,
+        );
+      } else {
+        show(`連携ON: 追加${added}・変更${updated}・削除${removed}。今後は開くたびに自動同期します`);
+      }
       reload(month);
       loadJobs();
     } catch (e) {

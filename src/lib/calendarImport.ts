@@ -131,9 +131,44 @@ export interface ShiftCandidate {
 }
 
 // シフト希望の締切イベント等を誤って取り込まないための既定除外ワード
+
+/**
+ * キーワード照合用の正規化。
+ *
+ * 🔴 2026-08-16 大翔「自動連携しても追加されないシフト」の原因。
+ * カレンダーの予定名は「🍜 キミハン」（カタカナ・絵文字つき）。
+ * バイト先の名前が「きみハン相模原」のようにひらがな混じり・店舗名つきだと、
+ * 単純な includes では**一文字も一致せず候補ゼロ**になり、
+ * 「追加0・変更0・削除0」で静かに終わっていた。
+ *
+ * → 全角/半角・大文字小文字・カタカナ/ひらがな・絵文字/記号/空白を吸収して比べる。
+ */
+export function normalizeForMatch(s: string): string {
+  return s
+    .normalize("NFKC")
+    .toLowerCase()
+    // カタカナ → ひらがな（キミハン と きみはん を同じ形にする）
+    .replace(/[ァ-ヶ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60))
+    // 空白・区切り記号を落とす
+    .replace(/[\s　_\-–—・、。,.:：;；()（）[\]【】「」『』!！?？]/g, "")
+    // 絵文字を落とす
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2705}\u{23F3}\u{FE0F}]/gu, "");
+}
+
 export const DEFAULT_EXCLUDES = ["希望", "締切", "〆切", "提出", "面接", "説明会", "ミーティング", "MTG"];
 
 const AUTOSYNC_KEY = "cashsync-autosync";
+
+/** 直近の走査結果。候補0件だったときに「何を見て0だったか」を画面に出すために使う */
+export interface ScanInfo {
+  scanned: number;
+  timed: number;
+  samples: string[];
+}
+let lastScan: ScanInfo = { scanned: 0, timed: 0, samples: [] };
+export function getLastScan(): ScanInfo {
+  return lastScan;
+}
 
 export function isAutoSyncOn(): boolean {
   try {
@@ -184,15 +219,23 @@ export async function fetchShiftCandidates(
     throw new Error(`カレンダーの取得に失敗しました (${res.status})`);
   }
   const data = (await res.json()) as { items?: GcalEvent[] };
-  const kws = keywords.map((k) => k.trim().toLowerCase()).filter(Boolean);
-  const exs = excludes.map((k) => k.trim().toLowerCase()).filter(Boolean);
+  const kws = keywords.map((k) => normalizeForMatch(k)).filter(Boolean);
+  const exs = excludes.map((k) => normalizeForMatch(k)).filter(Boolean);
   const out: ShiftCandidate[] = [];
+  lastScan = { scanned: 0, timed: 0, samples: [] };
   for (const e of data.items ?? []) {
     const summary = e.summary ?? "";
-    const lower = summary.toLowerCase();
-    if (!kws.some((kw) => lower.includes(kw))) continue;
+    const norm = normalizeForMatch(summary);
+    lastScan.scanned++;
+    if (e.start?.dateTime && e.end?.dateTime) {
+      lastScan.timed++;
+      if (lastScan.samples.length < 5 && summary) lastScan.samples.push(summary);
+    }
+    // キーワードは「予定名に含まれる」か「予定名がキーワードに含まれる」の**両方向**で見る
+    // （バイト先名「きみはん相模原」で、予定名「キミハン」を拾えるように）
+    if (!kws.some((kw) => norm.includes(kw) || kw.includes(norm))) continue;
     // 「シフト希望 締切」等の関連イベントを除外（誤取り込み対策）
-    if (exs.some((ex) => lower.includes(ex))) continue;
+    if (exs.some((ex) => norm.includes(ex))) continue;
     // 終日イベントは時間が無いのでスキップ（前作と同じ挙動）
     if (!e.start?.dateTime || !e.end?.dateTime) continue;
     const s = new Date(e.start.dateTime);
