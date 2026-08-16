@@ -355,6 +355,61 @@ platform :ios do
     UI.message("CONFIRM 内部グループ testers=#{testers.size}")
   end
 
+  desc "App Store申請の準備状況を読み取るだけの診断（審査には出さない）"
+  lane :store_diag do
+    issuer = ENV["APPSTORE_ISSUER_ID"].to_s.strip
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APPSTORE_KEY_ID"),
+      issuer_id: issuer.empty? ? nil : issuer,
+      key_content: ENV.fetch("APPSTORE_PRIVATE_KEY"),
+      is_key_content_base64: true,
+      in_house: false,
+    )
+    require "spaceship"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(**api_key)
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    UI.message("APP id=#{app.id} name=#{app.name.inspect}")
+
+    UI.message("=== バージョン（App Store）===")
+    (app.get_app_store_versions(limit: 10) rescue []).each do |v|
+      UI.message("version=#{(v.version_string rescue '?')} state=#{(v.app_store_state rescue '?')} id=#{v.id} releaseType=#{(v.release_type rescue '?')} build=#{(v.build&.version rescue nil).inspect}")
+      (v.get_app_store_version_localizations rescue []).each do |l|
+        UI.message("   loc=#{l.locale} desc=#{(l.description || '').length}文字 whatsNew=#{(l.whats_new || '').to_s[0,40].inspect} promo=#{(l.promotional_text || '').to_s[0,20].inspect} support=#{l.support_url.inspect} marketing=#{l.marketing_url.inspect}")
+      end
+      rd = (v.fetch_app_store_review_detail rescue nil)
+      if rd
+        UI.message("   審査連絡先: #{(rd.contact_first_name rescue nil).inspect} #{(rd.contact_last_name rescue nil).inspect} #{(rd.contact_email rescue nil).inspect} #{(rd.contact_phone rescue nil).inspect}")
+        UI.message("   デモアカウント要否=#{(rd.demo_account_required rescue '?')} demoUser=#{(rd.demo_account_name rescue nil).inspect} notes=#{(rd.notes rescue nil).to_s[0,300].inspect}")
+      else
+        UI.message("   審査詳細（連絡先/デモ）: 未設定")
+      end
+      (v.get_app_store_version_phased_release rescue nil).tap { |p| UI.message("   段階リリース=#{p ? (p.phased_release_state rescue '?') : 'なし'}") }
+    end
+
+    UI.message("=== スクリーンショット ===")
+    v = (app.get_edit_app_store_version rescue nil) || (app.get_live_app_store_version rescue nil)
+    if v
+      (v.get_app_store_version_localizations rescue []).each do |l|
+        sets = (l.get_app_screenshot_sets rescue [])
+        UI.message("   loc=#{l.locale} " + sets.map { |s| "#{s.screenshot_display_type}=#{(s.app_screenshots || []).size}枚" }.join(" "))
+      end
+    end
+
+    UI.message("=== 審査提出（ReviewSubmission）===")
+    begin
+      subs = Spaceship::ConnectAPI.get_review_submissions(app_id: app.id).to_models rescue []
+      subs.first(5).each { |s| UI.message("   submission id=#{s.id} state=#{(s.state rescue '?')} submitted=#{(s.submitted_date rescue '?')}") }
+      UI.message("   （提出履歴 #{subs.size}件）")
+    rescue => e
+      UI.message("   取得できず: #{e.message}")
+    end
+
+    UI.message("=== 直近ビルド ===")
+    (app.get_builds(limit: 5) rescue []).each do |b|
+      UI.message("   build=#{b.version} state=#{b.processing_state} compliance=#{(b.uses_non_exempt_encryption rescue '?').inspect} expired=#{(b.expired rescue '?')}")
+    end
+  end
+
   desc "署名なしビルド（Secretsが無くても通る確認用）"
   lane :check do
     build_app(
