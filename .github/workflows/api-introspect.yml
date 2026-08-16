@@ -1,0 +1,33 @@
+# spaceship(Fastlane)で実際に使えるメソッド名を調べるだけの一時ワークフロー。
+name: api-introspect
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  introspect:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: メソッド一覧
+        run: |
+          bundle exec ruby -e '
+            require "spaceship"
+            puts "APP(version): " + Spaceship::ConnectAPI::App.instance_methods(false).grep(/version/).sort.join(", ")
+            puts "VERSION: " + Spaceship::ConnectAPI::AppStoreVersion.instance_methods(false).sort.join(", ")
+            puts "VERSION.class: " + Spaceship::ConnectAPI::AppStoreVersion.methods(false).sort.join(", ")
+            puts "API(post_app_store_version): " + Spaceship::ConnectAPI.methods.grep(/app_store_version/).sort.join(", ")
+            puts "API(review_submission): " + Spaceship::ConnectAPI.methods.grep(/review_submission/).sort.join(", ")
+            puts "API(review_detail): " + Spaceship::ConnectAPI.methods.grep(/review_detail/).sort.join(", ")
+            m = Spaceship::ConnectAPI.method(:post_app_store_version) rescue nil
+            puts "SIG post_app_store_version: " + (m ? m.parameters.inspect : "なし")
+            m2 = Spaceship::ConnectAPI.method(:post_review_submission) rescue nil
+            puts "SIG post_review_submission: " + (m2 ? m2.parameters.inspect : "なし")
+            m3 = Spaceship::ConnectAPI.method(:post_review_submission_item) rescue nil
+            puts "SIG post_review_submission_item: " + (m3 ? m3.parameters.inspect : "なし")
+          '
