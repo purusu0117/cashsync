@@ -17,7 +17,6 @@ import { cachedFetch } from "@/lib/cachedFetch";
 import {
   DEFAULT_EXCLUDES,
   getCalendarToken,
-  getLastScan,
   isAutoSyncOn,
   setAutoSync,
   syncMonth,
@@ -227,8 +226,6 @@ export default function CalendarPage() {
   const [linkExcludes, setLinkExcludes] = useState(DEFAULT_EXCLUDES.join(", "));
   const [linkBusy, setLinkBusy] = useState(false);
   const [linkError, setLinkError] = useState("");
-  /** 直近の同期で「何を見て何件だったか」。原因調査のために画面に出す（2026-08-16） */
-  const [linkDiag, setLinkDiag] = useState("");
   const [autoOn, setAutoOn] = useState(false);
 
   // 音声/文章シフト入力（音声が主役：話す→自動解析→1タップ登録）
@@ -585,16 +582,11 @@ export default function CalendarPage() {
       setAutoOn(true);
       syncedRef.current.clear();
       setLinkOpen(false);
-      const scanNow = getLastScan();
-      setLinkDiag(
-        `キーワード「${linkKeywords}」／今月の予定 ${scanNow.scanned}件（時間あり ${scanNow.timed}件）→ 取り込み 追加${added}・変更${updated}・削除${removed}`,
-      );
       if (added + updated + removed === 0) {
-        // 🔴 「追加0」で黙って終わらない。何を見て0だったかを出す（2026-08-16 大翔の指摘）
-        const scan = getLastScan();
-        const ex = scan.samples.length ? `。カレンダーにはこんな予定があります: ${scan.samples.slice(0, 3).join(" / ")}` : "";
+        // 0件のときだけ、直し方を1文で伝える（原因調査用の件数・予定名の羅列は出さない。
+        // 2026-08-16 大翔「できたらもうこの案内はいらなくない？他のユーザーにとっては邪魔でしょ」）
         show(
-          `連携はONにしました。ただし今回は取り込めるシフトが0件でした（時間指定の予定${scan.timed}件を確認）${ex}。バイト先名と予定名が違う場合は、下の「カレンダー上の呼び名」に予定名の一部（例: キミハン）を入れてください`,
+          "連携はONにしました。取り込めるシフトは0件でした。「カレンダー上の呼び名」が予定名と合っているか確認してみてください",
         );
       } else {
         show(`連携ON: 追加${added}・変更${updated}・削除${removed}。今後は開くたびに自動同期します`);
@@ -1851,13 +1843,6 @@ export default function CalendarPage() {
                 ほかに1時間未満・12時間超の予定は自動でシフト扱いしません。
               </p>
               {linkError && <p className="text-sm text-vermilion">{linkError}</p>}
-              {/* 🔴 直近の同期で「何を見て何件だったか」を必ず出す（2026-08-16 大翔の指摘：
-                  「追加0」で静かに終わると、原因がユーザーにもClaudeにも分からない） */}
-              {linkDiag && (
-                <p className="rounded-md bg-paper-dim px-3 py-2 text-[11px] leading-relaxed text-ink-faint">
-                  {linkDiag}
-                </p>
-              )}
               {linkBusy && (
                 <p className="text-[11px] text-ink-faint">
                   Googleのログインポップアップが開きます。表示されないときはポップアップブロックを確認してください。
