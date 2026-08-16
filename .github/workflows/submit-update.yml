@@ -32,13 +32,6 @@ jobs:
       TARGET_BUILD: ${{ inputs.build }}
       WHATS_NEW: ${{ inputs.whats_new }}
       SUBMIT: ${{ inputs.submit }}
-      REVIEW_FIRST: ${{ secrets.REVIEW_FIRST }}
-      REVIEW_LAST: ${{ secrets.REVIEW_LAST }}
-      REVIEW_EMAIL: ${{ secrets.REVIEW_EMAIL }}
-      REVIEW_PHONE: ${{ secrets.REVIEW_PHONE }}
-      REVIEW_DEMO_USER: ${{ secrets.REVIEW_DEMO_USER }}
-      REVIEW_DEMO_PASS: ${{ secrets.REVIEW_DEMO_PASS }}
-      REVIEW_NOTES: ${{ secrets.REVIEW_NOTES }}
     steps:
       - uses: actions/checkout@v4
       - uses: ruby/setup-ruby@v1

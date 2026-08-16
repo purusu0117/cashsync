@@ -465,24 +465,41 @@ platform :ios do
     v.select_build(build_id: b.id)
     UI.success("build #{target_build} を紐づけました")
 
-    # 4) 審査連絡先・デモアカウント（前バージョンと同じ内容を明示的に入れ直す）
+    # 4) 審査連絡先・デモアカウント
+    #    🔴 空の値で上書きすると連絡先が消えて審査が止まるので、
+    #       「今のバージョンに入っていない項目だけ、公開中のバージョンからコピーする」形にする。
     begin
       rd = (v.fetch_app_store_review_detail rescue nil)
-      attrs = {
-        contactFirstName: ENV["REVIEW_FIRST"], contactLastName: ENV["REVIEW_LAST"],
-        contactEmail: ENV["REVIEW_EMAIL"], contactPhone: ENV["REVIEW_PHONE"],
-        demoAccountName: ENV["REVIEW_DEMO_USER"], demoAccountPassword: ENV["REVIEW_DEMO_PASS"],
-        demoAccountRequired: true, notes: ENV["REVIEW_NOTES"],
-      }.compact
-      if rd
-        rd.update(attributes: attrs)
-        UI.success("審査詳細を更新しました")
+      have = ->(x) { !x.nil? && !x.to_s.strip.empty? }
+      need = [:contact_first_name, :contact_last_name, :contact_email, :contact_phone, :notes].any? do |k|
+        rd.nil? || !have.call((rd.send(k) rescue nil))
+      end
+      if !need
+        UI.success("審査詳細は既に入っています（連絡先=#{(rd.contact_email rescue nil).inspect}）")
       else
-        Spaceship::ConnectAPI.post_app_store_review_detail(app_store_version_id: v.id, attributes: attrs)
-        UI.success("審査詳細を作成しました")
+        live = (app.get_live_app_store_version rescue nil)
+        src = live ? (live.fetch_app_store_review_detail rescue nil) : nil
+        UI.user_error!("審査詳細の元ネタが見つかりません（公開中バージョンにも無し）") if src.nil?
+        attrs = {
+          contactFirstName: (src.contact_first_name rescue nil),
+          contactLastName: (src.contact_last_name rescue nil),
+          contactEmail: (src.contact_email rescue nil),
+          contactPhone: (src.contact_phone rescue nil),
+          demoAccountName: (src.demo_account_name rescue nil),
+          demoAccountPassword: (src.demo_account_password rescue nil),
+          demoAccountRequired: (src.demo_account_required rescue nil),
+          notes: (src.notes rescue nil),
+        }.reject { |_k, val| val.nil? || val.to_s.strip.empty? }
+        if rd
+          rd.update(attributes: attrs)
+          UI.success("公開中バージョンから審査詳細をコピーしました（#{attrs.keys.join(', ')}）")
+        else
+          Spaceship::ConnectAPI.post_app_store_review_detail(app_store_version_id: v.id, attributes: attrs)
+          UI.success("審査詳細を作成しました（#{attrs.keys.join(', ')}）")
+        end
       end
     rescue => e
-      UI.important("審査詳細の設定でエラー（前回値が残っている可能性あり）: #{e.message}")
+      UI.important("審査詳細の設定でエラー: #{e.message}")
     end
 
     unless ENV["SUBMIT"] == "1"
