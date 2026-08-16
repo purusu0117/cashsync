@@ -431,11 +431,7 @@ platform :ios do
     # 1) 編集中のバージョンを用意する（無ければ作る）
     v = (app.get_edit_app_store_version rescue nil)
     if v.nil?
-      v = Spaceship::ConnectAPI::AppStoreVersion.create(
-        app_id: app.id,
-        version_string: target_version,
-        platform: Spaceship::ConnectAPI::Platform::IOS,
-      )
+      v = app.create_version!(version_string: target_version, platform: Spaceship::ConnectAPI::Platform::IOS)
       UI.success("バージョン #{target_version} を新規作成しました")
     else
       cur = (v.version_string rescue "?")
