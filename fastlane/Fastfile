@@ -428,20 +428,13 @@ platform :ios do
     target_build = ENV.fetch("TARGET_BUILD").to_i
     whats_new = ENV.fetch("WHATS_NEW")
 
-    # 1) 編集中のバージョンを用意する（無ければ作る）
-    v = (app.get_edit_app_store_version rescue nil)
-    if v.nil?
-      v = app.create_version!(version_string: target_version, platform: Spaceship::ConnectAPI::Platform::IOS)
-      UI.success("バージョン #{target_version} を新規作成しました")
-    else
-      cur = (v.version_string rescue "?")
-      if cur != target_version
-        v.update(attributes: { versionString: target_version })
-        UI.success("編集中バージョン #{cur} → #{target_version} に変更しました")
-      else
-        UI.message("編集中バージョン #{cur} をそのまま使います")
-      end
-    end
+    # 1) 編集中のバージョンを用意する（無ければ作る／あればバージョン番号を合わせる）
+    #    ensure_version! が「作成」と「番号の付け替え」の両方をやってくれる
+    app.ensure_version!(target_version, platform: Spaceship::ConnectAPI::Platform::IOS)
+    v = app.get_edit_app_store_version
+    UI.user_error!("編集中バージョンを用意できませんでした") if v.nil?
+    UI.success("編集中バージョン = #{v.version_string}")
+
     UI.message("VERSION id=#{v.id} state=#{(v.app_store_state rescue '?')}")
 
     # 2) リリースノート（日本語）
