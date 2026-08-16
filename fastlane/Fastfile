@@ -410,6 +410,112 @@ platform :ios do
     end
   end
 
+  desc "アップデートを申請する。PREPARE=1で下ごしらえのみ、SUBMIT=1で実際に審査へ出す"
+  lane :submit_update do
+    issuer = ENV["APPSTORE_ISSUER_ID"].to_s.strip
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APPSTORE_KEY_ID"),
+      issuer_id: issuer.empty? ? nil : issuer,
+      key_content: ENV.fetch("APPSTORE_PRIVATE_KEY"),
+      is_key_content_base64: true,
+      in_house: false,
+    )
+    require "spaceship"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(**api_key)
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+
+    target_version = ENV.fetch("TARGET_VERSION")
+    target_build = ENV.fetch("TARGET_BUILD").to_i
+    whats_new = ENV.fetch("WHATS_NEW")
+
+    # 1) 編集中のバージョンを用意する（無ければ作る）
+    v = (app.get_edit_app_store_version rescue nil)
+    if v.nil?
+      v = Spaceship::ConnectAPI::AppStoreVersion.create(
+        app_id: app.id,
+        version_string: target_version,
+        platform: Spaceship::ConnectAPI::Platform::IOS,
+      )
+      UI.success("バージョン #{target_version} を新規作成しました")
+    else
+      cur = (v.version_string rescue "?")
+      if cur != target_version
+        v.update(attributes: { versionString: target_version })
+        UI.success("編集中バージョン #{cur} → #{target_version} に変更しました")
+      else
+        UI.message("編集中バージョン #{cur} をそのまま使います")
+      end
+    end
+    UI.message("VERSION id=#{v.id} state=#{(v.app_store_state rescue '?')}")
+
+    # 2) リリースノート（日本語）
+    locs = (v.get_app_store_version_localizations rescue [])
+    ja = locs.find { |l| l.locale == "ja" } || locs.first
+    if ja
+      ja.update(attributes: { whatsNew: whats_new })
+      UI.success("リリースノートを設定しました（#{ja.locale}）")
+    else
+      UI.user_error!("ローカライズが見つかりません")
+    end
+
+    # 3) ビルドを紐づける
+    b = app.get_builds(limit: 20).find { |x| x.version.to_i == target_build }
+    UI.user_error!("build #{target_build} が見つかりません") if b.nil?
+    UI.user_error!("build #{target_build} は処理中です（#{b.processing_state}）") unless b.processing_state == "VALID"
+    v.select_build(build_id: b.id)
+    UI.success("build #{target_build} を紐づけました")
+
+    # 4) 審査連絡先・デモアカウント（前バージョンと同じ内容を明示的に入れ直す）
+    begin
+      rd = (v.fetch_app_store_review_detail rescue nil)
+      attrs = {
+        contactFirstName: ENV["REVIEW_FIRST"], contactLastName: ENV["REVIEW_LAST"],
+        contactEmail: ENV["REVIEW_EMAIL"], contactPhone: ENV["REVIEW_PHONE"],
+        demoAccountName: ENV["REVIEW_DEMO_USER"], demoAccountPassword: ENV["REVIEW_DEMO_PASS"],
+        demoAccountRequired: true, notes: ENV["REVIEW_NOTES"],
+      }.compact
+      if rd
+        rd.update(attributes: attrs)
+        UI.success("審査詳細を更新しました")
+      else
+        Spaceship::ConnectAPI.post_app_store_review_detail(app_store_version_id: v.id, attributes: attrs)
+        UI.success("審査詳細を作成しました")
+      end
+    rescue => e
+      UI.important("審査詳細の設定でエラー（前回値が残っている可能性あり）: #{e.message}")
+    end
+
+    unless ENV["SUBMIT"] == "1"
+      UI.success("=== 下ごしらえ完了。審査には出していません（SUBMIT=1 で提出）===")
+      next
+    end
+
+    # 5) 審査へ提出
+    submitted = false
+    begin
+      rs = Spaceship::ConnectAPI.post_review_submission(app_id: app.id, platform: "IOS")
+      rs_id = rs.to_models.first.id
+      Spaceship::ConnectAPI.post_review_submission_item(review_submission_id: rs_id, app_store_version_id: v.id)
+      Spaceship::ConnectAPI.patch_review_submission(review_submission_id: rs_id, attributes: { submitted: true })
+      UI.success("審査へ提出しました（ReviewSubmission #{rs_id}）")
+      submitted = true
+    rescue => e
+      UI.important("ReviewSubmission API で失敗: #{e.message}")
+      begin
+        v.create_app_store_version_submission
+        UI.success("審査へ提出しました（AppStoreVersionSubmission）")
+        submitted = true
+      rescue => e2
+        UI.user_error!("提出できませんでした: #{e2.message}")
+      end
+    end
+
+    if submitted
+      v2 = (app.get_edit_app_store_version rescue nil)
+      UI.message("CONFIRM version=#{(v2&.version_string rescue '?')} state=#{(v2&.app_store_state rescue '?')}")
+    end
+  end
+
   desc "署名なしビルド（Secretsが無くても通る確認用）"
   lane :check do
     build_app(

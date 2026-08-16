@@ -1,0 +1,49 @@
+# App Store のアップデート申請。手動実行。
+#  submit を "1" にしたときだけ実際に審査へ出す（既定は下ごしらえのみ）。
+name: submit-update
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "申請するバージョン（例 1.0.5）"
+        required: true
+      build:
+        description: "紐づけるビルド番号（例 49）"
+        required: true
+      whats_new:
+        description: "リリースノート（このバージョンの新機能）"
+        required: true
+      submit:
+        description: "1 なら実際に審査へ提出する"
+        required: false
+        default: "0"
+
+jobs:
+  submit:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+      APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+      APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+      TARGET_VERSION: ${{ inputs.version }}
+      TARGET_BUILD: ${{ inputs.build }}
+      WHATS_NEW: ${{ inputs.whats_new }}
+      SUBMIT: ${{ inputs.submit }}
+      REVIEW_FIRST: ${{ secrets.REVIEW_FIRST }}
+      REVIEW_LAST: ${{ secrets.REVIEW_LAST }}
+      REVIEW_EMAIL: ${{ secrets.REVIEW_EMAIL }}
+      REVIEW_PHONE: ${{ secrets.REVIEW_PHONE }}
+      REVIEW_DEMO_USER: ${{ secrets.REVIEW_DEMO_USER }}
+      REVIEW_DEMO_PASS: ${{ secrets.REVIEW_DEMO_PASS }}
+      REVIEW_NOTES: ${{ secrets.REVIEW_NOTES }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - name: 申請
+        run: bundle exec fastlane submit_update
